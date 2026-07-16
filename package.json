@@ -1,0 +1,77 @@
+{
+  "name": "okibi-akari-dynamic-highlighting",
+  "displayName": "Okibi & Akari — Dynamic Highlighting",
+  "description": "The dynamic layer for the Okibi/Akari design system: the three-phase attention model (Survey 構 · Focus 流 · Edit 異). Band 1 is the color theme; this is bands 2–3.",
+  "version": "0.1.0",
+  "publisher": "kaievns",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "okibi",
+    "akari",
+    "highlighting",
+    "focus",
+    "attention"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "okibiDynamic.toggle",
+        "title": "Okibi Dynamic: Toggle On/Off"
+      }
+    ],
+    "configuration": {
+      "title": "Okibi & Akari — Dynamic Highlighting",
+      "properties": {
+        "okibiDynamic.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the dynamic focus layer (phases + focused-block indicator)."
+        },
+        "okibiDynamic.showPhaseInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the current phase (構 Survey · 流 Focus · 異 Edit) in the status bar. Useful for dialling in the dwell timings."
+        },
+        "okibiDynamic.dwell.editToFocus": {
+          "type": "number",
+          "default": 1400,
+          "description": "Milliseconds of no typing before Edit 異 relaxes back to Focus 流. Spec starting value: ~1400."
+        },
+        "okibiDynamic.dwell.focusToSurvey": {
+          "type": "number",
+          "default": 12000,
+          "description": "Milliseconds of no caret activity before Focus 流 relaxes to Survey 構 (the focused-block indicator withdraws). Spec starting value: ~12000."
+        },
+        "okibiDynamic.dwell.minHold": {
+          "type": "number",
+          "default": 350,
+          "description": "Minimum milliseconds a phase is held before any downgrade, to prevent flicker. Spec starting value: ~350."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kaievns/okibi-akari-vscode-dynamic-highlighting"
+  }
+}
