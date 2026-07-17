@@ -38,6 +38,17 @@ export interface DwellConfig {
   minHold: number;
 }
 
+/**
+ * Spec starting values. editToFocus is now 2000ms — the Edit→Focus fallback:
+ * band 3 relaxes to band 2 after ~2s of no typing (user decision). minHold and
+ * focusToSurvey are unchanged from the validated-in-browser values.
+ */
+export const DEFAULT_DWELL: DwellConfig = {
+  editToFocus: 2000,
+  focusToSurvey: 12000,
+  minHold: 350,
+};
+
 export class PhaseMachine {
   private phase: Phase = Phase.Survey;
   private lastUpgradeAt = 0;

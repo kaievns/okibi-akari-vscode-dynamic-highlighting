@@ -3,10 +3,12 @@
  * `# TOKENS · resolved values`. Only the tokens the dynamic layer needs are
  * carried here. Dark = Okibi, light = Akari.
  *
- * The theme (band 1) already paints the resting register; this extension only
- * needs the ember-line (focused-block bar), the ember (fill base), and — for
- * later slices — the band-2 identity tints and band-3 risk colours.
+ * The theme (band 1) already paints the resting register; this extension paints
+ * the ember-line (focused-block gutter bar), the band-2 identity tints, and the
+ * band-3 risk marks on top.
  */
+
+import * as vscode from 'vscode';
 
 export interface TokenPair {
   /** Okibi (dark) */
@@ -107,4 +109,63 @@ export function gutterStripeUri(color: string, opacity: number, widthPct = 100):
     `<rect x="0" y="0" width="${w}" height="100" fill="${color}" fill-opacity="${o}"/>` +
     `</svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+}
+
+/**
+ * The band-2 + band-3 decoration-type pool. Created once per theme kind and
+ * rebuilt only on a dark↔light flip. All types use ClosedClosed range behaviour
+ * so a mark doesn't grow while typing at its edge (prevents smear).
+ *
+ *   id[0..5]      — fn-local tints, normal weight (foreground colour)
+ *   idg[0..5]     — out-of-fn tints, bold
+ *   self          — this/self gold, bold
+ *   riskAsync     — await/async cyan
+ *   riskDanger    — as/any, bold
+ *   riskEscape    — dashed underline (colour in the CSS so it composes over a tint)
+ *   numberEngaged — clay numeric literals
+ */
+export interface DecorationPool {
+  id: vscode.TextEditorDecorationType[];
+  idg: vscode.TextEditorDecorationType[];
+  self: vscode.TextEditorDecorationType;
+  riskAsync: vscode.TextEditorDecorationType;
+  riskDanger: vscode.TextEditorDecorationType;
+  riskEscape: vscode.TextEditorDecorationType;
+  numberEngaged: vscode.TextEditorDecorationType;
+  /** Every type in the pool, for bulk clear/dispose. */
+  all(): vscode.TextEditorDecorationType[];
+}
+
+export function buildDecorationPool(isDark: boolean): DecorationPool {
+  const closed = vscode.DecorationRangeBehavior.ClosedClosed;
+  const colorType = (color: string, bold: boolean): vscode.TextEditorDecorationType =>
+    vscode.window.createTextEditorDecorationType({
+      color,
+      fontWeight: bold ? 'bold' : 'normal',
+      rangeBehavior: closed,
+    });
+
+  const id = TOKENS.id.map((p) => colorType(pick(p, isDark), false));
+  const idg = TOKENS.idg.map((p) => colorType(pick(p, isDark), true));
+  const self = colorType(pick(TOKENS.idSelf, isDark), true);
+  const riskAsync = colorType(pick(TOKENS.riskAsync, isDark), false);
+  const riskDanger = colorType(pick(TOKENS.riskDanger, isDark), true);
+  const riskEscape = vscode.window.createTextEditorDecorationType({
+    textDecoration: `underline dashed ${pick(TOKENS.riskEscape, isDark)}`,
+    rangeBehavior: closed,
+  });
+  const numberEngaged = colorType(pick(TOKENS.numberEngaged, isDark), false);
+
+  return {
+    id,
+    idg,
+    self,
+    riskAsync,
+    riskDanger,
+    riskEscape,
+    numberEngaged,
+    all(): vscode.TextEditorDecorationType[] {
+      return [...id, ...idg, self, riskAsync, riskDanger, riskEscape, numberEngaged];
+    },
+  };
 }
