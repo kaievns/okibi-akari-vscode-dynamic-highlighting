@@ -39,6 +39,8 @@ export interface BlockNames {
   focusKey: string;
   /** Classified data identities used in that block. */
   byName: Map<string, NameInfo>;
+  /** True for the synthetic module top-level scope (relaxes the ≥2-use gate). */
+  isTopLevel?: boolean;
 }
 
 export interface ScopeColoring {
@@ -66,15 +68,34 @@ function priorityRank(a: [string, NameInfo], b: [string, NameInfo]): number {
   );
 }
 
-/** Names eligible for a hue at all: data identities, excluding self. */
-function eligible(byName: Map<string, NameInfo>): [string, NameInfo][] {
+/**
+ * Names eligible for a hue at all: data identities, excluding self.
+ *
+ * `isTopLevel` relaxes the ≥2-use gate. That gate exists so dense nested blocks
+ * stay calm, but a module-level `const`/`var` is typically declared once at the
+ * top and *used further down inside functions* — the exact case the reader wants
+ * traced. Counting only its uses within the top-level scope would hide it.
+ */
+function eligible(byName: Map<string, NameInfo>, isTopLevel = false): [string, NameInfo][] {
   const out: [string, NameInfo][] = [];
   for (const entry of byName) {
     const info = entry[1];
     if (info.cls === 'self') {
       continue; // band 1 paints this/self; never consumes a hue
     }
-    if (info.cls === 'block' && info.freqInBlock < 2) {
+    // A name owned by a NESTED sub-scope is not this block's data. Focus shows
+    // the scope you are in; a child scope's internals belong to that scope's own
+    // view. Ranking them last was not enough — with spare budget they still
+    // painted, so focusing a function body lit up closure locals (`func(i, j int)`)
+    // that mean nothing at this level. They become visible when the caret enters
+    // the sub-scope, where they are proximity 0.
+    if (info.proximity === 2) {
+      continue;
+    }
+    // Own declarations at module top level (proximity 0) are exempt from the
+    // use-count floor; everything else keeps it.
+    const exempt = isTopLevel && info.proximity === 0;
+    if (!exempt && info.cls === 'block' && info.freqInBlock < 2) {
       continue; // spec: once-used block-locals stay neutral so dense blocks stay calm
     }
     out.push(entry);
@@ -85,8 +106,12 @@ function eligible(byName: Map<string, NameInfo>): [string, NameInfo][] {
 /**
  * PASS 1 — the visible set for one block: top-K by attention priority.
  */
-export function visibleInBlock(byName: Map<string, NameInfo>, paletteSize: number): string[] {
-  return eligible(byName)
+export function visibleInBlock(
+  byName: Map<string, NameInfo>,
+  paletteSize: number,
+  isTopLevel = false,
+): string[] {
+  return eligible(byName, isTopLevel)
     .sort(priorityRank)
     .slice(0, paletteSize)
     .map((e) => e[0]);
@@ -116,7 +141,7 @@ export function colorScope(blocks: BlockNames[], paletteSize: number): ScopeColo
   };
 
   for (const block of blocks) {
-    const names = visibleInBlock(block.byName, paletteSize);
+    const names = visibleInBlock(block.byName, paletteSize, block.isTopLevel === true);
     visible.set(block.focusKey, names);
     for (const n of names) {
       touch(n);

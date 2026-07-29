@@ -103,6 +103,12 @@ export interface Classification {
   colorScopeFn: OffsetRange | undefined;
   /** The INNERMOST enclosing function, used for block/fn/out classification and traces. */
   enclosingFn: OffsetRange | undefined;
+  /**
+   * Function ranges that REDECLARE each name (see FileIndex.shadowScopes). The
+   * trace layer subtracts the ones that are not the focused identity's own scope,
+   * so a global `cfgs` does not tint a same-named parameter in another function.
+   */
+  shadowScopes: Map<string, OffsetRange[]>;
   source: ClassSource;
 }
 
@@ -128,6 +134,101 @@ export interface FileIndex {
   firstFileOffset: Map<string, number>;
   /** Names whose every declaration is outside any function → true globals, file order. */
   fileGlobalsInOrder: string[];
+  /**
+   * Per name, the function ranges that DECLARE it — i.e. the regions where that
+   * name is bound to a different identity than an outer one.
+   *
+   * Shadowing is the reason this exists. Occurrences are keyed by name, so a
+   * module-level `const cfgs` and a `function summarize(cfgs)` parameter were one
+   * identity sharing one hue — the highlighting asserted a data-flow link that
+   * does not exist, which is the exact bug class shadowing causes in the first
+   * place. `shadowedRanges` lets the trace layer subtract the inner binding's
+   * region from an outer name's trace. See traces.ts.
+   */
+  shadowScopes: Map<string, OffsetRange[]>;
+}
+
+/**
+ * For each name, the function ranges containing one of its declarations.
+ *
+ * Only the NARROWEST declaring range per declaration is kept: if `summarize`
+ * declares `cfgs` and an inner closure does not, the closure is already covered
+ * by `summarize`'s range.
+ */
+function computeShadowScopes(
+  declOffsets: Map<string, number[]>,
+  fnRanges: OffsetRange[],
+): Map<string, OffsetRange[]> {
+  const out = new Map<string, OffsetRange[]>();
+  for (const [name, offsets] of declOffsets) {
+    const scopes: OffsetRange[] = [];
+    for (const o of offsets) {
+      const fn = enclosingFnOf(fnRanges, o);
+      if (fn && !scopes.some((s) => s.start === fn.start && s.end === fn.end)) {
+        scopes.push(fn);
+      }
+    }
+    if (scopes.length > 0) {
+      out.set(name, scopes);
+    }
+  }
+  return out;
+}
+
+/**
+ * Offset ranges of TYPE DECLARATIONS — `type X = …`, `interface X { … }`.
+ *
+ * Parameter names inside a type signature are pure documentation: they name
+ * nothing at runtime and hold no data.
+ *
+ *   type Reducer<T> = (acc: T, item: Job) => T;     // TS
+ *   type Handler func(ctx *Context, in []byte)      // Go
+ *
+ * Both servers report those as `parameter [declaration]`, identical to a real
+ * one. Because a type alias is not a function range, they classified as
+ * top-level globals and then traced FILE-WIDE — so the `acc` on the type alias
+ * gave every unrelated `acc` in the file a global's hue.
+ *
+ * Detection is lexical (one linear scan, no parser): from a line-initial `type`
+ * or `interface` keyword to the end of its declaration — the matching close of
+ * the first bracket if one opens before the line ends, else end of line. Go's
+ * `type ( … )` grouped block is covered by the bracket case.
+ */
+function typeDeclRanges(text: string): OffsetRange[] {
+  const ranges: OffsetRange[] = [];
+  const re = /(^|\n)[ \t]*(?:export[ \t]+)?(?:declare[ \t]+)?(type|interface)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const start = m.index + m[1].length;
+    const lineEnd = text.indexOf('\n', start) === -1 ? text.length : text.indexOf('\n', start);
+    // Does a bracket open on this line? If so the declaration runs to its match.
+    let end = lineEnd;
+    let open = -1;
+    for (let i = start; i < lineEnd; i++) {
+      if (text[i] === '{' || text[i] === '(') {
+        open = i;
+        break;
+      }
+    }
+    if (open !== -1) {
+      const closer = text[open] === '{' ? '}' : ')';
+      let depth = 0;
+      for (let i = open; i < text.length; i++) {
+        if (text[i] === text[open]) {
+          depth++;
+        } else if (text[i] === closer) {
+          depth--;
+          if (depth === 0) {
+            end = i + 1;
+            break;
+          }
+        }
+      }
+    }
+    ranges.push({ start, end });
+    re.lastIndex = end; // skip past — no nested type decls to find inside
+  }
+  return ranges;
 }
 
 /**
@@ -142,8 +243,22 @@ export function buildFileIndex(
   const occurrences = new Map<string, OffsetRange[]>();
   const declOffsets = new Map<string, number[]>();
   const firstFileOffset = new Map<string, number>();
+  // Type declarations, in offset order. Tokens are too — the LSP wire format is
+  // DELTA-encoded (Δline, Δchar, …), so ascending offset is guaranteed by the
+  // protocol, not by luck. That lets a single advancing cursor decide containment
+  // in O(tokens + ranges) instead of a `.some()` scan per token, which cost ~5ms
+  // on a 100KB file.
+  const typeDecls = typeDeclRanges(text);
+  let td = 0;
 
   for (const tok of tokens) {
+    // Parameter names in a type signature are documentation, not data.
+    while (td < typeDecls.length && typeDecls[td].end <= tok.offset) {
+      td++;
+    }
+    if (td < typeDecls.length && tok.offset >= typeDecls[td].start) {
+      continue;
+    }
     // Data identities are variable/parameter. `property` is normally band-1, but
     // object-shorthand (`{ name }`) is a real read of a binding and tints like it.
     const tintable =
@@ -201,7 +316,8 @@ export function buildFileIndex(
   }
 
   const fileGlobalsInOrder = computeFileGlobals(occurrences, declOffsets, fnRanges);
-  return { occurrences, declOffsets, firstFileOffset, fileGlobalsInOrder };
+  const shadowScopes = computeShadowScopes(declOffsets, fnRanges);
+  return { occurrences, declOffsets, firstFileOffset, fileGlobalsInOrder, shadowScopes };
 }
 
 /**
@@ -552,10 +668,22 @@ export function classifyFromSemantic(
   // File-wide index, computed once per document version. Built on demand when
   // absent (keeps the pure signature usable standalone in tests).
   fileIndex: FileIndex = buildFileIndex(text, tokens, fnRanges),
+  // Regions carved OUT of `block`. For the synthetic top-level scope (whole
+  // file) these are the nested brace-blocks, so function-local names do not leak
+  // into the top-level view.
+  excludeRanges: OffsetRange[] = [],
 ): Classification {
   const { occurrences, declOffsets, firstFileOffset } = fileIndex;
 
   const byName = new Map<string, NameInfo>();
+
+  // `excludeRanges` carves regions OUT of the block. Used for the synthetic
+  // module top-level scope, whose range is the whole file: without carving out
+  // the nested blocks, every local in every function would count as "used at
+  // top level" and leak into the top-level view. With them carved out, the
+  // top-level scope sees only genuinely top-level code.
+  const inExcluded = (offset: number): boolean =>
+    excludeRanges.some((r) => offset >= r.start && offset < r.end);
 
   // A name only counts as used-in-this-block if it has a TINTABLE occurrence
   // inside it. Lexing alone is not enough: `c.Name` is a field access (rejected
@@ -565,7 +693,7 @@ export function classifyFromSemantic(
   const tintableInBlock = new Set<string>();
   for (const [name, ranges] of occurrences) {
     for (const r of ranges) {
-      if (r.start >= block.start && r.end <= block.end) {
+      if (r.start >= block.start && r.end <= block.end && !inExcluded(r.start)) {
         tintableInBlock.add(name);
         break;
       }
@@ -577,6 +705,9 @@ export function classifyFromSemantic(
   const blockIds = lexIdentifiers(text, block.start, block.end);
   const blockAgg = new Map<string, { freq: number; first: number }>();
   for (const id of blockIds) {
+    if (inExcluded(id.offset)) {
+      continue;
+    }
     const agg = blockAgg.get(id.name);
     if (agg) {
       agg.freq++;
@@ -641,6 +772,18 @@ export function classifyFromSemantic(
     if (cls === 'block') {
       const declInSub = decls.some((o) => subBlocks.some((sb) => inRange(o, sb)));
       proximity = declInSub ? 2 : 0;
+    } else if (cls === 'fn') {
+      // A PARAMETER of the focused function is that function's own data, not
+      // something borrowed from an outer scope. Its declaration sits in the
+      // block's header — inside `block` (header-inclusive) but outside
+      // `declRegion` (body-only for functions, so params stay fn-scoped and trace
+      // across nested closures). Leaving it at proximity 1 let nested sub-scope
+      // locals fill the budget ahead of it, so focusing a function body showed
+      // closure internals while the function's own argument stayed neutral.
+      const declInOwnHeader = decls.some((o) => inRange(o, block) && !inRange(o, declRegion));
+      if (declInOwnHeader) {
+        proximity = 0;
+      }
     }
 
     byName.set(name, {
@@ -673,6 +816,7 @@ export function classifyFromSemantic(
     fnGlobals,
     colorScopeFn,
     enclosingFn,
+    shadowScopes: fileIndex.shadowScopes,
     source: 'lsp',
   };
 }
@@ -823,6 +967,7 @@ export function classifyFromHeuristic(
     fnGlobals,
     colorScopeFn,
     enclosingFn,
+    shadowScopes: computeShadowScopes(declOffsets, fnRanges),
     source: 'heuristic',
   };
 }

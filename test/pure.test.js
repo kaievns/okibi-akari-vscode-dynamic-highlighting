@@ -87,19 +87,23 @@ test('lexIdentifiers: skips strings/comments, keeps $ and _ names, correct offse
   assert.equal(text.slice(first.offset, first.offset + first.length), '_a$');
 });
 
-test('lexRegionFor: ALWAYS header-inclusive, so closure params are visible in their own scope', () => {
+test('lexRegionFor: includes a function PARAMETER LIST, so closure params are visible in their own scope', () => {
   // The bug: `go func(cfg Config) {` — `cfg` lives on the header line, before
   // the `{`. With a body-only lex region it was invisible inside its own
   // closure, and only tinted from the PARENT block (whose range covers the
-  // header line). lexRegionFor must include the header for EVERY block kind.
+  // header line).
   const fn = 'x\ngo func(cfg Config) {\n  use(cfg)\n}';
   const fnBlock = focus.scanBraceBlocks(fn)[0];
   const lexR = focus.lexRegionFor(fn, fnBlock);
-  assert.equal(lexR.start, fnBlock.headerStart, 'function header IS in the lex region');
-  assert.ok(lexR.start < fnBlock.openOffset);
-  // the param name actually falls inside it
+  assert.ok(lexR.start < fnBlock.openOffset, 'reaches back before the brace');
+  // What matters is that the param name falls inside it — not the exact offset.
   const cfgAt = fn.indexOf('cfg');
   assert.ok(cfgAt >= lexR.start && cfgAt < lexR.end, 'param offset inside lex region');
+  // ...but NOT the whole header line: an inline callback's header carries a
+  // declaration owned by the ENCLOSING scope, and lexing it counted that name as
+  // used inside the callback. See the `const jobs = names.map(...)` test below.
+  const declAt = fn.indexOf('go');
+  assert.ok(declAt < lexR.start, 'text before the parameter list is excluded');
   // but classification still treats it as fn-local (body-only decl region)
   const declR = focus.declRegionFor(fn, fnBlock);
   assert.equal(declR.start, fnBlock.openOffset, 'decl region stays body-only for functions');
@@ -666,6 +670,52 @@ test('computeTraceRanges: block-local clipped to block, global file-wide', () =>
   const gT = targets.find((t) => t.name === 'g');
   assert.equal(bT.ranges.length, 1); // clipped to block, only in-block occurrence
   assert.equal(gT.ranges.length, 2); // global → file-wide, both occurrences
+});
+
+test('computeTraceRanges: a global does NOT tint a same-named param in another fn', () => {
+  // `const cfgs = [...]` at module level, plus `function summarize(cfgs)`. Those
+  // are two identities; painting both one hue asserts a data flow that does not
+  // exist, and visually merges exactly what shadowing already makes confusable.
+  const block = { start: 200, end: 260 };
+  const summarize = { start: 40, end: 120 };
+  const classification = {
+    docVersion: 1,
+    focusKey: 'k',
+    byName: new Map([['cfgs', nameInfo('out', { file: 210 })]]),
+    occurrences: new Map([
+      ['cfgs', [
+        { start: 50, end: 54 },   // summarize's PARAMETER — shadowed, must be dropped
+        { start: 70, end: 74 },   // its use inside summarize — also dropped
+        { start: 210, end: 214 }, // the global declaration
+        { start: 240, end: 244 }, // a global read
+      ]],
+    ]),
+    fileGlobalsInOrder: ['cfgs'],
+    enclosingFn: undefined, // caret at module top level
+    shadowScopes: new Map([['cfgs', [summarize]]]),
+    source: 'lsp',
+  };
+  const plan = new Map([['cfgs', { kind: 'idg', poolIndex: 0 }]]);
+  const t = traces.computeTraceRanges(classification, plan, block)[0];
+  assert.deepEqual(t.ranges.map((r) => r.start), [210, 240], 'only the global identity tints');
+});
+
+test('computeTraceRanges: a name declared in ONE fn still traces its whole own scope', () => {
+  // The shadow subtraction must not eat the identity's own declaring scope.
+  const fn = { start: 40, end: 120 };
+  const classification = {
+    docVersion: 1,
+    focusKey: 'k',
+    byName: new Map([['p', nameInfo('fn', { file: 50 })]]),
+    occurrences: new Map([['p', [{ start: 50, end: 51 }, { start: 70, end: 71 }]]]),
+    fileGlobalsInOrder: [],
+    enclosingFn: fn,
+    shadowScopes: new Map([['p', [fn]]]),
+    source: 'lsp',
+  };
+  const plan = new Map([['p', { kind: 'id', poolIndex: 0 }]]);
+  const t = traces.computeTraceRanges(classification, plan, { start: 40, end: 120 })[0];
+  assert.equal(t.ranges.length, 2, 'own scope is not subtracted from itself');
 });
 
 test('computeTraceRanges: neutral plan entries produce no ranges', () => {

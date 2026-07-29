@@ -92,7 +92,7 @@ test('colorScope: names co-visible in ANY block never share a hue', () => {
   }
 });
 
-test('visibleInBlock: attention priority — own locals, then borrowed, then nested', () => {
+test('visibleInBlock: own locals first, then borrowed; nested sub-scopes excluded', () => {
   const byName = new Map([
     ['nested', info('block', { proximity: 2, freq: 9 })], // nested scope, high freq
     ['borrowed', info('fn', { proximity: 1, freq: 3 })],
@@ -100,8 +100,13 @@ test('visibleInBlock: attention priority — own locals, then borrowed, then nes
     ['own2', info('block', { proximity: 0, freq: 5, block: 2 })],
   ]);
   const vis = sc.visibleInBlock(byName, 5);
-  // own locals first (higher freq first within the tier), then borrowed, then nested
-  assert.deepEqual(vis, ['own2', 'own1', 'borrowed', 'nested']);
+  // Own locals first (higher freq first within the tier), then borrowed. A name
+  // owned by a NESTED sub-scope is not this block's data at all: ranking it last
+  // was not enough, because spare budget still painted it — so focusing a function
+  // body lit up closure internals that mean nothing at that level. It becomes
+  // visible when the caret enters the sub-scope, where it is proximity 0.
+  assert.deepEqual(vis, ['own2', 'own1', 'borrowed']);
+  assert.ok(!vis.includes('nested'), 'excluded outright, even with the highest freq');
 });
 
 test('visibleInBlock: budget caps at K, and once-used block-locals are excluded', () => {
@@ -125,6 +130,46 @@ test('visibleInBlock: self never consumes a hue slot', () => {
   const vis = sc.visibleInBlock(byName, 5);
   assert.ok(!vis.includes('this'), 'self excluded — band 1 paints it');
   assert.ok(vis.includes('x'));
+});
+
+test('topLevelBlock: module top level is a focusable scope, not Survey', () => {
+  const focus = require('../out/focus');
+  const text = 'const A = 1;\nconst B = 2;\nfunction f() {\n  return A;\n}';
+  const blocks = focus.scanBraceBlocks(text);
+  // caret on line 0 (a top-level const) is outside every brace-block
+  assert.equal(focus.innermostBlock(blocks, 0, 3), null, 'without text: null (old behaviour)');
+  const tl = focus.innermostBlock(blocks, 0, 3, text);
+  assert.ok(tl, 'with text: resolves to the synthetic top-level scope');
+  assert.ok(focus.isTopLevelBlock(tl), 'flagged as top level');
+  assert.equal(tl.depth, -1, 'depth -1 so it never beats a real block');
+  // a caret inside the function still gets the real block, not top level
+  const inFn = focus.innermostBlock(blocks, 3, text.indexOf('return A') + 2, text);
+  assert.ok(!focus.isTopLevelBlock(inFn), 'real blocks still win');
+});
+
+test('visibleInBlock: top-level own declarations are exempt from the >=2-use gate', () => {
+  // A module-level const is declared once at the top and used further down
+  // INSIDE functions, so counting only its top-level uses would hide it.
+  const byName = new Map([
+    ['ONCE', info('block', { freq: 1, proximity: 0 })],
+    ['nested', info('block', { freq: 5, proximity: 2 })],
+  ]);
+  assert.ok(!sc.visibleInBlock(byName, 5, false).includes('ONCE'), 'gate applies in a normal block');
+  assert.ok(sc.visibleInBlock(byName, 5, true).includes('ONCE'), 'exempt at top level');
+  // the exemption is scoped to proximity 0 — nested names keep the gate
+  const nestedOnce = new Map([['x', info('block', { freq: 1, proximity: 2 })]]);
+  assert.ok(!sc.visibleInBlock(nestedOnce, 5, true).includes('x'), 'nested once-used still gated');
+});
+
+test('colorScope: top-level flag flows through BlockNames', () => {
+  const blocks = [{
+    focusKey: '0#-1',
+    isTopLevel: true,
+    byName: new Map([['CONST_A', info('block', { freq: 1, proximity: 0 })]]),
+  }];
+  const { visible, hue } = sc.colorScope(blocks, 5);
+  assert.deepEqual(visible.get('0#-1'), ['CONST_A']);
+  assert.equal(hue.get('CONST_A'), 0, 'gets a hue despite a single top-level use');
 });
 
 test('colorScope: over-constrained vertex goes neutral, never recycles a visible hue', () => {

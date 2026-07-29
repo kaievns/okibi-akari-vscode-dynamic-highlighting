@@ -1,26 +1,64 @@
 /*⇒63,comment,[]*/// Sample Go file for exercising the Okibi dynamic focus layer.
 /*⇒75,comment,[]*/// Move the caret into different { } blocks and watch the ember bar + fill.
 /*⇒71,comment,[]*/// Type to flip Survey 構 → Focus 流 → Edit 異 (status bar, bottom-right).
+/*⇒2,comment,[]*///
+/*⇒20,comment,[]*/// What to look for:
+/*⇒79,comment,[]*///   Focus 流 — data identities tint (locals, params, receivers). Struct FIELDS,
+/*⇒64,comment,[]*///     type names, funcs/methods, and package names stay band-1.
+/*⇒73,comment,[]*///   Edit 異 — start typing: numbers go clay, escaping writes get a dashed
+/*⇒50,comment,[]*///     underline; relaxes back to Focus after ~2s.
+/*⇒80,comment,[]*///   Identity stability — a variable keeps ONE hue across every sub-block of its
+/*⇒36,comment,[]*///     function, including closures.
 
 /*⇒7,keyword,[]*/package /*⇒4,namespace,[]*/main
 
 /*⇒6,keyword,[]*/import (
+	"errors"/*⇐6,namespace,[]*/
 	"fmt"/*⇐3,namespace,[]*/
+	"sort"/*⇐4,namespace,[]*/
 	"strings"/*⇐7,namespace,[]*/
+	"sync"/*⇐4,namespace,[]*/
 )
+
+/*⇒78,comment,[]*/// ── types (names + fields are band-1, not data) ────────────────────────────
 
 /*⇒65,comment,[]*/// Config is a plain struct — its brace-block is one focus scope.
 /*⇒4,keyword,[]*/type /*⇒6,type,[definition struct]*/Config /*⇒6,keyword,[]*/struct {
 	/*⇒4,property,[definition string]*/Name    /*⇒6,type,[defaultLibrary string]*/string
 	/*⇒7,property,[definition number]*/Retries /*⇒3,type,[defaultLibrary number]*/int
 	/*⇒4,property,[definition map]*/Tags    /*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒6,type,[defaultLibrary string]*/string
+	/*⇒7,property,[definition number]*/timeout /*⇒3,type,[defaultLibrary number]*/int /*⇒19,comment,[]*/// unexported field
 }
+
+/*⇒42,comment,[]*/// Status is an enum-ish set of constants.
+/*⇒4,keyword,[]*/type /*⇒6,type,[definition number]*/Status /*⇒3,type,[defaultLibrary number]*/int
+
+/*⇒5,keyword,[]*/const (
+	/*⇒13,variable,[definition readonly number]*/StatusPending /*⇒6,type,[number]*/Status = /*⇒4,variable,[readonly defaultLibrary number]*/iota
+	/*⇒12,variable,[definition readonly number]*/StatusActive
+	/*⇒12,variable,[definition readonly number]*/StatusClosed
+)
+
+/*⇒55,comment,[]*/// Handler is a function type — a transformer identity.
+/*⇒4,keyword,[]*/type /*⇒7,type,[definition signature]*/Handler /*⇒4,keyword,[]*/func(/*⇒3,parameter,[definition pointer]*/ctx /*⇒1,operator,[]*/*/*⇒7,type,[struct]*/Context, /*⇒2,parameter,[definition slice]*/in []/*⇒4,type,[defaultLibrary number]*/byte) ([]/*⇒4,type,[defaultLibrary number]*/byte, /*⇒5,type,[defaultLibrary interface]*/error)
+
+/*⇒56,comment,[]*/// Context threads request-scoped data through handlers.
+/*⇒4,keyword,[]*/type /*⇒7,type,[definition struct]*/Context /*⇒6,keyword,[]*/struct {
+	/*⇒8,property,[definition number]*/Deadline /*⇒5,type,[defaultLibrary number]*/int64
+	/*⇒6,property,[definition map]*/values   /*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒3,type,[defaultLibrary interface]*/any
+	/*⇒2,property,[definition struct]*/mu       /*⇒4,namespace,[]*/sync./*⇒5,type,[struct]*/Mutex
+}
+
+/*⇒3,keyword,[]*/var /*⇒11,variable,[definition static interface]*/ErrNotFound = /*⇒6,namespace,[]*/errors./*⇒3,function,[signature]*/New(/*⇒11,string,[]*/"not found")
+
+/*⇒78,comment,[]*/// ── free functions ─────────────────────────────────────────────────────────
 
 /*⇒4,keyword,[]*/func /*⇒10,function,[definition signature]*/loadConfig(/*⇒4,parameter,[definition string]*/name /*⇒6,type,[defaultLibrary string]*/string) /*⇒6,type,[struct]*/Config {
 	/*⇒3,variable,[definition struct]*/cfg /*⇒2,operator,[]*/:= /*⇒6,type,[struct]*/Config{
 		/*⇒4,property,[string]*/Name:    /*⇒4,parameter,[string]*/name,
 		/*⇒7,property,[number]*/Retries: /*⇒1,number,[]*/3,
 		/*⇒4,property,[map]*/Tags:    /*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒6,type,[defaultLibrary string]*/string{/*⇒5,string,[]*/"env": /*⇒5,string,[]*/"dev"},
+		/*⇒7,property,[number]*/timeout: /*⇒2,number,[]*/30,
 	}
 
 	/*⇒69,comment,[]*/// A brace in a string literal must NOT open a block: "}{ not real {"
@@ -29,29 +67,132 @@
 
 	/*⇒2,keyword,[]*/if /*⇒3,variable,[struct]*/cfg./*⇒7,property,[number]*/Retries /*⇒1,operator,[]*/> /*⇒1,number,[]*/0 {
 		/*⇒3,keyword,[]*/for /*⇒1,variable,[definition number]*/i /*⇒2,operator,[]*/:= /*⇒1,number,[]*/0; /*⇒1,variable,[number]*/i /*⇒1,operator,[]*/< /*⇒3,variable,[struct]*/cfg./*⇒7,property,[number]*/Retries; /*⇒1,variable,[number]*/i/*⇒2,operator,[]*/++ {
-			/*⇒56,comment,[]*/// deepest block — caret here should focus THIS for-body
-			/*⇒3,namespace,[]*/fmt./*⇒6,function,[signature]*/Printf(/*⇒9,string,[]*/"attempt /*⇒2,string,[format]*/%d/*⇒5,string,[]*/ for /*⇒2,string,[format]*/%s/*⇒3,string,[]*/\n", /*⇒1,variable,[number]*/i, /*⇒3,variable,[struct]*/cfg./*⇒4,property,[string]*/Name)
+			/*⇒57,comment,[]*/// deepest block — caret here should focus THIS for-body.
+			/*⇒51,comment,[]*/// cfg + i are borrowed-in data; keep one hue each.
+			/*⇒7,variable,[definition number]*/backoff /*⇒2,operator,[]*/:= /*⇒1,number,[]*/1 /*⇒2,operator,[]*/<< /*⇒4,type,[defaultLibrary number]*/uint(/*⇒1,variable,[number]*/i)
+			/*⇒3,namespace,[]*/fmt./*⇒6,function,[signature]*/Printf(/*⇒9,string,[]*/"attempt /*⇒2,string,[format]*/%d/*⇒5,string,[]*/ for /*⇒2,string,[format]*/%s/*⇒10,string,[]*/ (backoff=/*⇒2,string,[format]*/%d/*⇒6,string,[]*/ms)\n", /*⇒1,variable,[number]*/i, /*⇒3,variable,[struct]*/cfg./*⇒4,property,[string]*/Name, /*⇒7,variable,[number]*/backoff)
 		}
 	}
 
 	/*⇒6,keyword,[]*/return /*⇒3,variable,[struct]*/cfg
 }
 
+/*⇒76,comment,[]*/// summarize shows closures: c and acc keep stable hues across .Sort/append.
 /*⇒4,keyword,[]*/func /*⇒9,function,[definition signature]*/summarize(/*⇒4,parameter,[definition slice]*/cfgs []/*⇒6,type,[struct]*/Config) /*⇒6,type,[defaultLibrary string]*/string {
 	/*⇒3,keyword,[]*/var /*⇒1,variable,[definition struct]*/b /*⇒7,namespace,[]*/strings./*⇒7,type,[struct]*/Builder
+	/*⇒5,variable,[definition slice]*/names /*⇒2,operator,[]*/:= /*⇒4,function,[defaultLibrary]*/make([]/*⇒6,type,[defaultLibrary string]*/string, /*⇒1,number,[]*/0, /*⇒3,function,[defaultLibrary]*/len(/*⇒4,parameter,[slice]*/cfgs))
+
 	/*⇒3,keyword,[]*/for /*⇒1,variable,[definition number]*/_, /*⇒1,variable,[definition struct]*/c := /*⇒5,keyword,[]*/range /*⇒4,parameter,[slice]*/cfgs {
 		/*⇒2,keyword,[]*/if /*⇒1,variable,[struct]*/c./*⇒4,property,[string]*/Name /*⇒2,operator,[]*/== /*⇒2,string,[]*/"" {
 			/*⇒8,keyword,[]*/continue
 		}
-		/*⇒1,variable,[struct]*/b./*⇒11,method,[signature]*/WriteString(/*⇒3,namespace,[]*/fmt./*⇒7,function,[signature]*/Sprintf(/*⇒1,string,[]*/"/*⇒2,string,[format]*/%s/*⇒2,string,[]*/ x/*⇒2,string,[format]*/%d/*⇒3,string,[]*/; ", /*⇒1,variable,[struct]*/c./*⇒4,property,[string]*/Name, /*⇒1,variable,[struct]*/c./*⇒7,property,[number]*/Retries))
+		/*⇒5,variable,[slice]*/names /*⇒1,operator,[]*/= /*⇒6,function,[defaultLibrary]*/append(/*⇒5,variable,[slice]*/names, /*⇒1,variable,[struct]*/c./*⇒4,property,[string]*/Name)
+	}
+
+	/*⇒5,variable,[definition map]*/stuff /*⇒2,operator,[]*/:= /*⇒4,function,[defaultLibrary]*/make(/*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒6,type,[defaultLibrary string]*/string)
+
+	/*⇒2,keyword,[]*/if /*⇒1,variable,[definition string]*/_, /*⇒2,variable,[definition bool]*/ok /*⇒2,operator,[]*/:= /*⇒5,variable,[map]*/stuff[/*⇒6,string,[]*/"blah"]; /*⇒1,operator,[]*/!/*⇒2,variable,[bool]*/ok {
+		/*⇒6,keyword,[]*/return /*⇒11,variable,[static interface]*/ErrNotFound./*⇒5,method,[defaultLibrary signature]*/Error()
+	}
+
+	/*⇒4,namespace,[]*/sort./*⇒5,function,[signature]*/Slice(/*⇒5,variable,[slice]*/names, /*⇒4,keyword,[]*/func(/*⇒1,parameter,[definition number]*/i, /*⇒1,parameter,[definition number]*/j /*⇒3,type,[defaultLibrary number]*/int) /*⇒4,type,[defaultLibrary bool]*/bool {
+		/*⇒6,keyword,[]*/return /*⇒5,variable,[slice]*/names[/*⇒1,parameter,[number]*/i] /*⇒1,operator,[]*/< /*⇒5,variable,[slice]*/names[/*⇒1,parameter,[number]*/j]
+	})
+
+	/*⇒3,keyword,[]*/for /*⇒3,variable,[definition number]*/idx, /*⇒1,variable,[definition string]*/n := /*⇒5,keyword,[]*/range /*⇒5,variable,[slice]*/names {
+		/*⇒1,variable,[struct]*/b./*⇒11,method,[signature]*/WriteString(/*⇒3,namespace,[]*/fmt./*⇒7,function,[signature]*/Sprintf(/*⇒1,string,[]*/"/*⇒2,string,[format]*/%d/*⇒1,string,[]*/:/*⇒2,string,[format]*/%s/*⇒2,string,[]*/ x/*⇒2,string,[format]*/%d/*⇒3,string,[]*/; ", /*⇒3,variable,[number]*/idx, /*⇒1,variable,[string]*/n, /*⇒3,function,[defaultLibrary]*/len(/*⇒1,variable,[string]*/n)))
 	}
 	/*⇒6,keyword,[]*/return /*⇒1,variable,[struct]*/b./*⇒6,method,[signature]*/String()
+}
+
+/*⇒79,comment,[]*/// ── methods (receivers ARE data; method names are band-1) ───────────────────
+
+/*⇒4,keyword,[]*/func (/*⇒1,parameter,[definition pointer]*/c /*⇒1,operator,[]*/*/*⇒7,type,[struct]*/Context) /*⇒3,method,[definition signature]*/Set(/*⇒3,parameter,[definition string]*/key /*⇒6,type,[defaultLibrary string]*/string, /*⇒5,parameter,[definition interface]*/value /*⇒3,type,[defaultLibrary interface]*/any) {
+	/*⇒1,parameter,[pointer]*/c./*⇒2,property,[struct]*/mu./*⇒4,method,[signature]*/Lock()
+	/*⇒5,keyword,[]*/defer /*⇒1,parameter,[pointer]*/c./*⇒2,property,[struct]*/mu./*⇒6,method,[signature]*/Unlock()
+	/*⇒2,keyword,[]*/if /*⇒1,parameter,[pointer]*/c./*⇒6,property,[map]*/values /*⇒2,operator,[]*/== /*⇒3,variable,[readonly defaultLibrary]*/nil {
+		/*⇒1,parameter,[pointer]*/c./*⇒6,property,[map]*/values /*⇒1,operator,[]*/= /*⇒4,function,[defaultLibrary]*/make(/*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒3,type,[defaultLibrary interface]*/any)
+	}
+	/*⇒1,parameter,[pointer]*/c./*⇒6,property,[map]*/values[/*⇒3,parameter,[string]*/key] /*⇒1,operator,[]*/= /*⇒5,parameter,[interface]*/value
+}
+
+/*⇒4,keyword,[]*/func (/*⇒1,parameter,[definition pointer]*/c /*⇒1,operator,[]*/*/*⇒7,type,[struct]*/Context) /*⇒3,method,[definition signature]*/Get(/*⇒3,parameter,[definition string]*/key /*⇒6,type,[defaultLibrary string]*/string) (/*⇒3,type,[defaultLibrary interface]*/any, /*⇒5,type,[defaultLibrary interface]*/error) {
+	/*⇒1,parameter,[pointer]*/c./*⇒2,property,[struct]*/mu./*⇒4,method,[signature]*/Lock()
+	/*⇒5,keyword,[]*/defer /*⇒1,parameter,[pointer]*/c./*⇒2,property,[struct]*/mu./*⇒6,method,[signature]*/Unlock()
+	/*⇒1,variable,[definition interface]*/v, /*⇒2,variable,[definition bool]*/ok /*⇒2,operator,[]*/:= /*⇒1,parameter,[pointer]*/c./*⇒6,property,[map]*/values[/*⇒3,parameter,[string]*/key]
+	/*⇒2,keyword,[]*/if /*⇒1,operator,[]*/!/*⇒2,variable,[bool]*/ok {
+		/*⇒6,keyword,[]*/return /*⇒3,variable,[readonly defaultLibrary]*/nil, /*⇒11,variable,[static interface]*/ErrNotFound
+	}
+	/*⇒6,keyword,[]*/return /*⇒1,variable,[interface]*/v, /*⇒3,variable,[readonly defaultLibrary]*/nil
+}
+
+/*⇒74,comment,[]*/// process demonstrates async (goroutine + channel), error handling, and a
+/*⇒63,comment,[]*/// mutation that escapes the block (writing the outer `total`).
+/*⇒4,keyword,[]*/func /*⇒7,function,[definition signature]*/process(/*⇒3,parameter,[definition pointer]*/ctx /*⇒1,operator,[]*/*/*⇒7,type,[struct]*/Context, /*⇒4,parameter,[definition slice]*/cfgs []/*⇒6,type,[struct]*/Config, /*⇒1,parameter,[definition signature]*/h /*⇒7,type,[signature]*/Handler) (/*⇒3,type,[defaultLibrary number]*/int, /*⇒5,type,[defaultLibrary interface]*/error) {
+	/*⇒5,variable,[definition number]*/total /*⇒2,operator,[]*/:= /*⇒1,number,[]*/0
+	/*⇒7,variable,[definition chan]*/results /*⇒2,operator,[]*/:= /*⇒4,function,[defaultLibrary]*/make(/*⇒4,keyword,[]*/chan /*⇒3,type,[defaultLibrary number]*/int, /*⇒3,function,[defaultLibrary]*/len(/*⇒4,parameter,[slice]*/cfgs))
+	/*⇒3,keyword,[]*/var /*⇒2,variable,[definition struct]*/wg /*⇒4,namespace,[]*/sync./*⇒9,type,[struct]*/WaitGroup
+
+	/*⇒3,keyword,[]*/for /*⇒1,variable,[definition number]*/_, /*⇒1,variable,[definition struct]*/c := /*⇒5,keyword,[]*/range /*⇒4,parameter,[slice]*/cfgs {
+		/*⇒2,variable,[struct]*/wg./*⇒3,method,[signature]*/Add(/*⇒1,number,[]*/1)
+		/*⇒2,keyword,[]*/go /*⇒4,keyword,[]*/func(/*⇒3,parameter,[definition struct]*/cfg /*⇒6,type,[struct]*/Config) {
+			/*⇒5,keyword,[]*/defer /*⇒2,variable,[struct]*/wg./*⇒4,method,[signature]*/Done()
+			/*⇒3,variable,[definition slice]*/out, /*⇒3,variable,[definition interface]*/err /*⇒2,operator,[]*/:= /*⇒1,parameter,[signature]*/h(/*⇒3,parameter,[pointer]*/ctx, []/*⇒4,type,[defaultLibrary number]*/byte(/*⇒3,parameter,[struct]*/cfg./*⇒4,property,[string]*/Name))
+			/*⇒2,keyword,[]*/if /*⇒3,variable,[interface]*/err /*⇒2,operator,[]*/!= /*⇒3,variable,[readonly defaultLibrary]*/nil {
+				/*⇒7,variable,[chan]*/results /*⇒2,operator,[]*/<- /*⇒1,number,[]*/0
+				/*⇒6,keyword,[]*/return
+			}
+
+			/*⇒6,keyword,[]*/switch /*⇒5,variable,[number]*/total {
+			/*⇒4,keyword,[]*/case /*⇒1,number,[]*/1:
+				/*⇒6,keyword,[]*/return
+			/*⇒7,keyword,[]*/default:
+				/*⇒6,keyword,[]*/return
+			}
+
+			/*⇒7,variable,[chan]*/results /*⇒2,operator,[]*/<- /*⇒3,function,[defaultLibrary]*/len(/*⇒3,variable,[slice]*/out)
+
+			/*⇒6,keyword,[]*/select {
+			/*⇒4,keyword,[]*/case /*⇒4,variable,[definition number]*/data /*⇒2,operator,[]*/:= /*⇒2,operator,[]*/<-/*⇒7,variable,[chan]*/results:
+				/*⇒2,keyword,[]*/if /*⇒4,variable,[number]*/data /*⇒2,operator,[]*/== /*⇒1,number,[]*/1 {
+					/*⇒5,keyword,[]*/break
+				}
+			}
+		}(/*⇒1,variable,[struct]*/c)
+	}
+
+	/*⇒2,keyword,[]*/go /*⇒4,keyword,[]*/func() {
+		/*⇒2,variable,[struct]*/wg./*⇒4,method,[signature]*/Wait()
+		/*⇒5,function,[defaultLibrary]*/close(/*⇒7,variable,[chan]*/results)
+	}()
+
+	/*⇒3,keyword,[]*/for /*⇒1,variable,[definition number]*/n := /*⇒5,keyword,[]*/range /*⇒7,variable,[chan]*/results {
+		/*⇒5,variable,[number]*/total /*⇒2,operator,[]*/+= /*⇒1,variable,[number]*/n /*⇒57,comment,[]*/// escapes the for-body — writes the function-level total
+	}
+
+	/*⇒2,keyword,[]*/if /*⇒5,variable,[number]*/total /*⇒2,operator,[]*/== /*⇒1,number,[]*/0 {
+		/*⇒6,keyword,[]*/return /*⇒1,number,[]*/0, /*⇒3,namespace,[]*/fmt./*⇒6,function,[signature]*/Errorf(/*⇒17,string,[]*/"no results from /*⇒2,string,[format]*/%d/*⇒10,string,[]*/ configs: /*⇒2,string,[format]*/%w/*⇒1,string,[]*/", /*⇒3,function,[defaultLibrary]*/len(/*⇒4,parameter,[slice]*/cfgs), /*⇒11,variable,[static interface]*/ErrNotFound)
+	}
+	/*⇒6,keyword,[]*/return /*⇒5,variable,[number]*/total, /*⇒3,variable,[readonly defaultLibrary]*/nil
 }
 
 /*⇒4,keyword,[]*/func /*⇒4,function,[definition signature]*/main() {
 	/*⇒4,variable,[definition slice]*/cfgs /*⇒2,operator,[]*/:= []/*⇒6,type,[struct]*/Config{
 		/*⇒10,function,[signature]*/loadConfig(/*⇒7,string,[]*/"alpha"),
 		/*⇒10,function,[signature]*/loadConfig(/*⇒6,string,[]*/"beta"),
+		/*⇒10,function,[signature]*/loadConfig(/*⇒7,string,[]*/"gamma"),
 	}
+
+	/*⇒4,variable,[definition signature]*/echo /*⇒2,operator,[]*/:= /*⇒4,keyword,[]*/func(/*⇒3,parameter,[definition pointer]*/ctx /*⇒1,operator,[]*/*/*⇒7,type,[struct]*/Context, /*⇒2,parameter,[definition slice]*/in []/*⇒4,type,[defaultLibrary number]*/byte) ([]/*⇒4,type,[defaultLibrary number]*/byte, /*⇒5,type,[defaultLibrary interface]*/error) {
+		/*⇒6,keyword,[]*/return /*⇒2,parameter,[slice]*/in, /*⇒3,variable,[readonly defaultLibrary]*/nil
+	}
+
+	/*⇒5,variable,[definition number]*/total, /*⇒3,variable,[definition interface]*/err /*⇒2,operator,[]*/:= /*⇒7,function,[signature]*/process(/*⇒1,operator,[]*/&/*⇒7,type,[struct]*/Context{/*⇒8,property,[number]*/Deadline: /*⇒4,number,[]*/1000}, /*⇒4,variable,[slice]*/cfgs, /*⇒4,variable,[signature]*/echo)
+	/*⇒2,keyword,[]*/if /*⇒3,variable,[interface]*/err /*⇒2,operator,[]*/!= /*⇒3,variable,[readonly defaultLibrary]*/nil {
+		/*⇒3,namespace,[]*/fmt./*⇒7,function,[signature]*/Println(/*⇒8,string,[]*/"error:", /*⇒3,variable,[interface]*/err)
+		/*⇒6,keyword,[]*/return
+	}
+
 	/*⇒3,namespace,[]*/fmt./*⇒7,function,[signature]*/Println(/*⇒9,function,[signature]*/summarize(/*⇒4,variable,[slice]*/cfgs))
+	/*⇒3,namespace,[]*/fmt./*⇒6,function,[signature]*/Printf(/*⇒11,string,[]*/"processed /*⇒2,string,[format]*/%d/*⇒14,string,[]*/ bytes across /*⇒2,string,[format]*/%d/*⇒11,string,[]*/ configs\n", /*⇒5,variable,[number]*/total, /*⇒3,function,[defaultLibrary]*/len(/*⇒4,variable,[slice]*/cfgs))
 }

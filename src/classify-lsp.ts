@@ -24,7 +24,15 @@ import {
   buildFileIndex,
   FileIndex,
 } from './classify';
-import { BraceBlock, focusKeyOf, declRegionFor, lexRegionFor, scanBraceBlocks } from './focus';
+import {
+  BraceBlock,
+  focusKeyOf,
+  declRegionFor,
+  lexRegionFor,
+  scopeRegionFor,
+  scanBraceBlocks,
+  isTopLevelBlock,
+} from './focus';
 import { BlockNames, ScopeColoring, colorScope } from './scopecolor';
 
 interface LspBundle {
@@ -34,6 +42,15 @@ interface LspBundle {
   /** File-wide analysis, built once per version and shared by every block. */
   fileIndex?: FileIndex;
   lineStarts: number[];
+}
+
+/**
+ * Does this block header declare a function (so its parameter list is not
+ * top-level code)? A `const X = { … }` object literal is also a depth-0 block,
+ * but its "header" holds the declaration name we DO want at top level.
+ */
+function isFunctionHeaderText(header: string): boolean {
+  return /\b(func|function)\b|=>\s*$|\)\s*(:[^)]*)?\s*$/.test(header);
 }
 
 const FUNCTION_SYMBOL_KINDS = new Set<vscode.SymbolKind>([
@@ -90,7 +107,7 @@ export class Classifier implements vscode.Disposable {
 
     for (const b of scopeBlocks) {
       const c = this.classifyBlock(text, b, sorted, bundle, doc.version, true);
-      perBlock.push({ focusKey: c.focusKey, byName: c.byName });
+      perBlock.push({ focusKey: c.focusKey, byName: c.byName, isTopLevel: isTopLevelBlock(b) });
       if (c.focusKey === focusKey) {
         focused = c;
       }
@@ -99,7 +116,11 @@ export class Classifier implements vscode.Disposable {
       // The focused block wasn't in the scope set (top-level edge case) — classify
       // it directly so the caller always gets its classification.
       focused = this.classifyBlock(text, block, allBlocks, bundle, doc.version);
-      perBlock.push({ focusKey: focused.focusKey, byName: focused.byName });
+      perBlock.push({
+        focusKey: focused.focusKey,
+        byName: focused.byName,
+        isTopLevel: isTopLevelBlock(block),
+      });
     }
 
     const coloring = colorScope(perBlock, paletteSize);
@@ -155,8 +176,13 @@ export class Classifier implements vscode.Disposable {
 
     // Brace-blocks nested strictly inside this block — a local declared in one of
     // them belongs to a child scope the caret sits above, so it ranks lower in
-    // the attention budget. Header-inclusive so loop/if bindings count as owned
-    // by that nested scope.
+    // the attention budget.
+    //
+    // scopeRegionFor, NOT declRegionFor: a nested block owns its header bindings
+    // (a closure's params, a loop's iteration vars). declRegionFor keeps FUNCTION
+    // headers body-only — correct for block-vs-fn classification, wrong here,
+    // because it left `sort.Slice(names, func(i, j int) …)`'s params outside every
+    // sub-scope, so they read as the OUTER block's own locals at proximity 0.
     const subBlocks: OffsetRange[] = [];
     if (sortedByOpen) {
       // Sorted: nested blocks form a forward run bounded by this block's close.
@@ -168,16 +194,38 @@ export class Classifier implements vscode.Disposable {
       }
       for (; i < allBlocks.length && allBlocks[i].openOffset < block.closeOffset; i++) {
         if (allBlocks[i].closeOffset < block.closeOffset) {
-          subBlocks.push(lexRegionFor(text, allBlocks[i]));
+          subBlocks.push(scopeRegionFor(text, allBlocks[i]));
         }
       }
     } else {
       for (const b of allBlocks) {
         if (b.openOffset > block.openOffset && b.closeOffset < block.closeOffset) {
-          subBlocks.push(lexRegionFor(text, b));
+          subBlocks.push(scopeRegionFor(text, b));
         }
       }
     }
+
+    // For the synthetic top-level scope (whole file) carve out the OUTERMOST
+    // brace-blocks, so function bodies are not part of "top level". Without this
+    // every local in every function counts as used at top level and leaks into
+    // the view — and a top-level `const X = { ... }` reads as nested because its
+    // own initialiser braces enclose the declaration.
+    const excludeRanges: OffsetRange[] = isTopLevelBlock(block)
+      ? [
+          // depth-0 block bodies (function/type bodies)
+          ...allBlocks
+            .filter((b) => b.depth === 0)
+            .map((b) => ({ start: b.openOffset, end: b.closeOffset + 1 })),
+          // and FUNCTION signatures, which sit OUTSIDE the braces — otherwise a
+          // parameter list reads as top-level code. Restricted to headers that
+          // actually declare a function: a `const X = {` object literal is also a
+          // depth-0 block, and excluding its "signature" would hide the very
+          // declaration we want (X itself).
+          ...allBlocks
+            .filter((b) => b.depth === 0 && isFunctionHeaderText(text.slice(b.headerStart, b.openOffset)))
+            .map((b) => ({ start: b.headerStart, end: b.openOffset })),
+        ]
+      : [];
 
     const caretOffset = block.openOffset;
     const enclosingFn = enclosingFnOf(bundle.fnRanges, caretOffset);
@@ -198,6 +246,7 @@ export class Classifier implements vscode.Disposable {
         declRegion,
         subBlocks,
         bundle.fileIndex,
+        excludeRanges,
       );
     }
 

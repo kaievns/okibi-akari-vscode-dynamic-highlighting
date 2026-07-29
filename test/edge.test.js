@@ -80,6 +80,153 @@ test('PhaseMachine: minHold blocks a downgrade immediately after an upgrade', ()
   assert.notEqual(m.current, phases.Phase.Edit);
 });
 
+test('PhaseMachine: reset() drops to Survey — opening a file must not enter Focus', () => {
+  // Activation and tab switches are not intentional caret placements. Routing
+  // them through onCaret() auto-advanced Survey → Focus, so a freshly opened file
+  // rendered with band 2 already painted at the root scope.
+  const m = new phases.PhaseMachine(phases.DEFAULT_DWELL);
+  m.onCaret(true, 1000);
+  assert.equal(m.current, phases.Phase.Focus);
+  assert.equal(m.reset(2000), true, 'phase changed back down');
+  assert.equal(m.current, phases.Phase.Survey);
+  // reset bypasses minHold: it is a new viewing context, not a timed relaxation
+  m.onType(3000);
+  assert.equal(m.current, phases.Phase.Edit);
+  m.reset(3050); // 50ms later, well inside minHold (350ms)
+  assert.equal(m.current, phases.Phase.Survey, 'not blocked by the hold floor');
+  // and a real caret placement still enters Focus afterwards
+  m.onCaret(true, 4000);
+  assert.equal(m.current, phases.Phase.Focus);
+});
+
+// ── The engagement gate ──────────────────────────────────────────────────────
+//
+// Opening a tab produces this sequence, captured from the extension's own debug
+// channel after three failed fixes:
+//
+//   refresh     at=0:0                    ← editor activates with caret at 0:0
+//   onSelection kind=undefined at=31:0    ← saved caret restored, ASYNCHRONOUSLY
+//
+// VS Code restores the caret as a PROGRAMMATIC selection change with no `kind`. The
+// caret therefore genuinely moves (0:0 → 31:0) with no user action, which is why
+// comparing positions could not detect it, and why a window reload behaved
+// differently from a tab switch. `kind` is the discriminator: set for Keyboard(1),
+// Mouse(2) and Command(3), absent only when VS Code cannot attribute the change.
+//
+// Models decorator.ts's wiring: engagement requires an attributed kind or an edit.
+function engagementHarness() {
+  const m = new phases.PhaseMachine(phases.DEFAULT_DWELL);
+  const engaged = new Set();
+  return {
+    get phase() {
+      return m.current;
+    },
+    /** onDidChangeTextEditorSelection */
+    sel(doc, kind, now) {
+      if (kind !== undefined) {
+        engaged.add(doc);
+      }
+      if (engaged.has(doc)) {
+        m.onCaret(true, now);
+      }
+    },
+    /** onDidChangeActiveTextEditor → refresh() */
+    refresh(now) {
+      m.reset(now);
+    },
+    /** onDidChangeTextDocument → onEdit() */
+    type(doc, now) {
+      engaged.add(doc);
+      m.onType(now);
+    },
+    isEngaged: (doc) => engaged.has(doc),
+  };
+}
+
+test('engagement gate: the captured tab-open sequence stays in Survey', () => {
+  // Verbatim from the debug trace that finally identified this.
+  const h = engagementHarness();
+  h.refresh(100); // refresh     at=0:0
+  h.sel('sample.go', undefined, 101); // onSelection kind=undefined at=31:0
+  assert.equal(h.isEngaged('sample.go'), false, 'a kindless restore is not engagement');
+  assert.equal(h.phase, phases.Phase.Survey);
+});
+
+test('engagement gate: a kindless caret MOVE is still not engagement', () => {
+  // This is the exact case the position-based attempt got wrong: the caret really
+  // does move, so "moved" cannot mean "the user did it".
+  const h = engagementHarness();
+  h.refresh(100);
+  h.sel('a.go', undefined, 101); // 0:0 → 31:0, programmatic
+  h.sel('a.go', undefined, 102); // and again, e.g. a reveal/scroll-into-view
+  assert.equal(h.phase, phases.Phase.Survey);
+});
+
+test('engagement gate: every attributed input kind engages', () => {
+  for (const [kind, label] of [[1, 'Keyboard'], [2, 'Mouse'], [3, 'Command']]) {
+    const h = engagementHarness();
+    h.refresh(100);
+    h.sel('a.go', undefined, 101); // restored caret — ignored
+    assert.equal(h.phase, phases.Phase.Survey, `${label}: still Survey before input`);
+    h.sel('a.go', kind, 200);
+    assert.equal(h.phase, phases.Phase.Focus, `${label} enters Focus`);
+  }
+});
+
+test('engagement gate: a same-position click still engages (kind is enough)', () => {
+  // Regression guard for the "stuck until I arrow-key" bug: a click that does not
+  // move the caret must still work, so engagement must not require movement.
+  const h = engagementHarness();
+  h.refresh(100);
+  h.sel('a.go', undefined, 101);
+  h.sel('a.go', 2, 200); // Mouse, caret unchanged
+  assert.equal(h.phase, phases.Phase.Focus);
+});
+
+test('engagement gate: typing engages a never-clicked document', () => {
+  const h = engagementHarness();
+  h.refresh(100);
+  h.sel('a.go', undefined, 101);
+  h.type('a.go', 200);
+  assert.equal(h.phase, phases.Phase.Edit);
+});
+
+test('engagement gate: switching to a fresh tab drops to Survey; back to an engaged one restores', () => {
+  const h = engagementHarness();
+  h.refresh(100);
+  h.sel('a.ts', 1, 101); // real keystroke → engaged
+  assert.equal(h.phase, phases.Phase.Focus);
+
+  h.refresh(200); // switch to b.go
+  h.sel('b.go', undefined, 201); // its restored caret
+  assert.equal(h.phase, phases.Phase.Survey, 'never-touched file: Survey');
+
+  h.refresh(300); // switch back to a.ts
+  h.sel('a.ts', undefined, 301); // restored caret, but a.ts IS engaged
+  assert.equal(h.phase, phases.Phase.Focus, 'a document you worked in stays engaged');
+});
+
+test('engagement gate: an unengaged document paints NOTHING even if the phase is Focus', () => {
+  // The final gate in render(). Three fixes tried to keep the PHASE correct on a
+  // tab switch and a newly shown file still lit up, so the invariant is enforced
+  // where decorations are actually applied: paint requires engagement. Any path
+  // that leaves the phase wrong is then harmless.
+  const showBands = (engaged, phase, block) => ({
+    band2: engaged && block !== null && (phase === phases.Phase.Focus || phase === phases.Phase.Edit),
+    band3: engaged && block !== null && phase === phases.Phase.Edit,
+  });
+  const block = { openLine: 0, closeLine: 9, depth: 0 };
+  // The failing scenario: phase somehow reached Focus in a file never engaged.
+  assert.deepEqual(showBands(false, phases.Phase.Focus, block), { band2: false, band3: false });
+  assert.deepEqual(showBands(false, phases.Phase.Edit, block), { band2: false, band3: false });
+  // Engaged behaves normally.
+  assert.deepEqual(showBands(true, phases.Phase.Focus, block), { band2: true, band3: false });
+  assert.deepEqual(showBands(true, phases.Phase.Edit, block), { band2: true, band3: true });
+  assert.deepEqual(showBands(true, phases.Phase.Survey, block), { band2: false, band3: false });
+  // No block (top-level Survey) paints nothing regardless.
+  assert.deepEqual(showBands(true, phases.Phase.Focus, null), { band2: false, band3: false });
+});
+
 test('PhaseMachine: nextRelaxDelay is null in Survey (resting floor)', () => {
   const m = new phases.PhaseMachine(phases.DEFAULT_DWELL);
   assert.equal(m.nextRelaxDelay(0), null);
@@ -230,6 +377,290 @@ test('classify: `_` discard/blank identifier never competes for a hue', () => {
   const c = classify.classifyFromSemantic(text, L, undefined, [], tokens, 1, 'k', undefined, L, []);
   assert.ok(!c.byName.has('_'), 'discard excluded from data identities');
   assert.ok(c.byName.has('c'), 'the real loop var is included');
+});
+
+test('proximity: a focused function OWN param outranks nested-closure locals', () => {
+  // Caret in summarize's body. `cfgs` is its parameter — the function's own data.
+  // The closure params `i`/`j` belong to a child scope. Before the fix `cfgs` sat
+  // at proximity 1 while `i`/`j` got 0 (declRegionFor keeps function headers
+  // body-only, so they fell outside every sub-scope), and the budget painted the
+  // closure internals while the real argument stayed neutral.
+  const text = [
+    'func summarize(cfgs []Config) string {',
+    '\tnames := make([]string, 0, len(cfgs))',
+    '\tuse(cfgs)',
+    '\tsort.Slice(names, func(i, j int) bool {',
+    '\t\treturn names[i] < names[j]',
+    '\t})',
+    '\treturn names',
+    '}',
+  ].join('\n');
+  const at = (s) => text.indexOf(s);
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('cfgs', at('cfgs []Config'), 'parameter', ['definition']),
+    tok('cfgs', at('len(cfgs)') + 4, 'parameter', []),
+    tok('cfgs', at('use(cfgs)') + 4, 'parameter', []),
+    tok('names', at('names :='), 'variable', ['definition']),
+    tok('names', at('names, func'), 'variable', []),
+    tok('names', at('names[i]'), 'variable', []),
+    tok('names', at('names[j]'), 'variable', []),
+    tok('names', at('return names\n'), 'variable', []),
+    tok('i', at('i, j int'), 'parameter', ['definition']),
+    tok('j', at('j int'), 'parameter', ['definition']),
+    tok('i', at('names[i]') + 6, 'parameter', []),
+    tok('j', at('names[j]') + 6, 'parameter', []),
+  ];
+  const blocks = focus.scanBraceBlocks(text);
+  const outer = blocks.reduce((a, b) => (b.depth < a.depth ? b : a));
+  const fnRanges = blocks
+    .filter((b) => /\bfunc\b/.test(text.slice(b.headerStart, b.openOffset)))
+    .map((b) => ({ start: b.headerStart, end: b.closeOffset + 1 }));
+  const L = focus.lexRegionFor(text, outer);
+  const D = focus.declRegionFor(text, outer);
+  const subs = blocks
+    .filter((b) => b.openOffset > outer.openOffset && b.closeOffset < outer.closeOffset)
+    .map((b) => focus.scopeRegionFor(text, b));
+  const enc = classify.enclosingFnOf(fnRanges, outer.openOffset);
+  const c = classify.classifyFromSemantic(
+    text, L, enc, fnRanges, tokens, 1, focus.focusKeyOf(outer), enc, D, subs,
+    classify.buildFileIndex(text, tokens, fnRanges), [],
+  );
+  assert.equal(c.byName.get('cfgs').proximity, 0, "the function's own param is its own data");
+  assert.equal(c.byName.get('i').proximity, 2, 'closure param belongs to a nested scope');
+  assert.equal(c.byName.get('j').proximity, 2);
+  const vis = sc.visibleInBlock(c.byName, 5, false);
+  assert.ok(vis.includes('cfgs'), 'cfgs wins a hue');
+  assert.ok(!vis.includes('i') && !vis.includes('j'), 'nested closure params stay neutral');
+});
+
+test('scopeRegionFor: function + control-flow headers included, literal headers not', () => {
+  // A composite literal is also a brace-block, but its header declares a name
+  // owned by the ENCLOSING scope — widening there would demote it.
+  const text = 'func f() {\n\tcfg := Config{\n\t\tA: 1,\n\t}\n\tfor i := range xs {\n\t\tg(func(q int) { use(q) })\n\t}\n}';
+  const blocks = focus.scanBraceBlocks(text);
+  const pick = (frag) => blocks.find((b) => text.slice(b.headerStart, b.openOffset).includes(frag));
+  const lit = pick('cfg :=');
+  const loop = pick('for i');
+  const clo = pick('func(q');
+  assert.equal(focus.scopeRegionFor(text, lit).start, lit.openOffset, 'literal header excluded');
+  assert.equal(focus.scopeRegionFor(text, loop).start, loop.headerStart, 'loop binding included');
+  // A function's region starts at its PARAMETER LIST, not headerStart — the text
+  // before it (`g(`, or an outer `const jobs =`) belongs to the enclosing scope.
+  const cloR = focus.scopeRegionFor(text, clo);
+  assert.equal(cloR.start, text.indexOf('(q int)'), 'closure region starts at the param list');
+  assert.ok(cloR.start < clo.openOffset, 'params are inside the region');
+  assert.ok(text.indexOf('g(func') < cloR.start, 'the enclosing call is outside it');
+});
+
+// ── concise (braceless) arrow bodies ─────────────────────────────────────────
+
+test('scanBraceBlocks: a concise arrow body is a scope, spanning params to end of expression', () => {
+  // `.reduce((acc, line, idx) => `...`, "")` — no braces, so the brace scanner found
+  // nothing and the caret resolved to the ENCLOSING function, which then treated
+  // acc/line/idx as its OWN block-locals competing for its hues.
+  const text = 'function summarize(cfgs) {\n  const total = cfgs\n' +
+               '    .reduce((acc, line, idx) => `${acc}${idx}:${line}; `, "");\n  return total;\n}';
+  const blocks = focus.scanBraceBlocks(text);
+  const arrow = blocks.find((b) => text.slice(b.openOffset, b.openOffset + 1) === '(');
+  assert.ok(arrow, 'the braceless arrow is a block');
+  // The body must span the WHOLE template — a `,` or `}` inside `${…}` must not end
+  // it early, which is the subtle part.
+  assert.equal(
+    text.slice(arrow.openOffset, arrow.closeOffset + 1),
+    '(acc, line, idx) => `${acc}${idx}:${line}; `',
+  );
+  // ...and it stops before the next argument.
+  assert.ok(text.slice(arrow.closeOffset + 1).startsWith(', ""'), 'ends at the argument comma');
+});
+
+test('innermostBlock: the caret inside a concise arrow resolves to the arrow, not its parent', () => {
+  const text = 'function f(xs) {\n  const t = xs.reduce((acc, x) => acc + x, 0);\n  return t;\n}';
+  const blocks = focus.scanBraceBlocks(text);
+  const arrow = blocks.find((b) => text.slice(b.openOffset, b.openOffset + 1) === '(');
+  const inside = focus.innermostBlock(blocks, 1, text.indexOf('acc + x') + 2, text);
+  assert.equal(inside.openOffset, arrow.openOffset, 'inside the body → the arrow scope');
+  // outside it (on the same line) falls back to the function
+  const outside = focus.innermostBlock(blocks, 1, text.indexOf('const t') + 2, text);
+  assert.notEqual(outside.openOffset, arrow.openOffset, 'before the arrow → the function');
+});
+
+test('scanBraceBlocks: concise-arrow detection ignores strings, comments and braced arrows', () => {
+  // An `=>` that is not code must not invent a scope, and a braced arrow already
+  // belongs to the brace scanner (double-counting it would duplicate the block).
+  const bodyOf = (src) =>
+    focus.scanBraceBlocks(src).map((b) => src.slice(b.openOffset, b.closeOffset + 1));
+  assert.deepEqual(bodyOf('// (a) => a'), [], 'arrow in a line comment');
+  assert.deepEqual(bodyOf('const s = "(a) => a";'), [], 'arrow in a string');
+  assert.deepEqual(bodyOf('/* (a) => a */'), [], 'arrow in a block comment');
+  assert.deepEqual(bodyOf('const f = (a) => { return a; };'), ['{ return a; }'], 'braced: one block');
+  // Go function TYPES have no arrow and must stay unaffected.
+  assert.deepEqual(bodyOf('type H func(c *C) ([]byte, error)'), []);
+});
+
+test('scanBraceBlocks: concise-arrow body ends at the right delimiter', () => {
+  const body = (src) => {
+    const b = focus.scanBraceBlocks(src).find((x) => src[x.openOffset] === '(' || /[A-Za-z]/.test(src[x.openOffset]));
+    return b ? src.slice(b.openOffset, b.closeOffset + 1) : null;
+  };
+  assert.equal(body('const f = (a) => a ? 1 : 2;'), '(a) => a ? 1 : 2', 'ternary body, stops at ;');
+  assert.equal(body('run((a) => a + 1, 2);'), '(a) => a + 1', 'stops at the argument comma');
+  assert.equal(body('const f = (a) => [a, 1];'), '(a) => [a, 1]', 'commas inside brackets do not end it');
+  assert.equal(body('const f = (a) => "x, y";'), '(a) => "x, y"', 'commas inside strings do not end it');
+  assert.equal(body('const f = a => a * 2;'), 'a => a * 2', 'bare single-identifier param');
+});
+
+test('scanBraceBlocks: curried arrows nest by depth so the caret can tell them apart', () => {
+  // `a => b => a + b` — two scopes with no braces between them. An arrow-blind depth
+  // left them tied, and innermostBlock could not resolve which one held the caret.
+  const text = 'function g() { return xs.map(a => b => a + b); }';
+  const blocks = focus.scanBraceBlocks(text);
+  const outer = blocks.find((b) => text.slice(b.openOffset).startsWith('a =>'));
+  const inner = blocks.find((b) => text.slice(b.openOffset).startsWith('b =>'));
+  assert.ok(outer && inner);
+  assert.ok(inner.depth > outer.depth, 'the inner arrow is deeper');
+  const at = focus.innermostBlock(blocks, 0, text.indexOf('a + b') + 2, text);
+  assert.equal(at.openOffset, inner.openOffset, 'caret in the shared body → innermost arrow');
+});
+
+test('scanBraceBlocks: blocks stay sorted by open offset after arrows are appended', () => {
+  // Arrow blocks are found in a second pass; downstream code (sub-block collection)
+  // relies on document order.
+  const text = 'function f(){\n  const a = xs.map(x => x + 1);\n  if (a) { g(); }\n  const b = ys.filter(y => y);\n}';
+  const blocks = focus.scanBraceBlocks(text);
+  for (let i = 1; i < blocks.length; i++) {
+    assert.ok(blocks[i].openOffset >= blocks[i - 1].openOffset, `sorted at ${i}`);
+  }
+});
+
+test('scopeRegionFor: an inline callback does not claim the declaration it is assigned to', () => {
+  // `const jobs = names.map(async (name) => {` — the header carries BOTH the
+  // callback's param and an OUTER declaration. Taking the whole header put `jobs`
+  // in the callback's sub-scope, so from the enclosing function body it scored
+  // proximity 2 and was excluded, while from inside the callback it painted despite
+  // never being used there.
+  const text = 'async function fetchAll(names) {\n  const jobs = names.map(async (name) => {\n    return name;\n  });\n  return jobs;\n}';
+  const blocks = focus.scanBraceBlocks(text);
+  const cb = blocks.find((b) => text.slice(b.headerStart, b.openOffset).includes('=>'));
+  const region = focus.scopeRegionFor(text, cb);
+  const jobsAt = text.indexOf('jobs');
+  const nameAt = text.indexOf('(name)');
+  assert.ok(jobsAt < region.start, '`jobs` belongs to the ENCLOSING scope');
+  assert.ok(nameAt >= region.start && nameAt < region.end, '`name` belongs to the callback');
+  // lexRegionFor must agree, or `jobs` reads as used inside the callback
+  const lex = focus.lexRegionFor(text, cb);
+  assert.ok(jobsAt < lex.start, '`jobs` is not lexed as a use inside the callback');
+  assert.ok(nameAt >= lex.start, 'the param still is');
+});
+
+test('paramListStart: bare single-identifier arrows and nested parens in defaults', () => {
+  // No paren group at all: `name => {`. The param must still be inside the region.
+  const bare = 'const f = name => {\n  return name;\n}';
+  const bb = focus.scanBraceBlocks(bare)[0];
+  const br = focus.scopeRegionFor(bare, bb);
+  assert.ok(br.start <= bare.indexOf('name =>'), 'bare arrow param included');
+  assert.ok(bare.indexOf('const f') < br.start, 'the outer declaration is not');
+
+  // Nested parens in a default value must not confuse the backward scan.
+  const dflt = 'const g = (a = h(1), b) => {\n  return a + b;\n}';
+  const db = focus.scanBraceBlocks(dflt)[0];
+  const dr = focus.scopeRegionFor(dflt, db);
+  assert.equal(dr.start, dflt.indexOf('(a = h(1), b)'), 'matches the OUTER paren group');
+  assert.ok(dflt.indexOf('const g') < dr.start, 'outer declaration excluded');
+});
+
+test('buildFileIndex: type-signature params are documentation, not data identities', () => {
+  // `type Reducer<T> = (acc: T, item: Job) => T` — TS reports `acc` as
+  // `parameter [declaration]`, identical to a real one. A type alias is not a
+  // function range, so it classified as a top-level GLOBAL and traced file-wide,
+  // giving every unrelated `acc` a global's hue. Go's
+  // `type Handler func(ctx *Context, in []byte)` is the same bug.
+  const text = 'type Reducer = (acc: number, item: Job) => number;\n' +
+               'function fold(seed) {\n  let acc = seed;\n  return acc;\n}\n';
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('acc', text.indexOf('acc:'), 'parameter', ['declaration']),      // in the type alias
+    tok('item', text.indexOf('item:'), 'parameter', ['declaration']),    // in the type alias
+    tok('acc', text.indexOf('acc = seed'), 'variable', ['declaration']), // the real one
+    tok('acc', text.lastIndexOf('acc'), 'variable', []),
+  ];
+  const idx = classify.buildFileIndex(text, tokens, []);
+  assert.equal(idx.occurrences.get('acc').length, 2, 'only the two real `acc` occurrences');
+  assert.ok(!idx.occurrences.has('item'), 'a type-only param is not a data identity at all');
+  assert.ok(
+    idx.occurrences.get('acc').every((r) => r.start > text.indexOf(';')),
+    'no occurrence inside the type declaration',
+  );
+});
+
+test('buildFileIndex: a braced type/interface body is excluded whole', () => {
+  // Go `type Config struct { … }` and TS `interface Job { … }` span multiple
+  // lines, so the exclusion must run to the matching brace, not end-of-line.
+  const text = 'interface Job {\n  retries: number;\n  payload: string;\n}\nconst retries = 3;\nuse(retries);';
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('retries', text.indexOf('retries:'), 'property', ['declaration']),
+    tok('retries', text.indexOf('retries = 3'), 'variable', ['declaration']),
+    tok('retries', text.lastIndexOf('retries'), 'variable', []),
+  ];
+  const idx = classify.buildFileIndex(text, tokens, []);
+  const occ = idx.occurrences.get('retries') ?? [];
+  assert.equal(occ.length, 2, 'the interface member is excluded, the real const is not');
+  assert.ok(occ.every((r) => r.start > text.indexOf('}')), 'nothing from inside the interface body');
+});
+
+test('buildFileIndex: shadowScopes record the fn ranges that redeclare a name', () => {
+  // The shadowing case: a module-level `cfgs` and a `summarize(cfgs)` parameter.
+  const text = 'function summarize(cfgs) {\n  return cfgs.length;\n}\nconst cfgs = [1, 2];\nuse(cfgs);';
+  const summarize = { start: 0, end: text.indexOf('}\nconst') + 1 };
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('cfgs', text.indexOf('cfgs)'), 'parameter', ['declaration']),
+    tok('cfgs', text.indexOf('cfgs.length'), 'parameter', []),
+    tok('cfgs', text.indexOf('cfgs = '), 'variable', ['declaration']),
+    tok('cfgs', text.lastIndexOf('cfgs'), 'variable', []),
+  ];
+  const idx = classify.buildFileIndex(text, tokens, [summarize]);
+  const scopes = idx.shadowScopes.get('cfgs');
+  assert.ok(scopes, 'the name has a declaring function scope');
+  assert.deepEqual(scopes, [summarize], 'only summarize declares it inside a fn');
+  // The module-level declaration contributes no scope, so it stays traceable
+  // file-wide minus summarize.
+  assert.equal(scopes.length, 1);
+});
+
+test('top-level scope: excludeRanges keep function locals out, keep the decl name in', () => {
+  // The top-level scope spans the whole file, so without carving out the nested
+  // blocks every function local counts as "used at top level" and leaks into the
+  // view. But the carve-out must NOT swallow a `const X = { … }` declaration:
+  // the object literal is itself a depth-0 block whose header holds `X`.
+  const text = 'const CONF = {\n  a: 1,\n};\nlet count = 0;\nfunction f(param) {\n  const local = param;\n  return local;\n}\n';
+  const blocks = focus.scanBraceBlocks(text);
+  const tl = focus.topLevelBlock(text);
+  const L = focus.lexRegionFor(text, tl);
+  const isFnHdr = (h) => /\b(func|function)\b|=>\s*$|\)\s*(:[^)]*)?\s*$/.test(h);
+  const excl = [
+    ...blocks.filter((b) => b.depth === 0).map((b) => ({ start: b.openOffset, end: b.closeOffset + 1 })),
+    ...blocks
+      .filter((b) => b.depth === 0 && isFnHdr(text.slice(b.headerStart, b.openOffset)))
+      .map((b) => ({ start: b.headerStart, end: b.openOffset })),
+  ];
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('CONF', text.indexOf('CONF'), 'variable', ['declaration']),
+    tok('count', text.indexOf('count'), 'variable', ['declaration']),
+    tok('param', text.indexOf('param'), 'parameter', ['declaration']),
+    tok('local', text.indexOf('local'), 'variable', ['declaration']),
+    tok('local', text.lastIndexOf('local'), 'variable', []),
+  ];
+  const subs = blocks.map((b) => focus.declRegionFor(text, b));
+  const c = classify.classifyFromSemantic(
+    text, L, undefined, [], tokens, 1, focus.focusKeyOf(tl), undefined, L, subs, undefined, excl,
+  );
+  assert.ok(c.byName.has('CONF'), 'the object-literal declaration name IS top-level');
+  assert.ok(c.byName.has('count'), 'a plain top-level let IS top-level');
+  assert.ok(!c.byName.has('local'), 'a function local does NOT leak into top level');
+  assert.ok(!c.byName.has('param'), 'a function parameter does NOT leak into top level');
 });
 
 // ── planFromColoring ─────────────────────────────────────────────────────────

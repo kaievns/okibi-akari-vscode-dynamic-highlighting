@@ -32,6 +32,34 @@ function clip(ranges: OffsetRange[], bound: OffsetRange): OffsetRange[] {
   return ranges.filter((r) => r.start >= bound.start && r.end <= bound.end);
 }
 
+/**
+ * Drop occurrences that belong to a SHADOWING binding of the same name.
+ *
+ * Occurrences are keyed by name, so a module-level `const cfgs` and a
+ * `function summarize(cfgs)` parameter arrive as one list. Painting both one hue
+ * asserts a data-flow link that does not exist — worse, it visually merges the
+ * two identities shadowing already makes easy to confuse, so the highlighting
+ * would invite the very bug class it should expose.
+ *
+ * `own` is the scope of the identity actually being traced (its declaring
+ * function, or undefined for a true global). Any occurrence inside a DIFFERENT
+ * declaring scope is a different variable, so it is removed.
+ */
+function dropShadowed(
+  ranges: OffsetRange[],
+  shadowScopes: OffsetRange[] | undefined,
+  own: OffsetRange | undefined,
+): OffsetRange[] {
+  if (!shadowScopes || shadowScopes.length === 0) {
+    return ranges;
+  }
+  const foreign = shadowScopes.filter((s) => !(own && s.start === own.start && s.end === own.end));
+  if (foreign.length === 0) {
+    return ranges;
+  }
+  return ranges.filter((r) => !foreign.some((s) => r.start >= s.start && r.end <= s.end));
+}
+
 function scopeFor(info: NameInfo, block: OffsetRange, enclosingFn: OffsetRange | undefined): OffsetRange | 'file' {
   switch (info.cls) {
     case 'block':
@@ -73,6 +101,13 @@ export function computeTraceRanges(c: Classification, plan: ColorPlan, block: Of
     }
     const scope = scopeFor(info, block, c.enclosingFn);
     let ranges = scope === 'file' ? occ.slice() : clip(occ, scope);
+
+    // Subtract same-named bindings from OTHER scopes. Only a trace that leaves
+    // the identity's own scope can pick them up: a `block`/`fn` trace is already
+    // clipped to the enclosing function, so this bites on file-wide globals and
+    // captures traced across their home function.
+    const ownScope = info.cls === 'out' && info.isCapture ? info.homeFn : c.enclosingFn;
+    ranges = dropShadowed(ranges, c.shadowScopes?.get(name), scope === 'file' ? undefined : ownScope);
 
     if (ranges.length === 0) {
       continue;

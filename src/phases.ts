@@ -81,6 +81,24 @@ export class PhaseMachine {
     return false;
   }
 
+  /**
+   * Drop to the resting floor (Survey).
+   *
+   * Opening a file or switching tabs is NOT an intentional caret placement — the
+   * caret is wherever VS Code restored it, not somewhere the user put it. Feeding
+   * those through onCaret() auto-advanced Survey → Focus, so a freshly opened file
+   * rendered in FOCUS with band 2 already painted. §3.2: a file you have not
+   * touched yet is Survey by definition.
+   *
+   * Bypasses the minHold floor deliberately — this is not a timed relaxation but
+   * a new viewing context.
+   */
+  reset(now: number): boolean {
+    this.lastTypeAt = 0;
+    this.lastActivityAt = now;
+    return this.transition(Phase.Survey, now);
+  }
+
   /** A document edit — immediate cut to Edit. */
   onType(now: number): boolean {
     this.lastTypeAt = now;

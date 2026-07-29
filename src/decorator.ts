@@ -86,6 +86,19 @@ export class Decorator implements vscode.Disposable {
   // reset when the active editor changes (see render()).
   private lastApplied = new Map<vscode.TextEditorDecorationType, string>();
   private lastAppliedEditor: vscode.TextEditor | undefined;
+  // Documents the user has intentionally engaged: a selection change carrying an
+  // input `kind`, or an edit. Only an engaged document may enter Focus or paint
+  // bands, so activating a tab can never do it.
+  //
+  // Necessary because VS Code restores a tab's saved caret ASYNCHRONOUSLY, as a
+  // programmatic selection change with `kind === undefined`. The debug trace was
+  // unambiguous:
+  //   refresh     at=0:0                   ← editor activates at 0:0
+  //   onSelection kind=undefined at=31:0   ← saved caret restored afterwards
+  // So the caret really does move with no user action, which is why comparing
+  // positions could not distinguish it, and why a window reload behaved differently
+  // from a tab switch.
+  private engaged = new Set<string>();
 
   private currentFocusKey: string | null = null;
   // The focusKey whose band-2 tints are currently painted. Lets the stale-hold
@@ -109,13 +122,29 @@ export class Decorator implements vscode.Disposable {
     }
   }
 
+  /**
+   * Create or tear down the debug output channel to match `okibiDynamic.debug`.
+   * Called from the constructor AND on config change, so toggling the setting takes
+   * effect without a window reload. It also reveals the channel on enable — the
+   * Output dropdown does not list a channel until something writes to it.
+   */
+  private syncDebugChannel(): void {
+    const want = vscode.workspace.getConfiguration('okibiDynamic').get('debug', false);
+    if (want && !this.debugChan) {
+      this.debugChan = vscode.window.createOutputChannel('Okibi Dynamic Debug');
+      this.debugChan.appendLine('Okibi dynamic debug enabled. Switch tabs to capture events.');
+      this.debugChan.show(true); // preserveFocus: do not steal the caret
+    } else if (!want && this.debugChan) {
+      this.debugChan.dispose();
+      this.debugChan = undefined;
+    }
+  }
+
   constructor() {
     this.config = readConfig();
     this.machine = new PhaseMachine(this.config.dwell);
     this.isDark = this.currentlyDark();
-    if (vscode.workspace.getConfiguration('okibiDynamic').get('debug', false)) {
-      this.debugChan = vscode.window.createOutputChannel('Okibi Dynamic Debug');
-    }
+    this.syncDebugChannel();
 
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.statusItem.command = 'okibiDynamic.toggle';
@@ -127,11 +156,29 @@ export class Decorator implements vscode.Disposable {
       vscode.window.onDidChangeTextEditorSelection((e) => this.onSelection(e)),
       vscode.workspace.onDidChangeTextDocument((e) => this.onEdit(e)),
       vscode.window.onDidChangeActiveTextEditor(() => this.refresh()),
+      // A new editor becoming visible (split, tab restore after reload) must not
+      // inherit stale decorations from whatever was painted before.
+      vscode.window.onDidChangeVisibleTextEditors(() => {
+        const active = vscode.window.activeTextEditor;
+        if (active) {
+          this.clearOtherEditors(active);
+        }
+        this.scheduleRender();
+      }),
+      // Closing a document forgets its engagement, so reopening it starts in Survey
+      // like any freshly opened file — and the maps do not grow unbounded.
+      vscode.workspace.onDidCloseTextDocument((doc) => {
+        this.engaged.delete(doc.uri.toString());
+      }),
       vscode.window.onDidChangeActiveColorTheme(() => this.onThemeChanged()),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('okibiDynamic')) {
           this.config = readConfig();
           this.machine.setDwell(this.config.dwell);
+          // Honour a debug toggle without a window reload. Creating the channel only
+          // in the constructor meant flipping the setting appeared to do nothing —
+          // the channel was not even listed in the Output dropdown.
+          this.syncDebugChannel();
           this.buildDecorations();
           this.refresh();
         }
@@ -191,15 +238,27 @@ export class Decorator implements vscode.Disposable {
    * The focused block for an editor's caret, using both line and offset so a
    * single-line block (e.g. an inline map/object literal) is only focused when
    * the caret is actually between its braces — not merely on the same line.
+   *
+   * Passing the document text makes MODULE TOP LEVEL a focusable scope: a caret
+   * among top-level `const`/`var` declarations resolves to the synthetic
+   * whole-file block instead of nothing, so those declarations tint too.
    */
   private focusedBlock(editor: vscode.TextEditor): BraceBlock | null {
     const caret = editor.selection.active;
-    const caretOffset = editor.document.offsetAt(caret);
-    return innermostBlock(this.blocksFor(editor.document), caret.line, caretOffset);
+    const doc = editor.document;
+    return innermostBlock(this.blocksFor(doc), caret.line, doc.offsetAt(caret), doc.getText());
   }
 
+  /**
+   * The classification cache key. MUST include the document URI: `focusKey` is
+   * only `openLine#depth`, and a freshly-reloaded window has every document at
+   * version 1 — so `sample.js` and `sample.go` both keyed to `1::0#-1` and the
+   * second file rendered the FIRST file's occurrence offsets against its own
+   * text. That was the "garbled highlighting on files not focused at reload":
+   * ranges landing mid-word and inside comments.
+   */
   private cacheKey(doc: vscode.TextDocument, focusKey: string): string {
-    return `${doc.version}::${focusKey}`;
+    return `${doc.uri.toString()}::${doc.version}::${focusKey}`;
   }
 
   private putCache(key: string, entry: CacheEntry): void {
@@ -227,7 +286,7 @@ export class Decorator implements vscode.Disposable {
     if (editor !== vscode.window.activeTextEditor) {
       return;
     }
-    // Every selection-change event is a discrete, intentional caret placement —
+    // Most selection-change events are a discrete, intentional caret placement —
     // a click or an arrow key. Scroll fires onDidChangeVisibleRanges (not
     // subscribed) and hover fires nothing, so neither reaches here (spec §3.3:
     // "changes only on discrete intentional input, never scroll/hover/time").
@@ -236,9 +295,54 @@ export class Decorator implements vscode.Disposable {
     // strobe to guard against. (Earlier we gated this on Keyboard/Command kind,
     // which left clicks unable to enter Focus — that was the "stuck until I
     // arrow-key" bug.)
+    //
+    // The exception is a TAB SWITCH: activating an editor makes VS Code re-report
+    // that editor's restored caret as a selection change, landing just after
+    // refresh() has set Survey — so routing it through onCaret() put every newly
+    // opened tab straight into Focus.
+    //
+    // `kind` cannot discriminate it: clicking a tab IS a mouse action, so the
+    // restored-caret event can arrive with kind === Mouse, indistinguishable from
+    // a real click.
+    //
+    // What DOES discriminate is the caret POSITION, remembered per document across
+    // switches. Switching to a tab restores the caret exactly where you left it, so
+    // it matches what we stored — nothing moved, no intent. Clicking into another
+    // split puts the caret somewhere new, so it differs. A file seen for the first
+    // time has nothing stored, which also means we never observed a move.
     const block = this.focusedBlock(editor);
     const now = Date.now();
-    const phaseChanged = this.machine.onCaret(block !== null, now);
+    // Engagement requires an attributed INPUT KIND.
+    //
+    // Opening a tab produces this sequence (captured from the debug channel):
+    //
+    //   refresh     at=0:0                      ← editor activates with caret at 0:0
+    //   onSelection kind=undefined at=31:0      ← THEN the saved caret is restored
+    //
+    // VS Code restores the caret ASYNCHRONOUSLY, as a programmatic selection change
+    // with no `kind`. So the caret genuinely moves (0:0 → 31:0) without any user
+    // action, which is why comparing positions could not work — and why a window
+    // reload behaved differently from a tab switch.
+    //
+    // `kind` is set for every real placement — Keyboard(1), Mouse(2), Command(3) —
+    // and absent only when VS Code cannot attribute the change to input. That is
+    // exactly the discriminator. Editing engages via onEdit, so a caret moved by an
+    // edit is covered too.
+    const docKey = editor.document.uri.toString();
+    const userInput = e.kind !== undefined;
+    if (userInput) {
+      this.engaged.add(docKey);
+    }
+    const engaged = this.engaged.has(docKey);
+    const phaseChanged = engaged ? this.machine.onCaret(block !== null, now) : false;
+    if (this.debugChan) {
+      const at = editor.selection.active;
+      this.dbg(
+        `onSelection doc=${editor.document.fileName.split('/').pop()} kind=${e.kind} ` +
+          `at=${at.line}:${at.character} userInput=${userInput} engaged=${engaged} ` +
+          `block=${block ? `L${block.openLine}#d${block.depth}` : 'null'} phase=${this.machine.current}`,
+      );
+    }
 
     const newKey = block ? focusKeyOf(block) : null;
     const focusChanged = newKey !== this.currentFocusKey;
@@ -262,6 +366,9 @@ export class Decorator implements vscode.Disposable {
       return;
     }
     const now = Date.now();
+    // Typing is unambiguous engagement — it also covers the case where an edit
+    // repositions the caret without a separate selection event.
+    this.engaged.add(e.document.uri.toString());
     this.machine.onType(now);
     // Version bumped → block scan + classification are stale.
     this.classifier.invalidate(e.document);
@@ -393,12 +500,16 @@ export class Decorator implements vscode.Disposable {
   private render(): void {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
-      this.clearAll(editor);
+      // No active text editor — focus is in a webview, panel or another split.
+      // The bands must still come off the editors that are STILL VISIBLE: a Focus
+      // → Survey relaxation firing while the caret is elsewhere used to leave the
+      // tints painted forever, because clearAll(undefined) only reset bookkeeping.
+      this.clearAllVisible();
       this.updateStatus();
       return;
     }
     if (!this.config.enabled) {
-      this.clearAll(editor);
+      this.clearAllVisible();
       this.statusItem.hide();
       return;
     }
@@ -411,19 +522,35 @@ export class Decorator implements vscode.Disposable {
       this.lastApplied.clear();
       this.lastAppliedEditor = editor;
       this.renderedBand2Key = null;
+      // Band 2/3 belong to the FOCUSED block, so only the active editor may show
+      // them. Other visible editors (split view, or restored-but-unfocused tabs
+      // after a window reload) must be cleared: their decorations came from a
+      // different document's classification and read as garbled highlighting on
+      // random text. Decorations are per-editor, so this has to be explicit.
+      this.clearOtherEditors(editor);
     }
 
     const doc = editor.document;
     const block = this.focusedBlock(editor);
     const phase = this.machine.current;
-    const showBand2 = block !== null && (phase === Phase.Focus || phase === Phase.Edit);
-    const showBand3 = block !== null && phase === Phase.Edit;
+    // FINAL GATE, enforced at the only place decorations are ever applied.
+    //
+    // Bands 2 and 3 may not paint in a document the user has not engaged — no
+    // matter how the phase got where it is. Three earlier fixes tried to keep the
+    // PHASE correct on a tab switch (suppress the restored-caret event by `kind`,
+    // then by caret position, then by an engagement check inside onSelection) and a
+    // newly shown file still lit up. Rather than keep guessing which path sets the
+    // phase, the invariant is asserted here: paint requires engagement, so any path
+    // that leaves the phase wrong is harmless.
+    const engaged = this.engaged.has(doc.uri.toString());
+    const showBand2 = engaged && block !== null && (phase === Phase.Focus || phase === Phase.Edit);
+    const showBand3 = engaged && block !== null && phase === Phase.Edit;
     if (this.debugChan) {
       const caret = editor.selection.active;
       const key = block ? this.cacheKey(doc, focusKeyOf(block)) : '(none)';
       const cached = block ? this.classCache.has(this.cacheKey(doc, focusKeyOf(block))) : false;
       this.dbg(
-        `render caret=${caret.line}:${caret.character} phase=${phase} ` +
+        `render caret=${caret.line}:${caret.character} phase=${phase} engaged=${engaged} ` +
           `block=${block ? `L${block.openLine}-${block.closeLine}#d${block.depth}` : 'null'} ` +
           `showBand2=${showBand2} cacheKey=${key} cached=${cached} renderedKey=${this.renderedBand2Key}`,
       );
@@ -578,6 +705,28 @@ export class Decorator implements vscode.Disposable {
     this.applyType(editor, this.pool.numberEngaged, []);
   }
 
+  /**
+   * Strip every band-2/3 decoration from all visible editors except `keep`.
+   *
+   * Decorations are per-editor and VS Code does not clear them for us, so an
+   * editor we painted and then navigated away from keeps its ranges — computed
+   * from a DIFFERENT document's classification. After a window reload, several
+   * editors are restored visible at once, which is when it shows up worst:
+   * highlighting scattered over comments, strings and unrelated identifiers.
+   */
+  private clearOtherEditors(keep: vscode.TextEditor): void {
+    for (const other of vscode.window.visibleTextEditors) {
+      if (other === keep) {
+        continue;
+      }
+      // Bypass the dirty-check (it tracks only `keep`'s state) and clear directly.
+      other.setDecorations(this.gutterDecoration, []);
+      for (const type of this.pool.all()) {
+        other.setDecorations(type, []);
+      }
+    }
+  }
+
   private clearAll(editor: vscode.TextEditor | undefined): void {
     if (!editor) {
       this.lastApplied.clear();
@@ -588,12 +737,48 @@ export class Decorator implements vscode.Disposable {
     this.clearBand3(editor);
   }
 
+  /**
+   * Strip the bands from EVERY visible editor.
+   *
+   * Used when there is no active text editor (focus in a webview/panel/another
+   * split) or the layer is disabled. `clearAll(undefined)` cannot do this:
+   * decorations are per-editor, and with no active editor there is nothing to
+   * paint through — it only reset the dirty-check map, so a Focus → Survey
+   * relaxation that fired while the caret was elsewhere left the tints on screen
+   * indefinitely.
+   */
+  private clearAllVisible(): void {
+    for (const ed of vscode.window.visibleTextEditors) {
+      ed.setDecorations(this.gutterDecoration, []);
+      for (const type of this.pool.all()) {
+        ed.setDecorations(type, []);
+      }
+    }
+    this.lastApplied.clear();
+    this.lastAppliedEditor = undefined;
+    this.renderedBand2Key = null;
+  }
+
+  /**
+   * The phase as the SCREEN shows it: Survey in a document the user has not
+   * engaged, since render() refuses to paint bands there.
+   */
+  private effectivePhase(): Phase {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !this.engaged.has(editor.document.uri.toString())) {
+      return Phase.Survey;
+    }
+    return this.machine.current;
+  }
+
   private updateStatus(): void {
     if (!this.config.enabled || !this.config.showPhaseInStatusBar) {
       this.statusItem.hide();
       return;
     }
-    const phase = this.machine.current;
+    // Report the EFFECTIVE phase. An unengaged document cannot paint bands (see the
+    // final gate in render()), so showing 流/異 there would misreport the screen.
+    const phase = this.effectivePhase();
     this.statusItem.text = `${PHASE_KANJI[phase]} ${phase}`;
     this.statusItem.tooltip = 'Okibi dynamic phase — click to toggle the layer';
     this.statusItem.show();
@@ -613,7 +798,22 @@ export class Decorator implements vscode.Disposable {
     }
     const block = this.focusedBlock(editor);
     this.currentFocusKey = block ? focusKeyOf(block) : null;
-    this.machine.onCaret(block !== null, Date.now());
+    if (this.debugChan) {
+      const at = editor.selection.active;
+      this.dbg(
+        `refresh doc=${editor.document.fileName.split('/').pop()} at=${at.line}:${at.character} ` +
+          `block=${block ? `L${block.openLine}#d${block.depth}` : 'null'} phaseWas=${this.machine.current}`,
+      );
+    }
+    // Survey, NOT onCaret(). Activation and tab switches are not intentional
+    // caret placements: the caret is wherever VS Code restored it. Routing them
+    // through onCaret() auto-advanced Survey → Focus, so a file opened in a fresh
+    // window rendered with band 2 already painted at the root scope. The first
+    // real keystroke or click enters Focus.
+    this.machine.reset(Date.now());
+    // Classify anyway, so the first intentional caret placement paints instantly
+    // instead of waiting a debounce — the plan is cached but not rendered while
+    // the phase is Survey.
     if (block) {
       this.scheduleClassify(editor.document, DEBOUNCE_FOCUS_MS);
     }
@@ -634,6 +834,8 @@ export class Decorator implements vscode.Disposable {
     this.classifyToken?.cancel();
     this.gutterDecoration?.dispose();
     this.pool?.all().forEach((t) => t.dispose());
+    // Not in `disposables` — syncDebugChannel() creates and replaces it dynamically.
+    this.debugChan?.dispose();
     this.classifier.dispose();
     this.disposables.forEach((d) => d.dispose());
   }
