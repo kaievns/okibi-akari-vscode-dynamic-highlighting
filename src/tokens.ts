@@ -27,33 +27,40 @@ export const TOKENS = {
   n2: { dark: '#1b1e20', light: '#f9f6f2' }, // editor ground
   n11: { dark: '#e1e3e5', light: '#13110e' }, // foreground (fill is a % of this)
 
-  // band 2 · identity tints (id-*: fn-local, normal weight · idg-*: out-of-fn, bold)
-  // ordered by interleaved slot order [1,3,4,5,6,7]; slot 2 (gold) reserved for this/self.
+  // band 2 · identity tints — ONE tint set for all data identities. The former
+  // idg-* chroma-boosted tier is retired from the spec: out-of-fn data uses the
+  // same hue and carries the distinction in WEIGHT alone (bold, bold-as-law).
+  // Designer palette (calibrated): slots {1,2,3,5,7}. Yamabuki gold (2) is in
+  // rotation now that this/self moved to keyword grey; wakaba (6) and moegi (4)
+  // are retired. Array is in ROTATION order [1,3,2,7,5] — greedy max-separation
+  // (hue gaps 125°,163°,136°,42°): the closest pair only when all five in play.
   id: [
-    { dark: '#fa9d67', light: '#be642a' }, // slot 1 · kohaku amber 50
-    { dark: '#a6a2fc', light: '#6b61c4' }, // slot 3 · fuji periwinkle 285
-    { dark: '#a3ca70', light: '#5d821a' }, // slot 4 · moegi green 128
-    { dark: '#f38bb7', light: '#b14578' }, // slot 5 · akabeni rose 354
-    { dark: '#cfc152', light: '#8f7f00' }, // slot 6 · wakaba chartreuse 102
-    { dark: '#ca94ec', light: '#8b50ad' }, // slot 7 · ayame violet 312
+    { dark: '#db9065', light: '#bc662f' }, // slot 1 · kohaku amber 50
+    { dark: '#9d8eff', light: '#6b5ecc' }, // slot 3 · fuji periwinkle 285
+    { dark: '#ddbd6e', light: '#9d7300' }, // slot 2 · yamabuki gold 88
+    { dark: '#ea94ff', light: '#8f4bb4' }, // slot 7 · ayame violet 312
+    { dark: '#f685b6', light: '#b34378' }, // slot 5 · akabeni rose 354
   ] as TokenPair[],
-  idg: [
-    { dark: '#ff9a52', light: '#af4200' }, // slot 1
-    { dark: '#aba3ff', light: '#5844bc' }, // slot 3
-    { dark: '#a4d35f', light: '#447000' }, // slot 4
-    { dark: '#ff85bf', light: '#ac1f6a' }, // slot 5
-    { dark: '#dac721', light: '#7e6900' }, // slot 6
-    { dark: '#d793ff', light: '#7c30a2' }, // slot 7
-  ] as TokenPair[],
-  idSelf: { dark: '#ecc254', light: '#986800' }, // slot 2 ✦ yamabuki gold — this/self/@
+  // this/self — --id-self = var(--syn-keyword): identical to band 1's resting
+  // keyword colour. The dynamic layer does NOT paint self at all — it renders
+  // the same in and out of focus (no weight flip), band 1 owns it entirely.
+  idSelf: { dark: '#7c8894', light: '#6b7681' },
+  // --id-outer — designer token, role not yet specified in the dynamic spec;
+  // carried here unwired until its behaviour is defined.
+  idOuter: { dark: '#ff9c7c', light: '#bb461e' },
 
   // band 3 · risk
   riskAsync: { dark: '#4bc8d5', light: '#007481' },
+  riskMut: { dark: '#eeb64f', light: '#a86d00' }, // designer token, not yet wired
   riskEscape: { dark: '#f57c5f', light: '#be3a16' },
   riskDanger: { dark: '#f66e60', light: '#be241f' },
 
   // number-clay — engaged scope only
   numberEngaged: { dark: '#c9a18d', light: '#9f7661' },
+
+  // --sel — ember 34%/28% wash. Identity-on-demand for OVERFLOWED (neutral)
+  // bindings: caret on a neutral name lights its occurrences in the block.
+  sel: { dark: '#693e30', light: '#ebc1ae' },
 } as const;
 
 /** VS Code reports the active theme kind; pick the matching side of a token. */
@@ -146,7 +153,9 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     });
 
   const id = TOKENS.id.map((p) => colorType(pick(p, isDark), false));
-  const idg = TOKENS.idg.map((p) => colorType(pick(p, isDark), true));
+  // Out-of-fn tier: same tints, bold weight — weight alone carries the
+  // distinction (the separate idg-* hue set is retired from the spec).
+  const idg = TOKENS.id.map((p) => colorType(pick(p, isDark), true));
   const self = colorType(pick(TOKENS.idSelf, isDark), true);
   const riskAsync = colorType(pick(TOKENS.riskAsync, isDark), false);
   const riskDanger = colorType(pick(TOKENS.riskDanger, isDark), true);

@@ -27,7 +27,11 @@
 import { NameInfo, Cls } from './classify';
 
 /** Spec slot order; slot 2 is the reserved gold self-slot and never appears here. */
-export const INTERLEAVE = [1, 3, 4, 5, 6, 7];
+// Rotation order [1,3,2,7,5]: greedy max-hue-separation over the calibrated
+// pool {kohaku 50°, gold 88°, fuji 285°, ayame 312°, akabeni 354°} — the 2-4
+// tint prefix most blocks use stays maximally separated; the closest pair
+// (ayame/akabeni, 42°) only appears when all five are in play.
+export const INTERLEAVE = [1, 3, 2, 7, 5];
 
 /** Zero-based index into the id[]/idg[] pools for each interleaved slot. */
 const SLOT_TO_POOL_INDEX = INTERLEAVE.reduce<Record<number, number>>((acc, slot, i) => {
@@ -102,58 +106,65 @@ export class GlobalColorLedger {
 }
 
 /**
- * Per-FUNCTION ledger pinning each local data identity (fn-local, block-local,
- * capture) to a slot for as long as that function stays the focus's enclosing
- * function. This is what makes a local's hue stable across every sub-block: the
- * colour is decided once, by first-appearance order in the function, and reused
- * whether the caret sits in the function body, an `if`, or a nested `for`.
+ * Per-FUNCTION ledger pinning local data identities to hues, keyed by the
+ * enclosing function so hues never leak between functions.
  *
- * It is rebuilt when the enclosing function changes (keyed by the function's
- * offset span) so hues don't leak between unrelated functions, and it skips a
- * set of reserved slots (those held by globals visible in the function) to keep
- * >100° hue separation from the bold global tints.
+ * Design: a variable must keep ONE hue across every sub-block of its function
+ * (stability), but a function can hold far more locals than the 5-hue rotation —
+ * they just never all appear in ONE block at once. So slots are a per-BLOCK
+ * budget, not per-function: only the locals present in the currently focused
+ * block compete for the 5 slots. A name remembers its slot (revisiting its block
+ * keeps the colour), and a slot held by a name NOT in the current block is free
+ * to reuse for a name that is — because sibling sub-blocks never coexist on
+ * screen. This is what stops the last for-loop's `idx`/`n` from overflowing just
+ * because earlier sub-blocks already spent the 5 slots.
  */
 export class LocalColorLedger {
-  private slots = new Map<string, number | 'overflow'>();
+  private slots = new Map<string, number>();
   private key = '';
 
-  /** Slot pinned to `name`, or undefined. */
-  get(name: string): number | 'overflow' | undefined {
+  /** Slot pinned to `name`, or undefined if it didn't get one this block. */
+  get(name: string): number | undefined {
     return this.slots.get(name);
   }
 
-  /**
-   * Ensure the ledger is scoped to `fnKey`; reset if the enclosing function
-   * changed. Returns true if it was (re)built fresh.
-   */
-  private ensureScope(fnKey: string): boolean {
+  private ensureScope(fnKey: string): void {
     if (this.key !== fnKey) {
       this.key = fnKey;
       this.slots.clear();
-      return true;
     }
-    return false;
   }
 
   /**
-   * Pin the function's local identities in first-appearance order, skipping any
-   * slot in `reserved` (held by a visible global). Idempotent within a scope:
-   * re-seeding the same function keeps every prior pin. `overflow` past 6 hues.
+   * Assign hues to `blockLocalsInOrder` — the locals present in the CURRENTLY
+   * FOCUSED block, in function-appearance order. Each keeps its remembered slot
+   * if it has one; new names take a slot not used by another name IN THIS BLOCK
+   * (or reserved by a visible global). Names that can't fit (>5 in one block)
+   * are left unassigned → neutral. Slots held by names outside this block are
+   * fair game, so non-overlapping sub-blocks reuse the same 5 hues.
    */
-  seed(fnKey: string, localsInOrder: string[], reserved: Set<number>): void {
+  seed(fnKey: string, blockLocalsInOrder: string[], reserved: Set<number>): void {
     this.ensureScope(fnKey);
-    for (const name of localsInOrder) {
+
+    // Slots already taken by names that ARE in this block (must not collide).
+    const takenThisBlock = new Set<number>(reserved);
+    for (const name of blockLocalsInOrder) {
+      const s = this.slots.get(name);
+      if (s !== undefined) {
+        takenThisBlock.add(s);
+      }
+    }
+
+    for (const name of blockLocalsInOrder) {
       if (this.slots.has(name)) {
-        continue;
+        continue; // keep remembered hue (stability)
       }
-      const used = new Set<number>(reserved);
-      for (const v of this.slots.values()) {
-        if (v !== 'overflow') {
-          used.add(v);
-        }
+      const free = INTERLEAVE.find((s) => !takenThisBlock.has(s));
+      if (free === undefined) {
+        continue; // >5 locals in one block → this one stays neutral
       }
-      const free = INTERLEAVE.find((s) => !used.has(s));
-      this.slots.set(name, free ?? 'overflow');
+      this.slots.set(name, free);
+      takenThisBlock.add(free);
     }
   }
 }
@@ -198,6 +209,11 @@ function rank(byName: Map<string, NameInfo>): { out: Ranked[]; fn: Ranked[]; blo
   );
 
   return { out, fn, block, self };
+}
+
+/** Out-of-fn entries that are captures (declared in some other fn) — colour like locals. */
+function capturesOf(out: Ranked[]): Ranked[] {
+  return out.filter((r) => r.info.isCapture);
 }
 
 /** Inputs that scope colour stability. */
@@ -250,9 +266,31 @@ export function assignColors(
     }
   }
 
-  // Local hues: seed all of the function's locals in function order, once. Every
-  // sub-block of the function reads the same pins → stable colour.
-  localLedger.seed(scope.fnKey, scope.fnLocalsInOrder, reserved);
+  // Local hues: seed only the locals PRESENT IN THIS BLOCK (fn-local, capture,
+  // and block-local≥2 — the ones that will actually paint). Slots are a
+  // per-block budget: sibling sub-blocks reuse the 5 hues, so a function with
+  // many locals never overflows just because earlier blocks spent slots.
+  //
+  // When a block has MORE locals than hues, ATTENTION PRIORITY decides who wins
+  // a slot (the deepest/closest data you're actually reading, then the most-used):
+  //   1. proximity ascending — the focused block's OWN locals (0) beat borrowed-in
+  //      (1) beat those declared in nested sub-blocks you're above (2).
+  //   2. frequency descending — within a tier, the more-referenced name wins.
+  //   3. function-appearance order — a stable final tiebreak so revisits and
+  //      sibling blocks stay deterministic (no shimmer).
+  const fnRank = new Map<string, number>();
+  scope.fnLocalsInOrder.forEach((n, i) => fnRank.set(n, i));
+  const candidates = [...fn, ...capturesOf(out), ...block];
+  const blockLocals = candidates
+    .slice()
+    .sort(
+      (a, b) =>
+        a.info.proximity - b.info.proximity ||
+        b.info.freqInBlock - a.info.freqInBlock ||
+        (fnRank.get(a.name) ?? 1e9) - (fnRank.get(b.name) ?? 1e9),
+    )
+    .map((r) => r.name);
+  localLedger.seed(scope.fnKey, blockLocals, reserved);
 
   // 1. self — always gold, never consumes a slot.
   for (const r of self) {
@@ -271,41 +309,72 @@ export function assignColors(
     );
   }
 
-  // 3. captures → bold idg, but hue from the function-local ledger.
-  for (const r of out) {
-    if (!r.info.isCapture) {
-      continue;
-    }
+  // 3. captures → bold idg, but hue from the local ledger.
+  for (const r of capturesOf(out)) {
     const slot = localLedger.get(r.name);
     plan.set(
       r.name,
-      slot === undefined || slot === 'overflow'
-        ? { kind: 'neutral' }
-        : { kind: 'idg', poolIndex: SLOT_TO_POOL_INDEX[slot] },
+      slot === undefined ? { kind: 'neutral' } : { kind: 'idg', poolIndex: SLOT_TO_POOL_INDEX[slot] },
     );
   }
 
-  // 4. fn-locals → normal id, hue from the function-local ledger.
+  // 4. fn-locals → normal id, hue from the local ledger.
   for (const r of fn) {
     const slot = localLedger.get(r.name);
     plan.set(
       r.name,
-      slot === undefined || slot === 'overflow'
-        ? { kind: 'neutral' }
-        : { kind: 'id', poolIndex: SLOT_TO_POOL_INDEX[slot] },
+      slot === undefined ? { kind: 'neutral' } : { kind: 'id', poolIndex: SLOT_TO_POOL_INDEX[slot] },
     );
   }
 
-  // 5. block-locals used ≥2 → normal id, hue from the function-local ledger.
+  // 5. block-locals used ≥2 → normal id, hue from the local ledger.
   //    (Once-used block-locals were dropped by rank(); they stay neutral.)
   for (const r of block) {
     const slot = localLedger.get(r.name);
     plan.set(
       r.name,
-      slot === undefined || slot === 'overflow'
-        ? { kind: 'neutral' }
-        : { kind: 'id', poolIndex: SLOT_TO_POOL_INDEX[slot] },
+      slot === undefined ? { kind: 'neutral' } : { kind: 'id', poolIndex: SLOT_TO_POOL_INDEX[slot] },
     );
+  }
+
+  return plan;
+}
+
+/**
+ * Build the render plan for the focused block from a SCOPE COLOURING
+ * (scopecolor.ts) — the two-pass model that replaces the stateful ledger.
+ *
+ *   - Which names paint: the block's visible set (pass 1, attention budget).
+ *   - What hue: the co-visibility graph colour (pass 2, per colour scope).
+ *   - Which tier: out-of-fn non-captures render bold (`idg`), everything else
+ *     normal (`id`) — weight carries the local/global distinction now that both
+ *     tiers share one tint set. self is never painted (band 1 owns it).
+ *
+ * Deterministic: no ledger, no navigation history. Same document → same plan.
+ */
+export function planFromColoring(
+  classification: {
+    focusKey: string;
+    byName: Map<string, NameInfo>;
+  },
+  coloring: { hue: Map<string, number>; visible: Map<string, string[]> },
+): ColorPlan {
+  const plan: ColorPlan = new Map();
+  const visible = coloring.visible.get(classification.focusKey) ?? [];
+
+  for (const name of visible) {
+    const info = classification.byName.get(name);
+    if (!info || info.cls === 'self') {
+      continue;
+    }
+    const poolIndex = coloring.hue.get(name);
+    if (poolIndex === undefined) {
+      plan.set(name, { kind: 'neutral' });
+      continue;
+    }
+    // out-of-fn true globals are bold; captures are locals for weight purposes.
+    const bold = info.cls === 'out' && !info.isCapture;
+    plan.set(name, bold ? { kind: 'idg', poolIndex } : { kind: 'id', poolIndex });
   }
 
   return plan;

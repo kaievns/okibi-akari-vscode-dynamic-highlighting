@@ -23,6 +23,11 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "configurationDefaults": {
+      "gopls": {
+        "ui.semanticTokens": true
+      }
+    },
     "commands": [
       {
         "command": "okibiDynamic.toggle",
@@ -42,15 +47,20 @@
           "default": true,
           "description": "Show the current phase (構 Survey · 流 Focus · 異 Edit) in the status bar. Useful for dialling in the dwell timings."
         },
+        "okibiDynamic.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log focus/classification/render decisions to the 'Okibi Dynamic Debug' output channel. Requires window reload."
+        },
         "okibiDynamic.dwell.editToFocus": {
           "type": "number",
-          "default": 1400,
-          "description": "Milliseconds of no typing before Edit 異 relaxes back to Focus 流. Spec starting value: ~1400."
+          "default": 2000,
+          "description": "Milliseconds of no typing before Edit 異 relaxes back to Focus 流."
         },
         "okibiDynamic.dwell.focusToSurvey": {
           "type": "number",
-          "default": 12000,
-          "description": "Milliseconds of no caret activity before Focus 流 relaxes to Survey 構 (the focused-block indicator withdraws). Spec starting value: ~12000."
+          "default": 24000,
+          "description": "Milliseconds of no caret activity before Focus 流 relaxes to Survey 構 (the focused-block indicator withdraws)."
         },
         "okibiDynamic.dwell.minHold": {
           "type": "number",
@@ -63,8 +73,9 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/pure.test.js",
-    "vscode:prepublish": "npm run compile"
+    "test": "npm run compile && node --test test/pure.test.js test/golden.test.js test/scopecolor.test.js test/edge.test.js",
+    "vscode:prepublish": "npm run compile",
+    "bench": "npm run compile && node test/bench.js && node test/bench-nav.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

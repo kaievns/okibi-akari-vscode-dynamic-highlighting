@@ -41,11 +41,11 @@ export interface DwellConfig {
 /**
  * Spec starting values. editToFocus is now 2000ms — the Edit→Focus fallback:
  * band 3 relaxes to band 2 after ~2s of no typing (user decision). minHold and
- * focusToSurvey are unchanged from the validated-in-browser values.
+ * focusToSurvey doubled to 24000 so a read pause does not drop you out of Focus.
  */
 export const DEFAULT_DWELL: DwellConfig = {
   editToFocus: 2000,
-  focusToSurvey: 12000,
+  focusToSurvey: 24000,
   minHold: 350,
 };
 

@@ -47,6 +47,31 @@ test('innermostBlock: deepest block containing the caret wins', () => {
   assert.equal(none, null);
 });
 
+test('innermostBlock: single-line block only focuses when caret offset is between its braces', () => {
+  // `Tags:    map[...]string{"env": "dev"},`  — the {…} opens+closes on this line.
+  // Caret on `Tags:` (before the `{`) must NOT focus the inline map; caret inside must.
+  const line = '  outer {\n    Tags:    m{"env": "dev"},\n  }';
+  const blocks = focus.scanBraceBlocks(line);
+  const inline = blocks.find((b) => b.openLine === b.closeLine); // the m{...} block
+  const outer = blocks.find((b) => b.openLine !== b.closeLine);
+  assert.ok(inline && outer, 'both blocks scanned');
+
+  const braceOpen = line.indexOf('{', line.indexOf('Tags')); // the m{ brace
+  const caretOnTags = line.indexOf('Tags'); // offset well before the brace
+  const caretInside = braceOpen + 3; // between the braces
+
+  // On `Tags:` (same line, before brace) → falls through to the OUTER block, not the inline map.
+  const atTags = focus.innermostBlock(blocks, inline.openLine, caretOnTags);
+  assert.equal(atTags.depth, outer.depth, 'caret before the brace does not focus the inline map');
+  // Inside the braces → the inline map.
+  const inMap = focus.innermostBlock(blocks, inline.openLine, caretInside);
+  assert.equal(inMap.depth, inline.depth, 'caret between braces focuses the inline map');
+
+  // Backward-compat: without an offset, single-line block still matches by line.
+  const noOffset = focus.innermostBlock(blocks, inline.openLine);
+  assert.equal(noOffset.depth, inline.depth);
+});
+
 test('lexIdentifiers: skips strings/comments, keeps $ and _ names, correct offsets', () => {
   const text = 'const _a$ = "str x"; // comment y\nfoo(_a$)';
   const ids = focus.lexIdentifiers(text);
@@ -60,6 +85,53 @@ test('lexIdentifiers: skips strings/comments, keeps $ and _ names, correct offse
   // offset of the first _a$ points at the real character
   const first = ids.find((i) => i.name === '_a$');
   assert.equal(text.slice(first.offset, first.offset + first.length), '_a$');
+});
+
+test('lexRegionFor: ALWAYS header-inclusive, so closure params are visible in their own scope', () => {
+  // The bug: `go func(cfg Config) {` — `cfg` lives on the header line, before
+  // the `{`. With a body-only lex region it was invisible inside its own
+  // closure, and only tinted from the PARENT block (whose range covers the
+  // header line). lexRegionFor must include the header for EVERY block kind.
+  const fn = 'x\ngo func(cfg Config) {\n  use(cfg)\n}';
+  const fnBlock = focus.scanBraceBlocks(fn)[0];
+  const lexR = focus.lexRegionFor(fn, fnBlock);
+  assert.equal(lexR.start, fnBlock.headerStart, 'function header IS in the lex region');
+  assert.ok(lexR.start < fnBlock.openOffset);
+  // the param name actually falls inside it
+  const cfgAt = fn.indexOf('cfg');
+  assert.ok(cfgAt >= lexR.start && cfgAt < lexR.end, 'param offset inside lex region');
+  // but classification still treats it as fn-local (body-only decl region)
+  const declR = focus.declRegionFor(fn, fnBlock);
+  assert.equal(declR.start, fnBlock.openOffset, 'decl region stays body-only for functions');
+
+  // control flow: both regions include the header
+  const cf = 'x\nfor (let i = 0; i < n; i++) {\n  use(i)\n}';
+  const cfBlock = focus.scanBraceBlocks(cf)[0];
+  assert.equal(focus.lexRegionFor(cf, cfBlock).start, cfBlock.headerStart);
+  assert.equal(focus.declRegionFor(cf, cfBlock).start, cfBlock.headerStart);
+});
+
+test('declRegionFor: control-flow headers widen to header; function headers do not', () => {
+  // control-flow: `for (let i=0; ...) { body }` → region starts at header
+  const cf = 'x\nfor (let i = 0; i < n; i++) {\n  use(i)\n}';
+  const cfBlocks = focus.scanBraceBlocks(cf);
+  const cfBlock = cfBlocks[0];
+  const cfRegion = focus.declRegionFor(cf, cfBlock);
+  assert.equal(cfRegion.start, cfBlock.headerStart, 'control-flow region includes the header');
+  assert.ok(cfRegion.start < cfBlock.openOffset, 'header start precedes the brace');
+
+  // function: `function f(p) { body }` → region is body only (params are fn-local)
+  const fn = 'x\nfunction f(param) {\n  use(param)\n}';
+  const fnBlocks = focus.scanBraceBlocks(fn);
+  const fnBlock = fnBlocks[0];
+  const fnRegion = focus.declRegionFor(fn, fnBlock);
+  assert.equal(fnRegion.start, fnBlock.openOffset, 'function region is body-only (excludes params)');
+
+  // arrow: `const g = (a) => { ... }` → body only
+  const arrow = 'const g = (a) => {\n  return a\n}';
+  const aBlock = focus.scanBraceBlocks(arrow)[0];
+  const aRegion = focus.declRegionFor(arrow, aBlock);
+  assert.equal(aRegion.start, aBlock.openOffset, 'arrow region is body-only');
 });
 
 test('lexIdentifiers: descends into template ${...} interpolations, template text stays opaque', () => {
@@ -328,6 +400,8 @@ function nameInfo(cls, opts = {}) {
     firstBlockOffset: opts.block ?? 0,
     isCapture: opts.isCapture ?? false,
     homeFn: opts.homeFn,
+    // proximity: 0 direct block-local, 1 borrowed-in, 2 nested sub-block.
+    proximity: opts.proximity ?? (cls === 'block' ? 0 : 1),
   };
 }
 
@@ -340,6 +414,31 @@ function scope(opts = {}) {
     fnKey: opts.fnKey ?? 'fn0',
   };
 }
+
+test('assignColors: attention priority — direct block-locals win hues over nested/borrowed when scarce', () => {
+  // 6 locals, 5 hues. Priority: proximity (0 direct > 1 borrowed > 2 nested),
+  // then frequency. The two nested (proximity 2) low-freq names should lose.
+  const gl = new colors.GlobalColorLedger();
+  const ll = new colors.LocalColorLedger();
+  const byName = new Map([
+    ['direct1', nameInfo('block', { freq: 2, proximity: 0, block: 1 })],
+    ['direct2', nameInfo('block', { freq: 2, proximity: 0, block: 2 })],
+    ['direct3', nameInfo('block', { freq: 2, proximity: 0, block: 3 })],
+    ['borrowed', nameInfo('fn', { freq: 2, proximity: 1, block: 4 })],
+    ['nestedHi', nameInfo('block', { freq: 9, proximity: 2, block: 5 })], // high freq but nested
+    ['nestedLo', nameInfo('block', { freq: 2, proximity: 2, block: 6 })],
+  ]);
+  const fnLocals = ['direct1', 'direct2', 'direct3', 'borrowed', 'nestedHi', 'nestedLo'];
+  const plan = colors.assignColors(byName, gl, ll, scope({ fnLocals, fnKey: 'fn' }));
+  // All three direct + the borrowed + one nested (the higher-freq) get hues; the 6th overflows.
+  for (const n of ['direct1', 'direct2', 'direct3', 'borrowed']) {
+    assert.notEqual(plan.get(n)?.kind, 'neutral', `${n} (proximity<2) must tint`);
+    assert.ok(plan.get(n)?.poolIndex !== undefined);
+  }
+  // nestedHi beats nestedLo on frequency within the proximity-2 tier → nestedLo overflows.
+  assert.ok(plan.get('nestedHi')?.poolIndex !== undefined, 'higher-freq nested wins the last slot');
+  assert.ok(plan.get('nestedLo') === undefined || plan.get('nestedLo').kind === 'neutral', 'lower-freq nested overflows');
+});
 
 test('assignColors: salience — out-of-fn bold idg, fn/block≥2 id, once-used block neutral', () => {
   const byName = new Map([
@@ -450,6 +549,55 @@ test('assignColors: local ledger resets across DIFFERENT functions', () => {
   assert.equal(b.get('y').poolIndex, 0);
 });
 
+test('assignColors: slots are a per-BLOCK budget — sibling sub-blocks reuse hues, no overflow', () => {
+  // A function with MORE locals than the 5-hue rotation, but split across sibling
+  // sub-blocks so no single block needs >5. Every block must tint all its locals.
+  const ll = new colors.LocalColorLedger();
+  const gl = new colors.GlobalColorLedger();
+  // function-appearance order across the whole function (8 locals > 5 slots)
+  const fnLocals = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const mk = (names) => new Map(names.map((n, i) => [n, nameInfo('block', { freq: 2, block: i })]));
+
+  // sub-block 1 uses a,b,c
+  const p1 = colors.assignColors(mk(['a', 'b', 'c']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
+  // sub-block 2 uses d,e,f (siblings — reuse slots)
+  const p2 = colors.assignColors(mk(['d', 'e', 'f']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
+  // sub-block 3 uses g,h
+  const p3 = colors.assignColors(mk(['g', 'h']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
+
+  for (const [p, names] of [[p1, ['a', 'b', 'c']], [p2, ['d', 'e', 'f']], [p3, ['g', 'h']]]) {
+    for (const n of names) {
+      assert.notEqual(p.get(n)?.kind, 'neutral', `${n} must tint (per-block budget, not per-function)`);
+      assert.ok(p.get(n)?.poolIndex !== undefined, `${n} got a hue`);
+    }
+    // within a block, hues are distinct
+    const idxs = names.map((n) => p.get(n).poolIndex);
+    assert.equal(new Set(idxs).size, idxs.length, 'distinct hues within a block');
+  }
+
+  // Stability: revisiting sub-block 1 keeps a/b/c's original hues.
+  const p1again = colors.assignColors(mk(['a', 'b', 'c']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
+  for (const n of ['a', 'b', 'c']) {
+    assert.equal(p1again.get(n).poolIndex, p1.get(n).poolIndex, `${n} hue stable across revisit`);
+  }
+});
+
+test('assignColors: >5 locals in ONE block — the 6th+ overflow to neutral', () => {
+  const ll = new colors.LocalColorLedger();
+  const gl = new colors.GlobalColorLedger();
+  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']; // 7 in one block, 5 slots
+  const plan = colors.assignColors(
+    new Map(names.map((n, i) => [n, nameInfo('block', { freq: 2, block: i })])),
+    gl,
+    ll,
+    scope({ fnLocals: names, fnKey: 'fn' }),
+  );
+  const tinted = names.filter((n) => plan.get(n)?.poolIndex !== undefined);
+  const neutral = names.filter((n) => plan.get(n) === undefined || plan.get(n).kind === 'neutral');
+  assert.equal(tinted.length, colors.INTERLEAVE.length, 'exactly rotation-many tint');
+  assert.equal(neutral.length, names.length - colors.INTERLEAVE.length, 'the rest overflow to neutral');
+});
+
 test('assignColors: local hues skip slots held by globals in the same function', () => {
   const gl = new colors.GlobalColorLedger();
   const ll = new colors.LocalColorLedger();
@@ -471,7 +619,7 @@ test('assignColors: overflow → neutral, never recycles a hue', () => {
   const globals = [...byName.keys()];
   const plan = colors.assignColors(byName, new colors.GlobalColorLedger(), new colors.LocalColorLedger(), scope({ fileGlobals: globals }));
   const used = [...plan.values()].filter((e) => e.kind === 'idg').map((e) => e.poolIndex);
-  assert.ok(used.length <= 6);
+  assert.equal(used.length, colors.INTERLEAVE.length, 'uses exactly the rotation size (5 after moegi pull)');
   assert.equal(new Set(used).size, used.length); // never recycle
   const neutrals = [...plan.values()].filter((e) => e.kind === 'neutral').length;
   assert.equal(neutrals, byName.size - used.length);

@@ -1,0 +1,57 @@
+/*⇒63,comment,[]*/// Sample Go file for exercising the Okibi dynamic focus layer.
+/*⇒75,comment,[]*/// Move the caret into different { } blocks and watch the ember bar + fill.
+/*⇒71,comment,[]*/// Type to flip Survey 構 → Focus 流 → Edit 異 (status bar, bottom-right).
+
+/*⇒7,keyword,[]*/package /*⇒4,namespace,[]*/main
+
+/*⇒6,keyword,[]*/import (
+	"fmt"/*⇐3,namespace,[]*/
+	"strings"/*⇐7,namespace,[]*/
+)
+
+/*⇒65,comment,[]*/// Config is a plain struct — its brace-block is one focus scope.
+/*⇒4,keyword,[]*/type /*⇒6,type,[definition struct]*/Config /*⇒6,keyword,[]*/struct {
+	/*⇒4,property,[definition string]*/Name    /*⇒6,type,[defaultLibrary string]*/string
+	/*⇒7,property,[definition number]*/Retries /*⇒3,type,[defaultLibrary number]*/int
+	/*⇒4,property,[definition map]*/Tags    /*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒6,type,[defaultLibrary string]*/string
+}
+
+/*⇒4,keyword,[]*/func /*⇒10,function,[definition signature]*/loadConfig(/*⇒4,parameter,[definition string]*/name /*⇒6,type,[defaultLibrary string]*/string) /*⇒6,type,[struct]*/Config {
+	/*⇒3,variable,[definition struct]*/cfg /*⇒2,operator,[]*/:= /*⇒6,type,[struct]*/Config{
+		/*⇒4,property,[string]*/Name:    /*⇒4,parameter,[string]*/name,
+		/*⇒7,property,[number]*/Retries: /*⇒1,number,[]*/3,
+		/*⇒4,property,[map]*/Tags:    /*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒6,type,[defaultLibrary string]*/string{/*⇒5,string,[]*/"env": /*⇒5,string,[]*/"dev"},
+	}
+
+	/*⇒69,comment,[]*/// A brace in a string literal must NOT open a block: "}{ not real {"
+	/*⇒5,variable,[definition string]*/label /*⇒2,operator,[]*/:= /*⇒26,string,[]*/"range {0..9} placeholder"
+	/*⇒1,variable,[]*/_ /*⇒1,operator,[]*/= /*⇒5,variable,[string]*/label
+
+	/*⇒2,keyword,[]*/if /*⇒3,variable,[struct]*/cfg./*⇒7,property,[number]*/Retries /*⇒1,operator,[]*/> /*⇒1,number,[]*/0 {
+		/*⇒3,keyword,[]*/for /*⇒1,variable,[definition number]*/i /*⇒2,operator,[]*/:= /*⇒1,number,[]*/0; /*⇒1,variable,[number]*/i /*⇒1,operator,[]*/< /*⇒3,variable,[struct]*/cfg./*⇒7,property,[number]*/Retries; /*⇒1,variable,[number]*/i/*⇒2,operator,[]*/++ {
+			/*⇒56,comment,[]*/// deepest block — caret here should focus THIS for-body
+			/*⇒3,namespace,[]*/fmt./*⇒6,function,[signature]*/Printf(/*⇒9,string,[]*/"attempt /*⇒2,string,[format]*/%d/*⇒5,string,[]*/ for /*⇒2,string,[format]*/%s/*⇒3,string,[]*/\n", /*⇒1,variable,[number]*/i, /*⇒3,variable,[struct]*/cfg./*⇒4,property,[string]*/Name)
+		}
+	}
+
+	/*⇒6,keyword,[]*/return /*⇒3,variable,[struct]*/cfg
+}
+
+/*⇒4,keyword,[]*/func /*⇒9,function,[definition signature]*/summarize(/*⇒4,parameter,[definition slice]*/cfgs []/*⇒6,type,[struct]*/Config) /*⇒6,type,[defaultLibrary string]*/string {
+	/*⇒3,keyword,[]*/var /*⇒1,variable,[definition struct]*/b /*⇒7,namespace,[]*/strings./*⇒7,type,[struct]*/Builder
+	/*⇒3,keyword,[]*/for /*⇒1,variable,[definition number]*/_, /*⇒1,variable,[definition struct]*/c := /*⇒5,keyword,[]*/range /*⇒4,parameter,[slice]*/cfgs {
+		/*⇒2,keyword,[]*/if /*⇒1,variable,[struct]*/c./*⇒4,property,[string]*/Name /*⇒2,operator,[]*/== /*⇒2,string,[]*/"" {
+			/*⇒8,keyword,[]*/continue
+		}
+		/*⇒1,variable,[struct]*/b./*⇒11,method,[signature]*/WriteString(/*⇒3,namespace,[]*/fmt./*⇒7,function,[signature]*/Sprintf(/*⇒1,string,[]*/"/*⇒2,string,[format]*/%s/*⇒2,string,[]*/ x/*⇒2,string,[format]*/%d/*⇒3,string,[]*/; ", /*⇒1,variable,[struct]*/c./*⇒4,property,[string]*/Name, /*⇒1,variable,[struct]*/c./*⇒7,property,[number]*/Retries))
+	}
+	/*⇒6,keyword,[]*/return /*⇒1,variable,[struct]*/b./*⇒6,method,[signature]*/String()
+}
+
+/*⇒4,keyword,[]*/func /*⇒4,function,[definition signature]*/main() {
+	/*⇒4,variable,[definition slice]*/cfgs /*⇒2,operator,[]*/:= []/*⇒6,type,[struct]*/Config{
+		/*⇒10,function,[signature]*/loadConfig(/*⇒7,string,[]*/"alpha"),
+		/*⇒10,function,[signature]*/loadConfig(/*⇒6,string,[]*/"beta"),
+	}
+	/*⇒3,namespace,[]*/fmt./*⇒7,function,[signature]*/Println(/*⇒9,function,[signature]*/summarize(/*⇒4,variable,[slice]*/cfgs))
+}

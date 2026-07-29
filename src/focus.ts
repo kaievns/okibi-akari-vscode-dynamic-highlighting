@@ -29,6 +29,15 @@ export interface BraceBlock {
   openOffset: number;
   /** Absolute character offset of the `}` (the brace itself). */
   closeOffset: number;
+  /**
+   * Absolute offset of the START of the header line (the line the `{` is on).
+   * Loop/if/switch headers declare variables that belong to the block but sit
+   * BEFORE the brace (`for _, c := range xs {`, `if v, ok := m[k]; ok {`). For
+   * classification we treat a declaration anywhere from headerStart..closeOffset
+   * as block-local, so those header bindings tint as block data — without
+   * widening the tint/trace range itself, which stays body-scoped.
+   */
+  headerStart: number;
 }
 
 type ScanState = 'code' | 'line-comment' | 'block-comment' | 'sq' | 'dq' | 'bq';
@@ -47,9 +56,10 @@ type ScanState = 'code' | 'line-comment' | 'block-comment' | 'sq' | 'dq' | 'bq';
  */
 export function scanBraceBlocks(text: string): BraceBlock[] {
   const blocks: BraceBlock[] = [];
-  const stack: { openLine: number; openOffset: number }[] = [];
+  const stack: { openLine: number; openOffset: number; headerStart: number }[] = [];
   let state: ScanState = 'code';
   let line = 0;
+  let lineStart = 0; // offset of the first char of the current line
 
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -57,6 +67,7 @@ export function scanBraceBlocks(text: string): BraceBlock[] {
 
     if (c === '\n') {
       line++;
+      lineStart = i + 1;
       // line comments end at newline; strings other than templates don't span lines
       if (state === 'line-comment' || state === 'sq' || state === 'dq') {
         state = 'code';
@@ -79,7 +90,7 @@ export function scanBraceBlocks(text: string): BraceBlock[] {
         } else if (c === '`') {
           state = 'bq';
         } else if (c === '{') {
-          stack.push({ openLine: line, openOffset: i });
+          stack.push({ openLine: line, openOffset: i, headerStart: lineStart });
         } else if (c === '}') {
           const open = stack.pop();
           if (open) {
@@ -89,6 +100,7 @@ export function scanBraceBlocks(text: string): BraceBlock[] {
               depth: stack.length, // depth after popping = this block's depth
               openOffset: open.openOffset,
               closeOffset: i,
+              headerStart: open.headerStart,
             });
           }
         }
@@ -143,20 +155,48 @@ export function scanBraceBlocks(text: string): BraceBlock[] {
  * ties (which shouldn't happen for well-formed nesting) break to the tightest
  * span. Returns null when the caret is at module top level (→ Survey).
  */
-export function innermostBlock(blocks: BraceBlock[], caretLine: number): BraceBlock | null {
+export function innermostBlock(
+  blocks: BraceBlock[],
+  caretLine: number,
+  caretOffset?: number,
+): BraceBlock | null {
   let best: BraceBlock | null = null;
   for (const b of blocks) {
-    if (b.openLine <= caretLine && caretLine <= b.closeLine) {
-      if (
-        best === null ||
-        b.depth > best.depth ||
-        (b.depth === best.depth && b.closeLine - b.openLine < best.closeLine - best.openLine)
-      ) {
-        best = b;
-      }
+    if (!blockContainsCaret(b, caretLine, caretOffset)) {
+      continue;
+    }
+    if (
+      best === null ||
+      b.depth > best.depth ||
+      (b.depth === best.depth && b.closeLine - b.openLine < best.closeLine - best.openLine)
+    ) {
+      best = b;
     }
   }
   return best;
+}
+
+/**
+ * Whether a caret is inside a block. Containment is line-based for MULTI-line
+ * blocks — a caret anywhere on the header or closing line counts, so clicking a
+ * function's signature focuses its body. But for a SINGLE-line block (opens and
+ * closes on one line, e.g. `map[string]string{"env": "dev"}`), line containment
+ * is too coarse: a caret earlier on that same line (on `Tags:`, before the `{`)
+ * would wrongly count. There we require the caret's OFFSET to fall within the
+ * braces. `caretOffset` is optional; without it, single-line blocks fall back to
+ * line containment (old behaviour) so callers that lack an offset still work.
+ */
+function blockContainsCaret(b: BraceBlock, caretLine: number, caretOffset?: number): boolean {
+  if (caretLine < b.openLine || caretLine > b.closeLine) {
+    return false;
+  }
+  const singleLine = b.openLine === b.closeLine;
+  if (singleLine && caretOffset !== undefined) {
+    // Caret must sit between the braces (inclusive of the closing brace so a
+    // click just inside still counts).
+    return caretOffset > b.openOffset && caretOffset <= b.closeOffset;
+  }
+  return true;
 }
 
 /**
@@ -168,6 +208,55 @@ export function innermostBlock(blocks: BraceBlock[], caretLine: number): BraceBl
  */
 export function focusKeyOf(block: BraceBlock): string {
   return `${block.openLine}#${block.depth}`;
+}
+
+/**
+ * The declaration region for a block's block-local detection.
+ *
+ * Normally the body only ([openOffset, closeOffset]). For a CONTROL-FLOW block
+ * (if/for/while/switch/range/…) we widen to include the header line, so header
+ * bindings — `for _, c := range xs {`, `if v, ok := m[k]; ok {` — count as
+ * block-local. But a FUNCTION block's header holds its PARAMETERS, which are
+ * function-scoped (fn-local), not block-local; widening there would misclassify
+ * params. So we widen only when the header reads as control-flow and NOT as a
+ * function signature.
+ */
+export function declRegionFor(text: string, block: BraceBlock): { start: number; end: number } {
+  const body = { start: block.openOffset, end: block.closeOffset + 1 };
+  if (isControlFlowHeader(text, block)) {
+    return { start: block.headerStart, end: block.closeOffset + 1 };
+  }
+  return body;
+}
+
+/** Does this block's header read as control flow (rather than a function signature)? */
+function isControlFlowHeader(text: string, block: BraceBlock): boolean {
+  const header = text.slice(block.headerStart, block.openOffset);
+  // Control-flow keywords are unambiguous and take precedence — `for (...) {`,
+  // `if (...) {`, `while (...) {` all have parens too, so paren-based function
+  // detection must not override them.
+  return /\b(if|for|while|switch|else|do|range|select|case)\b/.test(header);
+}
+
+/**
+ * The region used for LEXING — deciding which names count as "used in this
+ * block" and are therefore candidates for a hue.
+ *
+ * ALWAYS header-inclusive, for every block kind. The header line carries a
+ * block's most important bindings:
+ *   - control flow: `for _, c := range xs {`, `if v, ok := m[k]; ok {`
+ *   - functions:    `go func(cfg Config) {`, `echo := func(ctx *Context) {`
+ * Those names live BEFORE the `{`, so a body-only region makes them invisible
+ * in their own scope — which is why a closure's params used to tint only from
+ * the PARENT block (whose range covers the header line) and never from inside
+ * the closure itself.
+ *
+ * This is deliberately wider than `declRegionFor`: classification still needs
+ * the narrower region so a function's params classify as fn-local (whole-scope)
+ * rather than block-local (which would trip the ≥2-use gate).
+ */
+export function lexRegionFor(_text: string, block: BraceBlock): { start: number; end: number } {
+  return { start: block.headerStart, end: block.closeOffset + 1 };
 }
 
 export interface LexId {

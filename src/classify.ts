@@ -57,6 +57,16 @@ export interface NameInfo {
   isCapture: boolean;
   /** For a capture, the home function range its declaration sits in. */
   homeFn?: OffsetRange;
+  /**
+   * Attention proximity — how directly this name belongs to the FOCUSED block,
+   * used to prioritise hue slots when a block has more locals than hues (the
+   * deepest/closest data wins, per the attention-priority principle):
+   *   0 — declared directly in the focused block (its own local)
+   *   1 — borrowed in: declared in an enclosing scope (fn-local / capture)
+   *   2 — declared in a NESTED sub-block the caret sits above (belongs to a
+   *       child scope you're not inside — lowest priority)
+   */
+  proximity: 0 | 1 | 2;
 }
 
 export interface Classification {
@@ -100,6 +110,101 @@ export interface Classification {
 const SELF_NAMES = new Set(['this', 'self']);
 
 /**
+ * File-wide analysis, computed ONCE per document version and shared by every
+ * block classified in that version.
+ *
+ * Without this, each per-block classify redid the whole-file token scan, the
+ * whole-file self-occurrence lex, and the file-globals computation — so
+ * classifying an N-block scope was N× the file-wide work, and cost grew with
+ * total file size even though the scope size was fixed. Hoisting it makes the
+ * per-block pass depend only on the block, and the scope pass linear in blocks.
+ */
+export interface FileIndex {
+  /** Tintable occurrence ranges per name, file-wide (insertion order = first appearance). */
+  occurrences: Map<string, OffsetRange[]>;
+  /** Declaration offsets per name (shorthand reads excluded — they declare a property, not a binding). */
+  declOffsets: Map<string, number[]>;
+  /** First file offset per name. */
+  firstFileOffset: Map<string, number>;
+  /** Names whose every declaration is outside any function → true globals, file order. */
+  fileGlobalsInOrder: string[];
+}
+
+/**
+ * Build the file-wide index from decoded semantic tokens. Pure; cache by
+ * document version.
+ */
+export function buildFileIndex(
+  text: string,
+  tokens: DecodedToken[],
+  fnRanges: OffsetRange[],
+): FileIndex {
+  const occurrences = new Map<string, OffsetRange[]>();
+  const declOffsets = new Map<string, number[]>();
+  const firstFileOffset = new Map<string, number>();
+
+  for (const tok of tokens) {
+    // Data identities are variable/parameter. `property` is normally band-1, but
+    // object-shorthand (`{ name }`) is a real read of a binding and tints like it.
+    const tintable =
+      TINTABLE_TYPES.has(tok.type) ||
+      (tok.type === 'property' && isShorthandPropertyRead(text, tok.offset, tok.length, tok.modifiers));
+    if (!tintable) {
+      continue;
+    }
+    // Builtins (console, Math…) are library surface, not this file's data.
+    if (tok.modifiers.some((m) => NON_DATA_MODIFIERS.has(m))) {
+      continue;
+    }
+    const range: OffsetRange = { start: tok.offset, end: tok.offset + tok.length };
+    const list = occurrences.get(tok.name);
+    if (list) {
+      list.push(range);
+    } else {
+      occurrences.set(tok.name, [range]);
+      firstFileOffset.set(tok.name, tok.offset);
+    }
+    // A shorthand-read (`{ name }`) carries a `declaration` modifier because it
+    // syntactically declares the object PROPERTY — but it READS the variable, it
+    // does not declare it. Counting it as a declaration would (wrongly) make the
+    // variable block-local to whatever object literal it appears in, dropping it
+    // to neutral. So never treat a shorthand read as a binding declaration.
+    const isShorthand = tok.type === 'property';
+    if (!isShorthand && tok.modifiers.some((m) => DECL_MODIFIERS.has(m))) {
+      const d = declOffsets.get(tok.name);
+      if (d) {
+        d.push(tok.offset);
+      } else {
+        declOffsets.set(tok.name, [tok.offset]);
+      }
+    }
+  }
+
+  // self names are keywords the token stream skips; lex them once here so the
+  // trace layer has ranges for them (band 1 paints them, but escape-risk needs
+  // the classification).
+  const selfWanted = new Set<string>();
+  for (const name of SELF_NAMES) {
+    selfWanted.add(name);
+  }
+  for (const id of lexIdentifiers(text)) {
+    if (selfWanted.has(id.name)) {
+      const range: OffsetRange = { start: id.offset, end: id.offset + id.length };
+      const list = occurrences.get(id.name);
+      if (list) {
+        list.push(range);
+      } else {
+        occurrences.set(id.name, [range]);
+        firstFileOffset.set(id.name, id.offset);
+      }
+    }
+  }
+
+  const fileGlobalsInOrder = computeFileGlobals(occurrences, declOffsets, fnRanges);
+  return { occurrences, declOffsets, firstFileOffset, fileGlobalsInOrder };
+}
+
+/**
  * Semantic token types we treat as tintable DATA identities. Band 2 is about
  * data flow, so only bindings you can trace — variables and parameters — get an
  * identity tint. Functions, methods, properties, classes, namespaces, types etc.
@@ -112,11 +217,14 @@ const TINTABLE_TYPES = new Set(['variable', 'parameter']);
 
 /**
  * Modifiers that disqualify a token from identity tinting even when its type is
- * variable/parameter. `defaultLibrary` marks builtins (console, Math, Array…) —
- * those are modules/library surface, not the file's own data, so they stay
- * band-1. `readonly`/`static` are NOT excluded: a readonly local is still data.
+ * variable/parameter. `defaultLibrary` marks builtins (console, Math, nil,
+ * true/false…) — library surface, not the file's own data. `signature` (gopls)
+ * marks FUNCTION-TYPED values (a func param `h Handler`, a func-typed local):
+ * calls through them are transformers, not data — they keep band-1's bold blue
+ * like any other function. `readonly`/`static` are NOT excluded: a readonly
+ * local is still data.
  */
-const NON_DATA_MODIFIERS = new Set(['defaultLibrary']);
+const NON_DATA_MODIFIERS = new Set(['defaultLibrary', 'signature']);
 
 const DECL_MODIFIERS = new Set(['declaration', 'definition']);
 
@@ -323,17 +431,37 @@ function isSelfName(name: string): boolean {
 }
 
 /**
- * A `property`-typed token is normally band-1 (field access / key literal), NOT
- * a data identity — that is why `TINTABLE_TYPES` omits it. The one exception is
- * OBJECT-SHORTHAND: in `{ name }` the token is a genuine READ of the `name`
- * binding, indistinguishable in meaning from writing `{ name: name }`. TS types
- * it `property`, but it flows data and should tint like the variable it refers
- * to. Distinguish by surrounding punctuation (position, not type):
- *   - `cfg.name`   → preceded by `.` (or `?.`) → field access      → NOT shorthand
- *   - `{ name: v }`→ followed by `:`           → key literal        → NOT shorthand
- *   - `{ name }`   → neither                   → shorthand data read → shorthand
+ * A `property`-typed token is normally band-1 (field access / key literal / a
+ * field or member DEFINITION), NOT a data identity — that is why `TINTABLE_TYPES`
+ * omits it. The one exception is OBJECT-SHORTHAND: in `{ name }` the token is a
+ * genuine READ of the `name` binding, equivalent to `{ name: name }`. Servers
+ * type it `property`, but it flows data and should tint like the variable it
+ * refers to.
+ *
+ * Grounded in REAL semantic-token output from both TS (getEncodedSemantic-
+ * Classifications) and gopls (`gopls semtok`):
+ *   TS   `{ name }`            → property [declaration]            → shorthand ✓
+ *   TS   `cfg.name`            → property [] (after `.`)           → field access ✗
+ *   TS   `{ name: v }`         → property [declaration] (`:` next) → key literal ✗
+ *   Go   struct field `Name`   → property [definition string]      → field DEF ✗
+ *   Go   composite key `Name:` → property [string] (`:` next)      → key literal ✗
+ *   Go   `cfg.Name`            → property [string] (after `.`)     → field access ✗
+ *
+ * So the rule is: a `property` token is a shorthand read when it is NOT preceded
+ * by `.`, NOT followed by `:`, AND does NOT carry a `definition` modifier (Go
+ * struct/field definitions carry `definition`; TS shorthand carries only
+ * `declaration`, which is kept).
  */
-function isShorthandPropertyRead(text: string, offset: number, length: number): boolean {
+function isShorthandPropertyRead(
+  text: string,
+  offset: number,
+  length: number,
+  modifiers: string[],
+): boolean {
+  // A field/member DEFINITION is band-1, never a data read (Go struct fields).
+  if (modifiers.includes('definition')) {
+    return false;
+  }
   // previous non-whitespace char
   let p = offset - 1;
   while (p >= 0 && (text[p] === ' ' || text[p] === '\t' || text[p] === '\n' || text[p] === '\r')) {
@@ -404,53 +532,40 @@ export function classifyFromSemantic(
   // Defaults to enclosingFn (innermost) when not supplied — callers that want
   // closure-stable hues pass the outermost function here.
   colorScopeFn: OffsetRange | undefined = enclosingFn,
+  // The declaration region for block-local detection: the block PLUS its header
+  // line, so loop/if header bindings (`for _, c := range xs {`) count as
+  // block-local. Defaults to `block` when not supplied. Tint/trace ranges still
+  // use `block` (body-scoped) — only classification widens.
+  declRegion: OffsetRange = block,
+  // Ranges of brace-blocks nested strictly INSIDE the focused block. A block
+  // local whose declaration sits in one of these belongs to a child scope the
+  // caret is above → lower attention priority (proximity 2).
+  subBlocks: OffsetRange[] = [],
+  // File-wide index, computed once per document version. Built on demand when
+  // absent (keeps the pure signature usable standalone in tests).
+  fileIndex: FileIndex = buildFileIndex(text, tokens, fnRanges),
 ): Classification {
-  // File-wide occurrences + declaration offsets, keyed by name, from tintable tokens.
-  const occurrences = new Map<string, OffsetRange[]>();
-  const declOffsets = new Map<string, number[]>();
-  const firstFileOffset = new Map<string, number>();
+  const { occurrences, declOffsets, firstFileOffset } = fileIndex;
 
-  for (const tok of tokens) {
-    // Data identities are variable/parameter. `property` is normally band-1, but
-    // object-shorthand (`{ name }`) is a real read of a binding and tints like it.
-    const tintable =
-      TINTABLE_TYPES.has(tok.type) ||
-      (tok.type === 'property' && isShorthandPropertyRead(text, tok.offset, tok.length));
-    if (!tintable) {
-      continue;
-    }
-    // Builtins (console, Math…) are library surface, not this file's data.
-    if (tok.modifiers.some((m) => NON_DATA_MODIFIERS.has(m))) {
-      continue;
-    }
-    const range: OffsetRange = { start: tok.offset, end: tok.offset + tok.length };
-    const list = occurrences.get(tok.name);
-    if (list) {
-      list.push(range);
-    } else {
-      occurrences.set(tok.name, [range]);
-      firstFileOffset.set(tok.name, tok.offset);
-    }
-    // A shorthand-read (`{ name }`) carries a `declaration` modifier because it
-    // syntactically declares the object PROPERTY — but it READS the variable, it
-    // does not declare it. Counting it as a declaration would (wrongly) make the
-    // variable block-local to whatever object literal it appears in, dropping it
-    // to neutral. So never treat a shorthand read as a binding declaration.
-    const isShorthand = tok.type === 'property';
-    if (!isShorthand && tok.modifiers.some((m) => DECL_MODIFIERS.has(m))) {
-      const d = declOffsets.get(tok.name);
-      if (d) {
-        d.push(tok.offset);
-      } else {
-        declOffsets.set(tok.name, [tok.offset]);
+  const byName = new Map<string, NameInfo>();
+
+  // A name only counts as used-in-this-block if it has a TINTABLE occurrence
+  // inside it. Lexing alone is not enough: `c.Name` is a field access (rejected
+  // by the tintable gate), but `Name` may still be in the file-wide occurrence
+  // map from a shorthand read elsewhere — without this check the field access
+  // would inherit that eligibility and tint.
+  const tintableInBlock = new Set<string>();
+  for (const [name, ranges] of occurrences) {
+    for (const r of ranges) {
+      if (r.start >= block.start && r.end <= block.end) {
+        tintableInBlock.add(name);
+        break;
       }
     }
   }
 
-  const byName = new Map<string, NameInfo>();
-
-  // Names used in the block, via the lexer (covers occurrences the LSP may have
-  // typed as something non-tintable but the user still reads as a name).
+  // Names used in the block, via the lexer (gives per-block frequency/order for
+  // the names the tintable gate admitted).
   const blockIds = lexIdentifiers(text, block.start, block.end);
   const blockAgg = new Map<string, { freq: number; first: number }>();
   for (const id of blockIds) {
@@ -470,17 +585,25 @@ export function classifyFromSemantic(
         firstFileOffset: firstFileOffset.get(name) ?? agg.first,
         firstBlockOffset: agg.first,
         isCapture: false,
+        proximity: 1,
       });
       continue;
     }
-    // Only tintable names (resolved by the LSP as an identifier) proceed.
-    if (!occurrences.has(name)) {
-      continue; // keyword, string content, or non-tintable → neutral
+    // `_` is a discard (Go/Python blank identifier) or a module facade (lodash)
+    // — either way it is not a data identity and must not compete for a hue.
+    if (name === '_') {
+      continue;
+    }
+    // Only names with a tintable occurrence IN THIS BLOCK proceed. (File-wide
+    // eligibility is not enough — see tintableInBlock above.)
+    if (!tintableInBlock.has(name)) {
+      continue; // keyword, field access, string content, non-tintable → neutral
     }
 
     const decls = declOffsets.get(name) ?? [];
-    const declInBlock = decls.some((o) => inRange(o, block));
-    const declInFn = enclosingFn ? decls.some((o) => inRange(o, enclosingFn) && !inRange(o, block)) : false;
+    // Block-local if declared in the block body OR its header (loop/if binding).
+    const declInBlock = decls.some((o) => inRange(o, declRegion));
+    const declInFn = enclosingFn ? decls.some((o) => inRange(o, enclosingFn) && !inRange(o, declRegion)) : false;
 
     let cls: Cls;
     let isCapture = false;
@@ -502,6 +625,16 @@ export function classifyFromSemantic(
       }
     }
 
+    // Attention proximity: a block-local declared inside a NESTED sub-block is a
+    // child scope the caret sits above (proximity 2). A direct block-local is
+    // proximity 0 (the focused block's own data). Everything borrowed in
+    // (fn-local, capture, global) is proximity 1.
+    let proximity: 0 | 1 | 2 = 1;
+    if (cls === 'block') {
+      const declInSub = decls.some((o) => subBlocks.some((sb) => inRange(o, sb)));
+      proximity = declInSub ? 2 : 0;
+    }
+
     byName.set(name, {
       cls,
       freqInBlock: agg.freq,
@@ -509,13 +642,13 @@ export function classifyFromSemantic(
       firstBlockOffset: agg.first,
       isCapture,
       homeFn,
+      proximity,
     });
   }
 
-  addSelfOccurrences(text, byName, occurrences);
-  const fileGlobalsInOrder = computeFileGlobals(occurrences, declOffsets, fnRanges);
-  // Local ordering + globals are computed over the COLOUR scope (outermost fn),
-  // so every closure inside it shares one palette and one first-appearance order.
+  // fileGlobalsInOrder + self occurrences come from the shared file index — no
+  // per-block whole-file rescan. Local ordering is per COLOUR SCOPE, so every
+  // closure inside it shares one first-appearance order.
   const { locals: fnLocalsInOrder, globals: fnGlobals } = computeFnLocals(
     occurrences,
     declOffsets,
@@ -527,7 +660,7 @@ export function classifyFromSemantic(
     focusKey,
     byName,
     occurrences,
-    fileGlobalsInOrder,
+    fileGlobalsInOrder: fileIndex.fileGlobalsInOrder,
     fnLocalsInOrder,
     fnGlobals,
     colorScopeFn,
@@ -549,6 +682,8 @@ export function classifyFromHeuristic(
   docVersion: number,
   focusKey: string,
   colorScopeFn: OffsetRange | undefined = enclosingFn,
+  declRegion: OffsetRange = block,
+  subBlocks: OffsetRange[] = [],
 ): Classification {
   const allIds = lexIdentifiers(text);
 
@@ -612,15 +747,20 @@ export function classifyFromHeuristic(
         firstFileOffset: agg.first,
         firstBlockOffset: agg.first,
         isCapture: false,
+        proximity: 1,
       });
+      continue;
+    }
+    // discard / blank identifier — not a data identity (see semantic path).
+    if (name === '_') {
       continue;
     }
     if (!occurrences.has(name)) {
       continue;
     }
     const decls = declOffsets.get(name) ?? [];
-    const declInBlock = decls.some((o) => inRange(o, block));
-    const declInFn = enclosingFn ? decls.some((o) => inRange(o, enclosingFn) && !inRange(o, block)) : false;
+    const declInBlock = decls.some((o) => inRange(o, declRegion));
+    const declInFn = enclosingFn ? decls.some((o) => inRange(o, enclosingFn) && !inRange(o, declRegion)) : false;
 
     let cls: Cls;
     let isCapture = false;
@@ -640,6 +780,12 @@ export function classifyFromHeuristic(
       }
     }
 
+    let proximity: 0 | 1 | 2 = 1;
+    if (cls === 'block') {
+      const declInSub = decls.some((o) => subBlocks.some((sb) => inRange(o, sb)));
+      proximity = declInSub ? 2 : 0;
+    }
+
     byName.set(name, {
       cls,
       freqInBlock: agg.freq,
@@ -647,6 +793,7 @@ export function classifyFromHeuristic(
       firstBlockOffset: agg.first,
       isCapture,
       homeFn,
+      proximity,
     });
   }
 

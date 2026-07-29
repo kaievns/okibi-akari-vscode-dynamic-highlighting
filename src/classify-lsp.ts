@@ -21,13 +21,18 @@ import {
   outermostFnOf,
   classifyFromSemantic,
   classifyFromHeuristic,
+  buildFileIndex,
+  FileIndex,
 } from './classify';
-import { BraceBlock, focusKeyOf } from './focus';
+import { BraceBlock, focusKeyOf, declRegionFor, lexRegionFor, scanBraceBlocks } from './focus';
+import { BlockNames, ScopeColoring, colorScope } from './scopecolor';
 
 interface LspBundle {
   version: number;
   tokens: DecodedToken[] | null; // null = no semantic provider
   fnRanges: OffsetRange[];
+  /** File-wide analysis, built once per version and shared by every block. */
+  fileIndex?: FileIndex;
   lineStarts: number[];
 }
 
@@ -43,6 +48,65 @@ export class Classifier implements vscode.Disposable {
   private retriedVersions = new WeakMap<vscode.TextDocument, number>();
 
   /**
+   * Classify the focused block AND colour its whole scope in one pass.
+   *
+   * The colouring needs every block in the colour scope (see scopecolor.ts:
+   * co-visibility graph), so we classify each of them from the same cached LSP
+   * bundle — no extra server round-trips — and greedy-colour the result. The
+   * output is deterministic: same document → same colours, whatever order the
+   * user navigated.
+   */
+  async classifyScope(
+    doc: vscode.TextDocument,
+    block: BraceBlock,
+    paletteSize: number,
+    token: vscode.CancellationToken,
+  ): Promise<{ focused: Classification; coloring: ScopeColoring } | null> {
+    const text = doc.getText();
+    const bundle = await this.bundleFor(doc, text, token);
+    if (token.isCancellationRequested) {
+      return null;
+    }
+
+    const colorScopeFn = outermostFnOf(bundle.fnRanges, block.openOffset);
+    const allBlocks = scanBraceBlocks(text);
+
+    // Every block whose focus would share this colour scope. At module top level
+    // (no enclosing fn) the scope is just the focused block itself.
+    const scopeBlocks = colorScopeFn
+      ? allBlocks.filter(
+          (b) => b.openOffset >= colorScopeFn.start && b.closeOffset < colorScopeFn.end,
+        )
+      : [block];
+
+    const focusKey = focusKeyOf(block);
+    const perBlock: BlockNames[] = [];
+    let focused: Classification | undefined;
+
+    // Sort once by open offset so each block's nested sub-blocks are a
+    // contiguous forward run — avoids an O(blocks) filter per block (O(n²) per
+    // scope) inside classifyBlock.
+    const sorted = [...allBlocks].sort((a, b) => a.openOffset - b.openOffset);
+
+    for (const b of scopeBlocks) {
+      const c = this.classifyBlock(text, b, sorted, bundle, doc.version, true);
+      perBlock.push({ focusKey: c.focusKey, byName: c.byName });
+      if (c.focusKey === focusKey) {
+        focused = c;
+      }
+    }
+    if (!focused) {
+      // The focused block wasn't in the scope set (top-level edge case) — classify
+      // it directly so the caller always gets its classification.
+      focused = this.classifyBlock(text, block, allBlocks, bundle, doc.version);
+      perBlock.push({ focusKey: focused.focusKey, byName: focused.byName });
+    }
+
+    const coloring = colorScope(perBlock, paletteSize);
+    return { focused, coloring };
+  }
+
+  /**
    * Classify the focused block. Returns null only if cancelled. Falls back to
    * the heuristic scan when no semantic provider is available.
    */
@@ -52,12 +116,67 @@ export class Classifier implements vscode.Disposable {
     token: vscode.CancellationToken,
   ): Promise<Classification | null> {
     const text = doc.getText();
-    const blockRange: OffsetRange = { start: block.openOffset, end: block.closeOffset + 1 };
-    const focusKey = focusKeyOf(block);
-
     const bundle = await this.bundleFor(doc, text, token);
     if (token.isCancellationRequested) {
       return null;
+    }
+    return this.classifyBlock(text, block, scanBraceBlocks(text), bundle, doc.version);
+  }
+
+  /**
+   * Classify one block against an already-fetched LSP bundle. Synchronous, so a
+   * whole colour scope can be classified in a single pass with no extra server
+   * calls.
+   *
+   * The block range used for BOTH lexing (which names are "in the block") and
+   * trace-clipping is header-inclusive for control-flow blocks — so a loop/if
+   * header binding (`for _, c := range xs {`) and the identifiers on that header
+   * line tint, not just the body. Function headers stay body-only (params are
+   * fn-local, traced across the whole function anyway). See focus.ts.
+   */
+  private classifyBlock(
+    text: string,
+    block: BraceBlock,
+    allBlocks: BraceBlock[],
+    bundle: LspBundle,
+    docVersion: number,
+    /** True when allBlocks is pre-sorted by openOffset (lets sub-block collection early-exit). */
+    sortedByOpen = false,
+  ): Classification {
+    // Two ranges, two jobs:
+    //   blockRange (lexing/visibility/traces) — always header-inclusive, so a
+    //     block's own header bindings (loop vars AND closure params) are seen
+    //     inside their own scope.
+    //   declRegion (classification) — header-inclusive only for control flow, so
+    //     function params stay fn-local instead of block-local.
+    const blockRange: OffsetRange = lexRegionFor(text, block);
+    const declRegion: OffsetRange = declRegionFor(text, block);
+    const focusKey = focusKeyOf(block);
+
+    // Brace-blocks nested strictly inside this block — a local declared in one of
+    // them belongs to a child scope the caret sits above, so it ranks lower in
+    // the attention budget. Header-inclusive so loop/if bindings count as owned
+    // by that nested scope.
+    const subBlocks: OffsetRange[] = [];
+    if (sortedByOpen) {
+      // Sorted: nested blocks form a forward run bounded by this block's close.
+      // Skip ahead to the first candidate, then stop at the first block that
+      // starts after we close — no full-array scan.
+      let i = 0;
+      while (i < allBlocks.length && allBlocks[i].openOffset <= block.openOffset) {
+        i++;
+      }
+      for (; i < allBlocks.length && allBlocks[i].openOffset < block.closeOffset; i++) {
+        if (allBlocks[i].closeOffset < block.closeOffset) {
+          subBlocks.push(lexRegionFor(text, allBlocks[i]));
+        }
+      }
+    } else {
+      for (const b of allBlocks) {
+        if (b.openOffset > block.openOffset && b.closeOffset < block.closeOffset) {
+          subBlocks.push(lexRegionFor(text, b));
+        }
+      }
     }
 
     const caretOffset = block.openOffset;
@@ -73,9 +192,12 @@ export class Classifier implements vscode.Disposable {
         enclosingFn,
         bundle.fnRanges,
         bundle.tokens,
-        doc.version,
+        docVersion,
         focusKey,
         colorScopeFn,
+        declRegion,
+        subBlocks,
+        bundle.fileIndex,
       );
     }
 
@@ -86,9 +208,11 @@ export class Classifier implements vscode.Disposable {
       blockRange,
       enclosingFn,
       bundle.fnRanges,
-      doc.version,
+      docVersion,
       focusKey,
       colorScopeFn,
+      declRegion,
+      subBlocks,
     );
   }
 
@@ -141,7 +265,10 @@ export class Classifier implements vscode.Disposable {
     } catch {
       fnRanges = [];
     }
-    const bundle: LspBundle = { version: doc.version, tokens, fnRanges, lineStarts };
+    // Build the file-wide index once per version, so classifying an N-block
+    // scope costs one file pass + N block passes (not N file passes).
+    const fileIndex = tokens && tokens.length > 0 ? buildFileIndex(text, tokens, fnRanges) : undefined;
+    const bundle: LspBundle = { version: doc.version, tokens, fnRanges, lineStarts, fileIndex };
     this.cache.set(doc, bundle);
     return bundle;
   }

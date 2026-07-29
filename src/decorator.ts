@@ -23,12 +23,13 @@
  */
 
 import * as vscode from 'vscode';
-import { scanBraceBlocks, innermostBlock, focusKeyOf, BraceBlock } from './focus';
+import { scanBraceBlocks, innermostBlock, focusKeyOf, lexRegionFor, BraceBlock } from './focus';
 import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL } from './phases';
 import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool } from './tokens';
 import { Classifier } from './classify-lsp';
 import { Classification, OffsetRange } from './classify';
-import { assignColors, ColorPlan, GlobalColorLedger, LocalColorLedger } from './colors';
+import { ColorPlan, planFromColoring } from './colors';
+import { ScopeColoring } from './scopecolor';
 import { computeTraceRanges } from './traces';
 import { lexicalRisk, escapeRisk } from './risk';
 
@@ -71,10 +72,9 @@ export class Decorator implements vscode.Disposable {
   private pool!: DecorationPool;
 
   private classifier = new Classifier();
-  private ledgers = new WeakMap<vscode.TextDocument, GlobalColorLedger>();
-  // Per-document local-identity ledger — keeps a variable's hue stable across
-  // every sub-block of its enclosing function (resets per function internally).
-  private localLedgers = new WeakMap<vscode.TextDocument, LocalColorLedger>();
+  // No colour ledgers: hues come from the per-scope co-visibility colouring
+  // (scopecolor.ts), which is a pure function of the document — so there is no
+  // navigation-history state that could make colours order-dependent.
   private blockCache = new WeakMap<vscode.TextDocument, { version: number; blocks: BraceBlock[] }>();
   // Bounded LRU keyed `${docVersion}::${focusKey}`.
   private classCache = new Map<string, CacheEntry>();
@@ -101,10 +101,21 @@ export class Decorator implements vscode.Disposable {
 
   private disposables: vscode.Disposable[] = [];
 
+  // Temporary diagnostic channel. Toggle with the config flag okibiDynamic.debug.
+  private debugChan: vscode.OutputChannel | undefined;
+  private dbg(msg: string): void {
+    if (this.debugChan) {
+      this.debugChan.appendLine(msg);
+    }
+  }
+
   constructor() {
     this.config = readConfig();
     this.machine = new PhaseMachine(this.config.dwell);
     this.isDark = this.currentlyDark();
+    if (vscode.workspace.getConfiguration('okibiDynamic').get('debug', false)) {
+      this.debugChan = vscode.window.createOutputChannel('Okibi Dynamic Debug');
+    }
 
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.statusItem.command = 'okibiDynamic.toggle';
@@ -165,23 +176,6 @@ export class Decorator implements vscode.Disposable {
     }
   }
 
-  private ledgerFor(doc: vscode.TextDocument): GlobalColorLedger {
-    let l = this.ledgers.get(doc);
-    if (!l) {
-      l = new GlobalColorLedger();
-      this.ledgers.set(doc, l);
-    }
-    return l;
-  }
-
-  private localLedgerFor(doc: vscode.TextDocument): LocalColorLedger {
-    let l = this.localLedgers.get(doc);
-    if (!l) {
-      l = new LocalColorLedger();
-      this.localLedgers.set(doc, l);
-    }
-    return l;
-  }
 
   private blocksFor(doc: vscode.TextDocument): BraceBlock[] {
     const cached = this.blockCache.get(doc);
@@ -191,6 +185,17 @@ export class Decorator implements vscode.Disposable {
     const blocks = scanBraceBlocks(doc.getText());
     this.blockCache.set(doc, { version: doc.version, blocks });
     return blocks;
+  }
+
+  /**
+   * The focused block for an editor's caret, using both line and offset so a
+   * single-line block (e.g. an inline map/object literal) is only focused when
+   * the caret is actually between its braces — not merely on the same line.
+   */
+  private focusedBlock(editor: vscode.TextEditor): BraceBlock | null {
+    const caret = editor.selection.active;
+    const caretOffset = editor.document.offsetAt(caret);
+    return innermostBlock(this.blocksFor(editor.document), caret.line, caretOffset);
   }
 
   private cacheKey(doc: vscode.TextDocument, focusKey: string): string {
@@ -231,8 +236,7 @@ export class Decorator implements vscode.Disposable {
     // strobe to guard against. (Earlier we gated this on Keyboard/Command kind,
     // which left clicks unable to enter Focus — that was the "stuck until I
     // arrow-key" bug.)
-    const caretLine = editor.selection.active.line;
-    const block = innermostBlock(this.blocksFor(editor.document), caretLine);
+    const block = this.focusedBlock(editor);
     const now = Date.now();
     const phaseChanged = this.machine.onCaret(block !== null, now);
 
@@ -321,7 +325,7 @@ export class Decorator implements vscode.Disposable {
     if (!editor || editor.document !== doc) {
       return;
     }
-    const block = innermostBlock(this.blocksFor(doc), editor.selection.active.line);
+    const block = this.focusedBlock(editor);
     if (!block) {
       return; // Survey — nothing to classify
     }
@@ -337,32 +341,32 @@ export class Decorator implements vscode.Disposable {
     this.classifyToken = new vscode.CancellationTokenSource();
     const token = this.classifyToken.token;
 
-    let classification: Classification | null;
+    let scoped: { focused: Classification; coloring: ScopeColoring } | null;
     try {
-      classification = await this.classifier.classify(doc, block, token);
+      scoped = await this.classifier.classifyScope(doc, block, TOKENS.id.length, token);
     } catch {
       return;
     }
-    if (!classification || token.isCancellationRequested) {
+    if (!scoped || token.isCancellationRequested) {
       return;
     }
+    const classification = scoped.focused;
     // Epoch guard: discard if the document moved on or focus jumped away.
     if (classification.docVersion !== doc.version || classification.focusKey !== this.currentFocusKey) {
+      this.dbg(
+        `classify DISCARDED: ver ${classification.docVersion}vs${doc.version} ` +
+          `key ${classification.focusKey}vs${this.currentFocusKey}`,
+      );
       return;
     }
+    this.dbg(
+      `classify OK key=${focusKey} byName=[${[...classification.byName].map(([n, i]) => n + ':' + i.cls).join(',')}]`,
+    );
 
-    // fnKey identifies the COLOUR scope — the outermost function — so the local
-    // ledger stays stable across a top-level function AND its nested closures,
-    // resetting only when the caret enters an unrelated top-level function. Fall
-    // back to a sentinel at module top level so those locals share one scope.
-    const fn = classification.colorScopeFn;
-    const fnKey = fn ? `${fn.start}-${fn.end}` : 'toplevel';
-    const plan = assignColors(classification.byName, this.ledgerFor(doc), this.localLedgerFor(doc), {
-      fileGlobalsInOrder: classification.fileGlobalsInOrder,
-      fnLocalsInOrder: classification.fnLocalsInOrder,
-      fnGlobals: classification.fnGlobals,
-      fnKey,
-    });
+    // Build the render plan from the SCOPE colouring: a name's hue comes from the
+    // co-visibility graph (deterministic, navigation-independent), and only the
+    // names in this block's visible set are painted at all.
+    const plan = planFromColoring(classification, scoped.coloring);
     this.putCache(key, { classification, plan });
     this.scheduleRender();
 
@@ -410,10 +414,20 @@ export class Decorator implements vscode.Disposable {
     }
 
     const doc = editor.document;
-    const block = innermostBlock(this.blocksFor(doc), editor.selection.active.line);
+    const block = this.focusedBlock(editor);
     const phase = this.machine.current;
     const showBand2 = block !== null && (phase === Phase.Focus || phase === Phase.Edit);
     const showBand3 = block !== null && phase === Phase.Edit;
+    if (this.debugChan) {
+      const caret = editor.selection.active;
+      const key = block ? this.cacheKey(doc, focusKeyOf(block)) : '(none)';
+      const cached = block ? this.classCache.has(this.cacheKey(doc, focusKeyOf(block))) : false;
+      this.dbg(
+        `render caret=${caret.line}:${caret.character} phase=${phase} ` +
+          `block=${block ? `L${block.openLine}-${block.closeLine}#d${block.depth}` : 'null'} ` +
+          `showBand2=${showBand2} cacheKey=${key} cached=${cached} renderedKey=${this.renderedBand2Key}`,
+      );
+    }
 
     // 1. Gutter stripe — Focus + Edit, focused block's lines.
     if (showBand2 && block) {
@@ -460,13 +474,21 @@ export class Decorator implements vscode.Disposable {
       return;
     }
 
-    const blockRange: OffsetRange = { start: block.openOffset, end: block.closeOffset + 1 };
+    // Header-inclusive for control-flow blocks, so header-line bindings tint too
+    // (matches the range used at classify time). See focus.ts.
+    const blockRange: OffsetRange = lexRegionFor(doc.getText(), block);
     const targets = computeTraceRanges(entry.classification, entry.plan, blockRange);
+    if (this.debugChan) {
+      this.dbg(
+        `  band2 block=L${block.openLine}#d${block.depth} ` +
+          `byName=[${[...entry.classification.byName].map(([n, i]) => n + ':' + i.cls).join(',')}] ` +
+          `targets=[${targets.map((t) => t.name + '(' + t.ranges.length + ')').join(',')}]`,
+      );
+    }
 
     // Bucket ranges by decoration type.
     const idRanges: vscode.Range[][] = TOKENS.id.map(() => []);
-    const idgRanges: vscode.Range[][] = TOKENS.idg.map(() => []);
-    const selfRanges: vscode.Range[] = [];
+    const idgRanges: vscode.Range[][] = TOKENS.id.map(() => []);
 
     for (const t of targets) {
       const vranges = t.ranges.map((r) => this.toRange(doc, r));
@@ -478,7 +500,9 @@ export class Decorator implements vscode.Disposable {
           idgRanges[t.entry.poolIndex].push(...vranges);
           break;
         case 'self':
-          selfRanges.push(...vranges);
+          // this/self is NOT painted by the dynamic layer — --id-self equals
+          // band 1's keyword colour, so painting it would only add a weight
+          // flip on focus change. Band 1 owns it, in and out of focus.
           break;
         case 'neutral':
           break;
@@ -487,13 +511,13 @@ export class Decorator implements vscode.Disposable {
 
     this.pool.id.forEach((type, i) => this.applyType(editor, type, idRanges[i]));
     this.pool.idg.forEach((type, i) => this.applyType(editor, type, idgRanges[i]));
-    this.applyType(editor, this.pool.self, selfRanges);
+    this.applyType(editor, this.pool.self, []);
     this.renderedBand2Key = focusKey;
   }
 
   private renderBand3(editor: vscode.TextEditor, doc: vscode.TextDocument, block: BraceBlock): void {
     const text = doc.getText();
-    const blockRange: OffsetRange = { start: block.openOffset, end: block.closeOffset + 1 };
+    const blockRange: OffsetRange = lexRegionFor(text, block);
     const lex = lexicalRisk(text, blockRange);
 
     this.applyType(editor, this.pool.riskAsync, lex.async.map((r) => this.toRange(doc, r)));
@@ -587,7 +611,7 @@ export class Decorator implements vscode.Disposable {
       this.statusItem.hide();
       return;
     }
-    const block = innermostBlock(this.blocksFor(editor.document), editor.selection.active.line);
+    const block = this.focusedBlock(editor);
     this.currentFocusKey = block ? focusKeyOf(block) : null;
     this.machine.onCaret(block !== null, Date.now());
     if (block) {
