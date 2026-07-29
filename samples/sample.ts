@@ -68,7 +68,6 @@ function fold<T>(jobs: Job[], seed: T, reducer: Reducer<T>): T {
 }
 
 // ── class: `this` is the gold self-slot across the whole class ──
-
 class Worker {
   private seen = 0;
   private readonly phases = new Map<JobId, Phase>();
@@ -87,6 +86,21 @@ class Worker {
 
   get summary(): string {
     return `${this.name}: seen=${this.seen}, tracked=${this.phases.size}`;
+  }
+
+  set blah(val: string) {
+    // nothing
+  }
+
+  async *generator() {
+    while (true) {
+      const item = await nextItem();
+      yield item;
+
+      if (item == 0) {
+        break;
+      }
+    }
   }
 }
 

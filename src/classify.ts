@@ -462,23 +462,31 @@ function isShorthandPropertyRead(
   if (modifiers.includes('definition')) {
     return false;
   }
+
   // previous non-whitespace char
   let p = offset - 1;
   while (p >= 0 && (text[p] === ' ' || text[p] === '\t' || text[p] === '\n' || text[p] === '\r')) {
     p--;
   }
-  if (p >= 0 && text[p] === '.') {
-    return false; // obj.name or obj?.name → field access
-  }
+  const prev = p >= 0 ? text[p] : '';
+
   // next non-whitespace char
   let n = offset + length;
   while (n < text.length && (text[n] === ' ' || text[n] === '\t' || text[n] === '\n' || text[n] === '\r')) {
     n++;
   }
-  if (n < text.length && text[n] === ':') {
-    return false; // { name: value } → key literal, not a read
-  }
-  return true;
+  const next = n < text.length ? text[n] : '';
+
+  // A shorthand read sits INSIDE AN OBJECT LITERAL: opened by `{` or separated
+  // by `,`, and terminated by `,` or `}`. Requiring both sides is what separates
+  // it from a class/interface MEMBER DECLARATION, which TS reports with the same
+  // `property [declaration]` token but never has that bracketing:
+  //   `{ name }` / `{ name, x }`  → prev `{`/`,`  next `,`/`}`  → shorthand ✓
+  //   `get summary(): string`     → prev `t`      next `(`      → declaration ✗
+  //   `private seen = 0`          → prev `e`      next `=`      → declaration ✗
+  //   `interface I { field: … }`  → prev `{`      next `:`      → key literal  ✗
+  //   `cfg.name`                  → prev `.`                    → field access ✗
+  return (prev === '{' || prev === ',') && (next === ',' || next === '}');
 }
 
 /**

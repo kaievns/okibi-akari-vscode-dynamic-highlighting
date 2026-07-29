@@ -142,7 +142,22 @@ func process(ctx *Context, cfgs []Config, h Handler) (int, error) {
 				results <- 0
 				return
 			}
+
+			switch total {
+			case 1:
+				return
+			default:
+				return
+			}
+
 			results <- len(out)
+
+			select {
+			case data := <-results:
+				if data == 1 {
+					break
+				}
+			}
 		}(c)
 	}
 

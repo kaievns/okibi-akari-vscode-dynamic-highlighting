@@ -163,6 +163,75 @@ test('buildFileIndex: equivalent to the inline path (refactor is behaviour-prese
   }
 });
 
+test('buildFileIndex: class members are NOT data identities (getter/field vs shorthand)', () => {
+  // TS reports `property [declaration]` for object-literal shorthand AND for
+  // class/interface member declarations. Only the shorthand is a data READ; a
+  // getter/field declaration is band-1 structure. The discriminator is the
+  // object-literal bracketing: prev `{`/`,` and next `,`/`}`.
+  const text = 'class W {\n  seen = 0;\n  get summary(): string { return "x" }\n}\n' +
+               'const o = { name, id };';
+  const at = (s) => text.indexOf(s);
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('seen', at('seen'), 'property', ['declaration']),           // class field decl
+    tok('summary', at('summary'), 'property', ['declaration']),     // getter decl
+    tok('name', at('name'), 'property', ['declaration']),           // shorthand read
+    tok('id', at('id,') !== -1 ? at('id,') : at('id'), 'property', ['declaration']),
+  ];
+  const idx = classify.buildFileIndex(text, tokens, []);
+  assert.ok(!idx.occurrences.has('seen'), 'class field decl is not a data identity');
+  assert.ok(!idx.occurrences.has('summary'), 'getter decl is not a data identity');
+  assert.ok(idx.occurrences.has('name'), 'object shorthand read IS a data identity');
+});
+
+test('buildFileIndex: function-typed values (`signature`) are band-1, not data', () => {
+  // gopls marks a func-typed param/local with the `signature` modifier. Calls
+  // through them are transformers, so they keep band-1's function colour rather
+  // than competing for a data hue.
+  const text = 'func process(h Handler) { out := h(ctx) }';
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('h', text.indexOf('h Handler'), 'parameter', ['definition', 'signature']),
+    tok('h', text.indexOf('h(ctx)'), 'parameter', ['signature']),
+    tok('out', text.indexOf('out'), 'variable', ['definition']),
+  ];
+  const idx = classify.buildFileIndex(text, tokens, []);
+  assert.ok(!idx.occurrences.has('h'), 'func-typed param is not a data identity');
+  assert.ok(idx.occurrences.has('out'), 'plain local still is');
+});
+
+test('buildFileIndex: setters and generator names are band-1 (member declarations)', () => {
+  const text = 'class W {\n  set blah(val: string) { }\n  async *gen() { yield 1 }\n}';
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('blah', text.indexOf('blah'), 'property', ['declaration']),   // setter
+    tok('val', text.indexOf('val'), 'parameter', ['declaration']),
+    tok('gen', text.indexOf('gen'), 'member', ['declaration', 'async']),
+  ];
+  const idx = classify.buildFileIndex(text, tokens, []);
+  assert.ok(!idx.occurrences.has('blah'), 'setter name is not data');
+  assert.ok(!idx.occurrences.has('gen'), 'generator/method name is not data');
+  assert.ok(idx.occurrences.has('val'), 'setter PARAMETER is data');
+});
+
+test('classify: `_` discard/blank identifier never competes for a hue', () => {
+  // Go `for _, c := range` and Python `_` are discards, not data. They also
+  // appear as a module facade in JS (lodash), so `_` is excluded outright.
+  const text = 'func f() {\n\tfor _, c := range xs {\n\t\tuse(c)\n\t}\n}';
+  const blocks = focus.scanBraceBlocks(text);
+  const inner = blocks.reduce((a, b) => (b.depth > a.depth ? b : a));
+  const L = focus.lexRegionFor(text, inner);
+  const tok = (name, offset, type, mods = []) => ({ name, offset, length: name.length, type, modifiers: mods });
+  const tokens = [
+    tok('_', text.indexOf('_'), 'variable', ['definition']),
+    tok('c', text.indexOf('c :='), 'variable', ['definition']),
+    tok('c', text.indexOf('c)'), 'variable', []),
+  ];
+  const c = classify.classifyFromSemantic(text, L, undefined, [], tokens, 1, 'k', undefined, L, []);
+  assert.ok(!c.byName.has('_'), 'discard excluded from data identities');
+  assert.ok(c.byName.has('c'), 'the real loop var is included');
+});
+
 // ── planFromColoring ─────────────────────────────────────────────────────────
 
 function nameInfo(cls, opts = {}) {
