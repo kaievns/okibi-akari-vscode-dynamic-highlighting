@@ -176,6 +176,82 @@ function computeShadowScopes(
 }
 
 /**
+ * Offset ranges of PYTHON CLASS-BODY FIELD DECLARATIONS — the lines directly
+ * inside a `class` that declare attributes rather than locals.
+ *
+ *   @dataclass
+ *   class Config:
+ *       name: str                                   <-- attribute, not data
+ *       retries: int = MAX_RETRIES                  <-- attribute, not data
+ *       tags: dict[str, str] = field(...)           <-- attribute, not data
+ *
+ *       def with_retries(self, retries: int): ...   <-- a method; its body IS data
+ *
+ * Pylance reports these as `variable [declaration]`, indistinguishable on the
+ * wire from a real local, so the classifier tinted them as the class's own data
+ * identities. They are the Python spelling of a struct field: attribute names are
+ * band-1 in every other language here (`variable.other.property` in Go and TS),
+ * and the theme now paints Python's the same way, so the dynamic layer tinting
+ * them contradicted the resting register directly.
+ *
+ * The same reasoning as `typeDeclRanges`, which this feeds: a name that declares
+ * a FIELD rather than a binding holds no data at this point in the program.
+ *
+ * Detection is lexical and deliberately narrow — only lines at exactly one indent
+ * step inside a `class` header, stopping at the first line that dedents out of the
+ * body. A method's `def` line ends the run of fields; its body is never included,
+ * so locals inside methods keep tinting normally. An assignment with no
+ * annotation (`count = 0`) is included too: in a class body that is still a class
+ * attribute.
+ */
+function pyClassFieldRanges(text: string): OffsetRange[] {
+  const ranges: OffsetRange[] = [];
+  const lines = text.split('\n');
+  const starts: number[] = [0];
+  for (let i = 0; i < lines.length - 1; i++) {
+    starts.push(starts[i] + lines[i].length + 1);
+  }
+  const indentOf = (s: string): number => (/^([ \t]*)/.exec(s)?.[1].length ?? 0);
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^([ \t]*)class\b[^\n]*:\s*(#.*)?$/.exec(lines[i]);
+    if (!m) {
+      continue;
+    }
+    const classIndent = m[1].length;
+    for (let j = i + 1; j < lines.length; j++) {
+      const raw = lines[j];
+      if (raw.trim() === '' || raw.trimStart().startsWith('#')) {
+        continue;
+      }
+      if (indentOf(raw) <= classIndent) {
+        break; // dedented out of the class body
+      }
+      // A nested `def`/`class` opens its own scope; its contents are not fields.
+      // Skip its whole suite rather than treating its body lines as fields.
+      if (/^[ \t]*(async[ \t]+)?(def|class)\b/.test(raw)) {
+        const bodyIndent = indentOf(raw);
+        while (
+          j + 1 < lines.length &&
+          (lines[j + 1].trim() === '' || indentOf(lines[j + 1]) > bodyIndent)
+        ) {
+          j++;
+        }
+        continue;
+      }
+      // A field declaration: `name: T`, `name: T = v`, or a bare `name = v`.
+      if (/^[ \t]*[A-Za-z_]\w*[ \t]*(:|=)/.test(raw)) {
+        // Only the NAME is furniture. The right-hand side is real code — a call,
+        // a reference to a module constant — and those names still hold data.
+        const eq = /^[ \t]*[A-Za-z_]\w*[ \t]*/.exec(raw)![0].length;
+        ranges.push({ start: starts[j], end: starts[j] + eq });
+      }
+    }
+  }
+  return ranges;
+}
+
+/**
  * Offset ranges of TYPE DECLARATIONS — `type X = …`, `interface X { … }`.
  *
  * Parameter names inside a type signature are pure documentation: they name
@@ -195,7 +271,7 @@ function computeShadowScopes(
  * `type ( … )` grouped block is covered by the bracket case.
  */
 function typeDeclRanges(text: string): OffsetRange[] {
-  const ranges: OffsetRange[] = [];
+  const ranges: OffsetRange[] = [...pyClassFieldRanges(text)];
   const re = /(^|\n)[ \t]*(?:export[ \t]+)?(?:declare[ \t]+)?(type|interface)\b/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
@@ -228,7 +304,12 @@ function typeDeclRanges(text: string): OffsetRange[] {
     ranges.push({ start, end });
     re.lastIndex = end; // skip past — no nested type decls to find inside
   }
-  return ranges;
+  // The consumer walks these with a MONOTONIC cursor (`while typeDecls[td].end <=
+  // tok.offset`), so document order is a precondition, not a nicety. The Python
+  // class-field ranges are prepended above and interleave with the type-decl
+  // ranges in a mixed file, which would leave the cursor past ranges it never
+  // checked — silently un-excluding them.
+  return ranges.sort((a, b) => a.start - b.start);
 }
 
 /**
@@ -269,6 +350,11 @@ export function buildFileIndex(
     }
     // Builtins (console, Math…) are library surface, not this file's data.
     if (tok.modifiers.some((m) => NON_DATA_MODIFIERS.has(m))) {
+      continue;
+    }
+    // A name in MEMBER or KEYWORD-ARGUMENT position is not a data identity, even
+    // when the server types it `variable`.
+    if (isMemberOrLabelPosition(text, tok.offset, tok.length)) {
       continue;
     }
     const range: OffsetRange = { start: tok.offset, end: tok.offset + tok.length };
@@ -340,7 +426,17 @@ const TINTABLE_TYPES = new Set(['variable', 'parameter']);
  * like any other function. `readonly`/`static` are NOT excluded: a readonly
  * local is still data.
  */
-const NON_DATA_MODIFIERS = new Set(['defaultLibrary', 'signature']);
+// `classMember` / `dynamicAttribute` are Pylance's: it types an instance
+// attribute `variable` (not `property`, as TS and gopls would) and distinguishes
+// it ONLY by this modifier. Without it every `self.seen` and `cfg.retries` was a
+// tintable data identity, which both fought the member-steel resting register and
+// let an attribute share a hue with a same-named local. The positional guard in
+// `isMemberOrLabelPosition` catches these too, but the modifier is the server's own
+// answer and does not depend on a dot being adjacent — `getattr`-style dynamic
+// attributes carry it with no dot at all.
+const NON_DATA_MODIFIERS = new Set([
+  'defaultLibrary', 'signature', 'classMember', 'dynamicAttribute',
+]);
 
 const DECL_MODIFIERS = new Set(['declaration', 'definition']);
 
@@ -357,6 +453,13 @@ const HEURISTIC_KEYWORDS = new Set([
   'func', 'package', 'defer', 'go', 'chan', 'map', 'struct', 'range', 'select',
   'int', 'string', 'bool', 'float', 'double', 'char', 'long', 'short', 'unsigned',
   'nil', 'true', 'false',
+  // Python. The list was JS/Go-only, so `lambda` was ranked as a DATA IDENTITY —
+  // it took a hue in every scope containing a lambda, and consumed one of the
+  // palette's few slots. `self`/`cls` are handled separately (the gold self-slot),
+  // and the words this list shares with JS (`class`, `return`, `if`, …) are already
+  // above.
+  'lambda', 'def', 'elif', 'pass', 'raise', 'except', 'with', 'global', 'nonlocal',
+  'assert', 'del', 'None', 'True', 'False', 'and', 'or', 'not', 'match',
 ]);
 
 /** Declaration keywords that introduce a binding on the following identifier. */
@@ -544,6 +647,55 @@ export function outermostFnOf(fnRanges: OffsetRange[], offset: number): OffsetRa
 
 function isSelfName(name: string): boolean {
   return SELF_NAMES.has(name) || name.startsWith('@');
+}
+
+/**
+ * Is this token in MEMBER position (`self.retries`) or KEYWORD-ARGUMENT LABEL
+ * position (`Config(name=…)`)? Neither is a data identity.
+ *
+ * `TINTABLE_TYPES` already restricts tinting to `variable`/`parameter` on the
+ * assumption that a server types a member access as `property`. TS and gopls do —
+ * across both captured fixtures there is not one `variable`/`parameter` token
+ * sitting after a dot. Pylance does not, consistently: on
+ *
+ *   self.retries = retries
+ *
+ * both halves came back as one tintable name, so the attribute and the parameter
+ * got the same hue and the attribute stopped reading as a member. The check is
+ * POSITIONAL rather than a Python special case, because "the right-hand side of a
+ * dot is a member" holds in every language here, and a server that gets it right
+ * simply never reaches this code (its token is already `property`).
+ *
+ * Two positions, both decided on the immediately adjacent non-space character:
+ *
+ *   prev is `.`  → member access. Excludes `?.` and `->` too, since both end in a
+ *                  character that makes the name a member of something.
+ *   next is `=`  → a keyword-argument LABEL (`f(name=name)`) or the left side of
+ *      and prev    an assignment. Restricted to the case where the previous
+ *      is `(`/`,`  character opens or separates an argument list, so a plain
+ *                  `total = 0` statement is untouched — that IS a data binding.
+ *                  `==` is excluded: `if name == x` is a comparison, not a label.
+ */
+function isMemberOrLabelPosition(text: string, offset: number, length: number): boolean {
+  let p = offset - 1;
+  while (p >= 0 && (text[p] === ' ' || text[p] === '\t')) {
+    p--;
+  }
+  const prev = p >= 0 ? text[p] : '';
+  if (prev === '.') {
+    return true;
+  }
+
+  let n = offset + length;
+  while (n < text.length && (text[n] === ' ' || text[n] === '\t')) {
+    n++;
+  }
+  if (text[n] !== '=' || text[n + 1] === '=') {
+    return false;
+  }
+  // `name=` inside an argument list is a label; `name =` at statement level is a
+  // binding. The opening `(` or a separating `,` is what distinguishes them.
+  return prev === '(' || prev === ',';
 }
 
 /**

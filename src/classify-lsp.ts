@@ -30,7 +30,7 @@ import {
   declRegionFor,
   lexRegionFor,
   scopeRegionFor,
-  scanBraceBlocks,
+  scanBlocks,
   isTopLevelBlock,
 } from './focus';
 import { BlockNames, ScopeColoring, colorScope } from './scopecolor';
@@ -93,7 +93,7 @@ export class Classifier implements vscode.Disposable {
     }
 
     const colorScopeFn = outermostFnOf(bundle.fnRanges, block.openOffset);
-    const allBlocks = cached?.blocks ?? scanBraceBlocks(text);
+    const allBlocks = cached?.blocks ?? scanBlocks(text, doc.languageId);
 
     // Every block whose focus would share this colour scope. At module top level
     // (no enclosing fn) the scope is just the focused block itself.
@@ -148,7 +148,7 @@ export class Classifier implements vscode.Disposable {
     if (token.isCancellationRequested) {
       return null;
     }
-    return this.classifyBlock(text, block, scanBraceBlocks(text), bundle, doc.version);
+    return this.classifyBlock(text, block, scanBlocks(text, doc.languageId), bundle, doc.version);
   }
 
   /**
@@ -321,6 +321,24 @@ export class Classifier implements vscode.Disposable {
     } catch {
       fnRanges = [];
     }
+    // A LAMBDA IS NOT A SYMBOL. `executeDocumentSymbolProvider` reports functions,
+    // methods and constructors — a lambda has no name, so no server reports one, and
+    // `fnRanges` had a hole exactly where a lambda's parameters live.
+    // `enclosingFnOf` then resolved a caret inside the lambda to the SURROUNDING
+    // function, so `acc`/`item` were classified against the wrong scope and traced
+    // across the whole enclosing body. The block scanner already located every
+    // lambda, so the ranges come from there rather than from a second scanner.
+    for (const b of scanBlocks(text, doc.languageId)) {
+      const isLambda = b.headerStart === b.openOffset
+        && /^\s*lambda\b/.test(text.slice(b.openOffset, b.openOffset + 12));
+      if (isLambda) {
+        fnRanges.push({ start: b.openOffset, end: b.closeOffset + 1 });
+      }
+    }
+    // `enclosingFnOf`/`outermostFnOf` search for the tightest and widest containing
+    // range, so order is not load-bearing — but document order keeps a debug dump
+    // readable and matches what the symbol walk already produces.
+    fnRanges.sort((a, b) => a.start - b.start || b.end - a.end);
     // Build the file-wide index once per version, so classifying an N-block
     // scope costs one file pass + N block passes (not N file passes).
     const fileIndex = tokens && tokens.length > 0 ? buildFileIndex(text, tokens, fnRanges) : undefined;

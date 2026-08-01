@@ -14,11 +14,15 @@ or a symbol tree to resolve a scope, and prose has neither, so there are no
 identity tints here and the phase stays Survey 構 while the caret moves through
 text. That is deliberate: prose is not data flow.
 
-Read the register off this file rather than off the rule list. Prose sits one
-step BELOW the editor default (n10, secondary), so headings, **bold** and
-*italic* stand out by being brighter rather than by being another hue. Every
-sigil recedes to n7 ghost. The only hues prose is allowed are sora for links and
-footnotes, ~~the~~ one yamabuki ==highlight==, and violet for a #tag.
+Read the register off this file rather than off the rule list. Every sigil
+recedes to n7 ghost, and emphasis carries by WEIGHT: headings, **bold** and table
+headers are the prose colour plus weight, never another hue. The only hues prose
+is allowed are sora for links and footnotes, ~~the~~ one yamabuki ==highlight==,
+and violet for a #tag.
+
+The spec's specimen sets prose one step below primary (n10). This ships at n11
+instead, because `editor.foreground` has no per-language override and the
+mismatch repainted the whole page when tokenization landed.
 
 The reference render this file is checked against lives in the spec at
 `scripts/spec/doc-markdown.html`; `node scripts/md_spec_diff.js` asserts the two
@@ -26,7 +30,7 @@ agree token for token.
 
 ## Inline vocabulary
 
-Regular prose sits one step below primary. *Italic* and **bold** and
+Regular prose sits at the primary foreground. *Italic* and **bold** and
 ***both at once***, plus ~~strikethrough~~ and `inline code`.
 
 A [link with a title](https://example.com "hover me") and a bare autolink
@@ -222,8 +226,8 @@ still renders as a code block, just unhighlighted
 
 ## Tables
 
-The header row is brighter and bold; body cells are plain prose and the rails
-recede. Inline markup still works inside a cell.
+The header row is bold; body cells are plain prose and the rails recede. Inline
+markup still works inside a cell.
 
 | left | centred | right | code in cell |
 |:-----|:-------:|------:|--------------|

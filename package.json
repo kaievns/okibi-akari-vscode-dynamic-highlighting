@@ -1,7 +1,7 @@
 {
   "name": "okibi-akari-dynamic-highlighting",
-  "displayName": "Okibi & Akari — Dynamic Highlighting",
-  "description": "The dynamic layer for the Okibi/Akari design system: the three-phase attention model (Survey 構 · Focus 流 · Edit 異). Band 1 is the color theme; this is bands 2–3.",
+  "displayName": "Okibi & Akari \u2014 Dynamic Highlighting",
+  "description": "The dynamic layer for the Okibi/Akari design system: the three-phase attention model (Survey \u69cb \u00b7 Focus \u6d41 \u00b7 Edit \u7570). Band 1 is the color theme; this is bands 2\u20133.",
   "version": "0.1.0",
   "publisher": "kaievns",
   "license": "SEE LICENSE IN LICENSE",
@@ -35,7 +35,7 @@
       }
     ],
     "configuration": {
-      "title": "Okibi & Akari — Dynamic Highlighting",
+      "title": "Okibi & Akari \u2014 Dynamic Highlighting",
       "properties": {
         "okibiDynamic.enabled": {
           "type": "boolean",
@@ -45,7 +45,7 @@
         "okibiDynamic.showPhaseInStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Show the current phase (構 Survey · 流 Focus · 異 Edit) in the status bar. Useful for dialling in the dwell timings."
+          "description": "Show the current phase (\u69cb Survey \u00b7 \u6d41 Focus \u00b7 \u7570 Edit) in the status bar. Useful for dialling in the dwell timings."
         },
         "okibiDynamic.debug": {
           "type": "boolean",
@@ -55,12 +55,12 @@
         "okibiDynamic.dwell.editToFocus": {
           "type": "number",
           "default": 2000,
-          "description": "Milliseconds of no typing before Edit 異 relaxes back to Focus 流."
+          "description": "Milliseconds of no typing before Edit \u7570 relaxes back to Focus \u6d41."
         },
         "okibiDynamic.dwell.focusToSurvey": {
           "type": "number",
           "default": 24000,
-          "description": "Milliseconds of no caret activity before Focus 流 relaxes to Survey 構 (the focused-block indicator withdraws)."
+          "description": "Milliseconds of no caret activity before Focus \u6d41 relaxes to Survey \u69cb (the focused-block indicator withdraws)."
         },
         "okibiDynamic.dwell.minHold": {
           "type": "number",
@@ -73,7 +73,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/pure.test.js test/golden.test.js test/scopecolor.test.js test/edge.test.js",
+    "test": "npm run compile && node --test test/pure.test.js test/golden.test.js test/scopecolor.test.js test/edge.test.js test/markdown.test.js test/python.test.js",
     "vscode:prepublish": "npm run compile",
     "bench": "npm run compile && node test/bench.js && node test/bench-nav.js"
   },

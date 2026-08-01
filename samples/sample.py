@@ -3,8 +3,10 @@
 Move the caret into different blocks and watch the ember bar + fill.
 Type to flip Survey 構 -> Focus 流 -> Edit 異 (status bar, bottom-right).
 
-Note: Python has no braces, so focus scopes come from the enclosing symbol
-(function / method / class) rather than a `{}` block.
+Note: Python has no braces, so focus scopes come from INDENTATION — a line
+ending in `:` opens a suite that runs until the next line indented no deeper.
+Move the caret between the methods below and the focus should follow each one,
+not the whole file.
 
 What to look for:
   Focus 流 — data identities tint (locals, params, `self`, comprehension vars).

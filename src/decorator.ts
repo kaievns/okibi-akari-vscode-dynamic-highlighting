@@ -23,7 +23,7 @@
  */
 
 import * as vscode from 'vscode';
-import { scanBraceBlocks, innermostBlock, focusKeyOf, lexRegionFor, BraceBlock } from './focus';
+import { scanBlocks, innermostBlock, focusKeyOf, lexRegionFor, BraceBlock } from './focus';
 import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL } from './phases';
 import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool } from './tokens';
 import { Classifier } from './classify-lsp';
@@ -32,6 +32,7 @@ import { ColorPlan, planFromColoring } from './colors';
 import { ScopeColoring } from './scopecolor';
 import { computeTraceRanges } from './traces';
 import { lexicalRisk, escapeRisk } from './risk';
+import { highlightSpans, linkSpans } from './markdown';
 
 interface Config {
   enabled: boolean;
@@ -81,6 +82,13 @@ export class Decorator implements vscode.Disposable {
   private blockCache = new WeakMap<
     vscode.TextDocument,
     { version: number; text: string; blocks: BraceBlock[] }
+  >();
+  // Markdown band-1 mark ranges per document version. Both scanners walk the
+  // whole document, and renderMarkdownMarks runs on every render (every caret
+  // move), so without this a large .md file would re-lex on each keystroke.
+  private mdCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; highlight: vscode.Range[]; link: vscode.Range[] }
   >();
   // Bounded LRU keyed `${docVersion}::${focusKey}`.
   private classCache = new Map<string, CacheEntry>();
@@ -244,7 +252,7 @@ export class Decorator implements vscode.Disposable {
       return cached;
     }
     const text = doc.getText();
-    const state = { version: doc.version, text, blocks: scanBraceBlocks(text) };
+    const state = { version: doc.version, text, blocks: scanBlocks(text, doc.languageId) };
     this.blockCache.set(doc, state);
     return state;
   }
@@ -551,7 +559,8 @@ export class Decorator implements vscode.Disposable {
       return;
     }
     if (!this.config.enabled) {
-      this.clearAllVisible();
+      // Disabled means disabled: band 1 marks come off too.
+      this.clearAllVisible(true);
       this.statusItem.hide();
       return;
     }
@@ -573,6 +582,14 @@ export class Decorator implements vscode.Disposable {
     }
 
     const doc = editor.document;
+
+    // 0. Markdown band-1 marks. Painted BEFORE the phase gate and independent of
+    //    it: these are part of the resting register, and they live in this
+    //    extension only because `tokenColors` physically cannot express them (see
+    //    src/markdown.ts). Gating them on Focus would make the highlight wash
+    //    appear and disappear as attention moved, which is the opposite of band 1.
+    this.renderMarkdownMarks(editor, doc);
+
     const block = this.focusedBlock(editor);
     const phase = this.machine.current;
     // FINAL GATE, enforced at the only place decorations are ever applied.
@@ -720,6 +737,39 @@ export class Decorator implements vscode.Disposable {
     );
   }
 
+  /**
+   * The two markdown marks a colour theme cannot express: the ==highlight== wash
+   * and the cancellation of VS Code's link underline. See src/markdown.ts for why
+   * each has to be a decoration.
+   *
+   * Band 1, so no phase or engagement gate — but still cached per document
+   * version, because both scanners walk the whole document and this runs on every
+   * render (i.e. every caret move). Non-markdown documents clear and return, so a
+   * `.ts` file never carries a stale wash from a previously active `.md`.
+   */
+  private renderMarkdownMarks(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    if (doc.languageId !== 'markdown') {
+      this.applyType(editor, this.pool.mdHighlight, []);
+      this.applyType(editor, this.pool.mdLinkPlain, []);
+      return;
+    }
+
+    const cached = this.mdCache.get(doc);
+    let marks = cached && cached.version === doc.version ? cached : undefined;
+    if (!marks) {
+      const text = this.textFor(doc);
+      marks = {
+        version: doc.version,
+        highlight: highlightSpans(text).map((s) => this.toRange(doc, s)),
+        link: linkSpans(text).map((s) => this.toRange(doc, s)),
+      };
+      this.mdCache.set(doc, marks);
+    }
+
+    this.applyType(editor, this.pool.mdHighlight, marks.highlight);
+    this.applyType(editor, this.pool.mdLinkPlain, marks.link);
+  }
+
   private renderBand3(editor: vscode.TextEditor, doc: vscode.TextDocument, block: BraceBlock): void {
     const text = this.textFor(doc);
     const blockRange: OffsetRange = lexRegionFor(text, block);
@@ -802,8 +852,11 @@ export class Decorator implements vscode.Disposable {
         continue;
       }
       // Bypass the dirty-check (it tracks only `keep`'s state) and clear directly.
+      // `banded()`, not `all()`: the markdown band-1 marks are correct in every
+      // visible editor showing that document and must survive — clearing them here
+      // stripped the highlight wash from a split's second markdown pane.
       other.setDecorations(this.gutterDecoration, []);
-      for (const type of this.pool.all()) {
+      for (const type of this.pool.banded()) {
         other.setDecorations(type, []);
       }
     }
@@ -829,10 +882,16 @@ export class Decorator implements vscode.Disposable {
    * relaxation that fired while the caret was elsewhere left the tints on screen
    * indefinitely.
    */
-  private clearAllVisible(): void {
+  private clearAllVisible(includeBand1 = false): void {
+    // `includeBand1` separates the two callers. Focus moving to a webview or panel
+    // must withdraw the phase bands but NOT the markdown band-1 marks — those are
+    // resting register, and blinking the highlight wash off because the caret left
+    // the editor would be exactly the flicker this layer exists to avoid. Turning
+    // the extension off, by contrast, must leave no trace of it on screen.
+    const types = includeBand1 ? this.pool.all() : this.pool.banded();
     for (const ed of vscode.window.visibleTextEditors) {
       ed.setDecorations(this.gutterDecoration, []);
-      for (const type of this.pool.all()) {
+      for (const type of types) {
         ed.setDecorations(type, []);
       }
     }

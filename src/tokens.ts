@@ -61,6 +61,12 @@ export const TOKENS = {
   // --sel — ember 34%/28% wash. Identity-on-demand for OVERFLOWED (neutral)
   // bindings: caret on a neutral name lights its occurrences in the block.
   sel: { dark: '#693e30', light: '#ebc1ae' },
+
+  // --warn — yamabuki. Backing colour for the markdown ==highlight== wash. The
+  // spec's `.hlt` is `color-mix(in srgb, var(--warn) 16%, transparent)`; the 16%
+  // is applied as an alpha suffix rather than pre-flattened against the ground,
+  // so the mark composes over whatever is under the line (selection, find match).
+  warn: { dark: '#e6af2b', light: '#956000' },
 } as const;
 
 /** VS Code reports the active theme kind; pick the matching side of a token. */
@@ -130,6 +136,24 @@ export function gutterStripeUri(color: string, opacity: number, widthPct = 100):
  *   riskDanger    — as/any, bold
  *   riskEscape    — dashed underline (colour in the CSS so it composes over a tint)
  *   numberEngaged — clay numeric literals
+ *   mdHighlight   — markdown ==highlight== wash (band 1, always on; see below)
+ *   mdLinkPlain   — cancels VS Code's link underline (band 1, always on)
+ *
+ * The last two are band-1 marks and deliberately NOT phase-gated: they exist
+ * because a colour theme physically cannot express them, not because they carry
+ * attention state.
+ *
+ *   - A `background` in `tokenColors` is parsed and indexed but never rendered
+ *     in the DOM editor: `getClassNameFromMetadata` emits only `mtk<foreground>`
+ *     plus four font-style bits (italic/bold/underline/strikethrough). A
+ *     decoration is the only way to fill behind text.
+ *   - The link underline comes from the `editor.links` contrib, which decorates
+ *     every provider-reported link range with `inlineClassName: "detected-link"`,
+ *     and the workbench stylesheet says
+ *     `.monaco-editor .detected-link { text-decoration: underline }`. That is not
+ *     a token style, so no theme rule can reach it. Setting `editor.links: false`
+ *     would remove it, but that also stops links being clickable — a functional
+ *     loss for a cosmetic fix, so it is done with a competing decoration instead.
  */
 export interface DecorationPool {
   id: vscode.TextEditorDecorationType[];
@@ -139,8 +163,20 @@ export interface DecorationPool {
   riskDanger: vscode.TextEditorDecorationType;
   riskEscape: vscode.TextEditorDecorationType;
   numberEngaged: vscode.TextEditorDecorationType;
-  /** Every type in the pool, for bulk clear/dispose. */
+  mdHighlight: vscode.TextEditorDecorationType;
+  mdLinkPlain: vscode.TextEditorDecorationType;
+  /** Every type in the pool, for bulk dispose. */
   all(): vscode.TextEditorDecorationType[];
+  /**
+   * The PHASE-GATED types only — bands 2 and 3.
+   *
+   * The clear helpers must use this rather than `all()`: bands 2/3 belong to the
+   * focused block of the active editor and have to come off everything else, but
+   * the two markdown marks are band 1 and belong to every visible editor showing
+   * that document. Clearing them alongside the bands made a split's second
+   * markdown pane lose its highlight wash.
+   */
+  banded(): vscode.TextEditorDecorationType[];
 }
 
 export function buildDecorationPool(isDark: boolean): DecorationPool {
@@ -165,6 +201,29 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
   });
   const numberEngaged = colorType(pick(TOKENS.numberEngaged, isDark), false);
 
+  // The ==highlight== wash. `backgroundColor` is an 8-digit hex (--warn at 16%)
+  // so it composes over the selection rather than replacing it, and the radius
+  // plus a hair of horizontal padding reproduce the spec's chip without shifting
+  // the glyphs — VS Code lays decorations out inline, so vertical padding here
+  // would change the line box.
+  const mdHighlight = vscode.window.createTextEditorDecorationType({
+    backgroundColor: `${pick(TOKENS.warn, isDark)}${alphaHex(0.16)}`,
+    borderRadius: '2px',
+    rangeBehavior: closed,
+  });
+
+  // Cancels the `.detected-link` underline. `text-decoration: none` alone loses
+  // to it on specificity — both land as single-class selectors under
+  // `.monaco-editor`, and the link rule is inserted by the workbench stylesheet,
+  // so `!important` is what actually settles it. Decoration style values are
+  // substituted into the CSS template verbatim (no sanitising pass), so the flag
+  // survives. `Open` range behaviour: this tracks a provider range, not a mark
+  // being typed, so it should follow edits at the edges.
+  const mdLinkPlain = vscode.window.createTextEditorDecorationType({
+    textDecoration: 'none !important',
+    rangeBehavior: vscode.DecorationRangeBehavior.OpenOpen,
+  });
+
   return {
     id,
     idg,
@@ -173,7 +232,12 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     riskDanger,
     riskEscape,
     numberEngaged,
+    mdHighlight,
+    mdLinkPlain,
     all(): vscode.TextEditorDecorationType[] {
+      return [...this.banded(), mdHighlight, mdLinkPlain];
+    },
+    banded(): vscode.TextEditorDecorationType[] {
       return [...id, ...idg, self, riskAsync, riskDanger, riskEscape, numberEngaged];
     },
   };

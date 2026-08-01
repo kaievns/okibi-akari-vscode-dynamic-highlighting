@@ -471,6 +471,457 @@ function conciseBodyEnd(text: string, from: number): number {
 }
 
 /**
+ * Blocks for INDENTATION-SCOPED languages — Python.
+ *
+ * `scanBraceBlocks` finds `{…}` pairs, so on a Python file it finds almost
+ * nothing: on samples/sample.py it returned ONE block, the dict literal
+ * `{"env": "dev"}` on line 56. Every caret therefore fell through to
+ * `topLevelBlock`, which spans the whole file — so the "focused block" was the
+ * entire module, every name in it was a top-level declaration, and the layer
+ * tinted the lot. That is the "it continuously highlights the entire file"
+ * symptom, and the dataclass fields reading as data are the same bug: with the
+ * module as the scope, `name: str` is a top-level binding.
+ *
+ * A block here is a COLON-HEADED SUITE: a line ending in `:` opens a block that
+ * runs until the first later line whose indentation is less than or equal to the
+ * header's. That is the whole of Python's block rule, and it needs no parser.
+ *
+ * Four things make it correct rather than merely plausible:
+ *
+ *   - Continuation lines are skipped. A header can span lines
+ *     (`def f(\n  a,\n  b\n) -> int:`), and a bracket depth counter is the only
+ *     way to know the `:` that matters is the one at depth 0. This also stops a
+ *     dict literal's `"key": value` from opening a block.
+ *   - Strings and comments are skipped, via the same scan the brace scanner
+ *     uses, so a `:` inside a docstring or a `#` comment never opens a block.
+ *     Docstrings matter especially: they are conventional on every module,
+ *     class and function, and they routinely contain colons.
+ *   - Blank lines and comment-only lines do not close a block. They carry no
+ *     indentation information, and a blank line between two methods must not
+ *     end the class.
+ *   - The `depth` field is the NESTING depth, counted from the enclosing suite
+ *     stack rather than from the raw indent width, so a file mixing 2- and
+ *     4-space indents still nests correctly and `innermostBlock` can compare
+ *     depths across the two scanners.
+ *
+ * `headerStart`/`openOffset`/`closeOffset` keep the same meaning as for a brace
+ * block, so every downstream consumer — `declRegionFor`, `scopeRegionFor`,
+ * `lexRegionFor`, `focusKeyOf` — works unchanged. `openOffset` is the colon,
+ * which is the closest analogue of the `{`: everything after it is body, and
+ * everything from `headerStart` to it is the header carrying the parameters.
+ */
+export function scanIndentBlocks(text: string): BraceBlock[] {
+  const lines = text.split('\n');
+  const lineStarts = lineStartOffsetsLocal(text);
+
+  // Which lines are continuations of an earlier logical line, and where the
+  // block-opening `:` sits on each line that has one. Both need the
+  // string/comment-aware scan, so they are computed in a single pass.
+  const colonAt: (number | null)[] = new Array(lines.length).fill(null);
+  const continuation: boolean[] = new Array(lines.length).fill(false);
+  {
+    let state: ScanState = 'code';
+    let bracket = 0;
+    let tripleQuote: '"""' | "'''" | null = null;
+    let line = 0;
+    let pendingContinuation = false;
+    let sawCodeThisLine = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      const three = text.slice(i, i + 3);
+
+      if (c === '\n') {
+        // A line is a continuation if the previous logical line was still open:
+        // inside brackets, inside a triple-quoted string, or backslash-continued.
+        continuation[line] = pendingContinuation;
+        line++;
+        if (line < lines.length) {
+          continuation[line] = bracket > 0 || tripleQuote !== null || pendingContinuation;
+        }
+        pendingContinuation = bracket > 0 || tripleQuote !== null;
+        if (state === 'line-comment' || state === 'sq' || state === 'dq') {
+          state = 'code';
+        }
+        sawCodeThisLine = false;
+        continue;
+      }
+
+      if (state === 'code' && tripleQuote === null && (three === '"""' || three === "'''")) {
+        tripleQuote = three as '"""' | "'''";
+        i += 2;
+        pendingContinuation = true;
+        continue;
+      }
+      if (tripleQuote !== null) {
+        if (three === tripleQuote) {
+          tripleQuote = null;
+          i += 2;
+          pendingContinuation = bracket > 0;
+        }
+        continue;
+      }
+
+      switch (state) {
+        case 'code':
+          if (c === '#') {
+            state = 'line-comment';
+          } else if (c === "'") {
+            state = 'sq';
+          } else if (c === '"') {
+            state = 'dq';
+          } else if (c === '(' || c === '[' || c === '{') {
+            bracket++;
+          } else if (c === ')' || c === ']' || c === '}') {
+            bracket = Math.max(0, bracket - 1);
+          } else if (c === '\\' && text[i + 1] === '\n') {
+            // Explicit line continuation; the newline handler reads this flag.
+            pendingContinuation = true;
+            i++;
+            continuation[line + 1] = true;
+            line++;
+            sawCodeThisLine = false;
+            continue;
+          } else if (c === ':' && bracket === 0) {
+            // Only a colon at bracket depth 0 can open a suite. Annotations
+            // (`x: int`) also sit at depth 0, so requiring the colon to be the
+            // last non-comment character on the line is what separates
+            // `def f():` from `name: str`.
+            colonAt[line] = i;
+          } else if (!/\s/.test(c)) {
+            sawCodeThisLine = true;
+          }
+          break;
+        case 'line-comment':
+          break;
+        case 'sq':
+          if (c === '\\') {
+            i++;
+          } else if (c === "'") {
+            state = 'code';
+          }
+          break;
+        case 'dq':
+          if (c === '\\') {
+            i++;
+          } else if (c === '"') {
+            state = 'code';
+          }
+          break;
+        default:
+          break;
+      }
+      void sawCodeThisLine;
+    }
+  }
+
+  // Fold the colon of a multi-line header onto the line the header STARTS on. A
+  // signature that wraps puts its `:` on the last physical line —
+  //
+  //   def fold(
+  //       cfgs: list[Config],
+  //   ) -> T:            <-- the colon is here, on a continuation line
+  //
+  // and a continuation line is not a header, so keying on the physical line
+  // dropped every wrapped signature: 3 of the 4 wrapped headers in the traps
+  // file, and the block never existed. `logicalStart[li]` is the first physical
+  // line of li's logical line, and the colon is attributed there — which is also
+  // the line whose indentation governs the suite.
+  const logicalStart: number[] = new Array(lines.length).fill(0);
+  for (let li = 0, head = 0; li < lines.length; li++) {
+    if (!continuation[li]) {
+      head = li;
+    }
+    logicalStart[li] = head;
+  }
+  const headerColon: (number | null)[] = new Array(lines.length).fill(null);
+  const headerEndLine: number[] = new Array(lines.length).fill(0);
+  for (let li = 0; li < lines.length; li++) {
+    if (colonAt[li] === null) {
+      continue;
+    }
+    const head = logicalStart[li];
+    // Last colon of the logical line wins: `def f() -> dict[str, int]:` has the
+    // annotation colons inside brackets (already excluded), but `else:` after a
+    // one-line `if x: pass` would leave two, and the later one opens the suite.
+    headerColon[head] = colonAt[li];
+    headerEndLine[head] = li;
+  }
+
+  // Trailing content after the colon disqualifies it as a block opener UNLESS it
+  // is only a comment — `def f():  # note` is still a header, `x: int = 1` is not.
+  const isHeader = (li: number): boolean => {
+    const col = headerColon[li];
+    if (col === null || continuation[li]) {
+      return false;
+    }
+    const endLine = headerEndLine[li];
+    const after = lines[endLine].slice(col - lineStarts[endLine] + 1);
+    return after.trim() === '' || after.trimStart().startsWith('#');
+  };
+
+  const indentOf = (s: string): number => {
+    let n = 0;
+    for (const ch of s) {
+      if (ch === ' ') {
+        n++;
+      } else if (ch === '\t') {
+        n += 8 - (n % 8);
+      } else {
+        break;
+      }
+    }
+    return n;
+  };
+  // A blank or comment-only line carries no indentation information, so it can
+  // neither open nor close a block. Without this a blank line between two
+  // methods would close the class.
+  const isVoid = (s: string): boolean => s.trim() === '' || s.trimStart().startsWith('#');
+
+  const blocks: BraceBlock[] = [];
+  const stack: { openLine: number; indent: number; openOffset: number; headerStart: number }[] = [];
+
+  const close = (upTo: number, endLine: number): void => {
+    while (stack.length > 0 && stack[stack.length - 1].indent >= upTo) {
+      const open = stack.pop()!;
+      // End at the last non-void line of the body, so trailing blank lines
+      // between two functions belong to neither.
+      let last = endLine;
+      while (last > open.openLine && (last >= lines.length || isVoid(lines[last]))) {
+        last--;
+      }
+      blocks.push({
+        openLine: open.openLine,
+        closeLine: last,
+        depth: stack.length,
+        openOffset: open.openOffset,
+        closeOffset: Math.max(open.openOffset, lineStarts[last] + lines[last].length - 1),
+        headerStart: open.headerStart,
+      });
+    }
+  };
+
+  for (let li = 0; li < lines.length; li++) {
+    if (continuation[li] || isVoid(lines[li])) {
+      continue;
+    }
+    const indent = indentOf(lines[li]);
+    // A suite headed at indent `h` owns exactly the lines indented DEEPER than
+    // `h`, so any line at indent `i` closes every open suite whose header indent
+    // is `>= i`. The `>=` is what closes SIBLINGS: a second `def` at indent 4
+    // has to end the previous `def` at indent 4, while leaving the enclosing
+    // `class` at indent 0 open. Using `> i` instead left every sibling nested
+    // inside its predecessor, so the first class in the file appeared to run to
+    // the last line and nothing ever closed.
+    close(indent, li - 1);
+    if (isHeader(li)) {
+      stack.push({
+        openLine: li,
+        indent,
+        openOffset: headerColon[li]!,
+        headerStart: lineStarts[li],
+      });
+    }
+  }
+  close(0, lines.length - 1);
+
+  return blocks.sort((a, b) => a.openOffset - b.openOffset);
+}
+
+/**
+ * Synthetic blocks for Python's BRACELESS, COLONLESS binding scopes — the
+ * comprehension and the lambda.
+ *
+ *   jobs = [one(name) for name in names]
+ *   timeout_sum = fold(cfgs, 0, lambda acc, item: acc + item.timeout)
+ *
+ * Both bind names (`name`, `acc`, `item`) and both are real scopes at runtime, but
+ * neither has a brace OR a colon-headed suite, so `scanIndentBlocks` cannot see
+ * them. Their variables therefore belonged to the enclosing function, where they
+ * competed for its hues, and putting the caret inside one focused the whole
+ * function instead of the comprehension. This is the same problem `scanArrowBlocks`
+ * solves for JS's concise arrow bodies, and the same shape of fix.
+ *
+ * A comprehension spans its opening bracket to the matching close; a lambda spans
+ * `lambda` to the end of its body expression — the first `,` or `)` that is not
+ * nested inside brackets or a string, exactly as for an arrow.
+ *
+ * Depth is the enclosing suite's depth plus one, so the comprehension always
+ * out-depths its parent and `innermostBlock` prefers it.
+ */
+function scanPyExprBlocks(text: string, suites: BraceBlock[]): BraceBlock[] {
+  const out: BraceBlock[] = [];
+  const lineStarts = lineStartOffsetsLocal(text);
+  const lineOf = (offset: number): number => {
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineStarts[mid] <= offset) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+  const depthAt = (offset: number): number => {
+    let d = -1;
+    for (const s of suites) {
+      if (offset > s.openOffset && offset <= s.closeOffset) d = Math.max(d, s.depth);
+    }
+    return d + 1;
+  };
+
+  // One string/comment-aware pass, recording bracket spans and `lambda` starts.
+  // Reusing lexIdentifiers is not enough: it reports identifiers, not the bracket
+  // positions, so the scan has to see both in the same traversal to stay in sync
+  // about what is code.
+  const opens: number[] = [];
+  const brackets: { open: number; close: number; ch: string }[] = [];
+  const lambdas: number[] = [];
+  let state: 'code' | 'comment' | 'sq' | 'dq' = 'code';
+  let triple: string | null = null;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const three = text.slice(i, i + 3);
+    if (triple !== null) {
+      if (three === triple) { triple = null; i += 2; }
+      continue;
+    }
+    if (c === '\n') { if (state !== 'code') state = 'code'; continue; }
+    if (state === 'comment') continue;
+    if (state === 'sq' || state === 'dq') {
+      if (c === '\\') i++;
+      else if (c === (state === 'sq' ? "'" : '"')) state = 'code';
+      continue;
+    }
+    if (state === 'code' && (three === '"""' || three === "'''")) { triple = three; i += 2; continue; }
+    if (c === '#') { state = 'comment'; continue; }
+    if (c === "'") { state = 'sq'; continue; }
+    if (c === '"') { state = 'dq'; continue; }
+    if (c === '[' || c === '(' || c === '{') { opens.push(i); continue; }
+    if (c === ']' || c === ')' || c === '}') {
+      const open = opens.pop();
+      if (open !== undefined) brackets.push({ open, close: i, ch: text[open] });
+      continue;
+    }
+    if (text.startsWith('lambda', i) && !/[A-Za-z0-9_]/.test(text[i - 1] || ' ')
+        && !/[A-Za-z0-9_]/.test(text[i + 6] || ' ')) {
+      lambdas.push(i);
+    }
+  }
+
+  // A bracket span is a COMPREHENSION when it contains a top-level `for` — that
+  // keyword is what makes it a scope rather than a plain list/dict/call.
+  for (const b of brackets) {
+    const inner = text.slice(b.open + 1, b.close);
+    if (!/(^|[^\w])for[^\w]/.test(inner)) continue;
+    // Reject a `for` that belongs to a NESTED bracket: only this span's own `for`
+    // makes this span a comprehension.
+    let depth = 0;
+    let found = false;
+    for (let k = 0; k < inner.length; k++) {
+      const ch = inner[k];
+      if ('([{'.includes(ch)) depth++;
+      else if (')]}'.includes(ch)) depth--;
+      else if (depth === 0 && inner.startsWith('for', k)
+               && !/[A-Za-z0-9_]/.test(inner[k - 1] || ' ')
+               && !/[A-Za-z0-9_]/.test(inner[k + 3] || ' ')) { found = true; break; }
+    }
+    if (!found) continue;
+    out.push({
+      openLine: lineOf(b.open),
+      closeLine: lineOf(b.close),
+      depth: depthAt(b.open),
+      openOffset: b.open,
+      closeOffset: b.close,
+      headerStart: b.open,
+    });
+  }
+
+  for (const at of lambdas) {
+    const end = pyExprEnd(text, at);
+    out.push({
+      openLine: lineOf(at),
+      closeLine: lineOf(end),
+      depth: depthAt(at),
+      openOffset: at,
+      closeOffset: end,
+      headerStart: at,
+    });
+  }
+  return out;
+}
+
+/**
+ * End of a lambda: the first `,` or closing bracket at depth 0 AFTER the body has
+ * started, or end of line.
+ *
+ * The subtlety is that a lambda has TWO comma-separated regions and only the
+ * second may be terminated by a comma:
+ *
+ *   fold(cfgs, 0, lambda acc, item: acc + item.timeout)
+ *                        ^^^^^^^^^ parameters — commas here are the lambda's own
+ *                                   ^^^^^^^^^^^^^^^^^ body — a comma here ends it
+ *
+ * Stopping at the first comma unconditionally cut the block at `lambda acc`, so
+ * its parameter list was half-covered and its body not at all — the block existed
+ * but described the wrong text. The `:` that opens the body is the switch, and it
+ * has to be found at depth 0 so an annotation or dict inside a default cannot be
+ * mistaken for it.
+ */
+function pyExprEnd(text: string, from: number): number {
+  let depth = 0;
+  let state: 'code' | 'sq' | 'dq' = 'code';
+  let inBody = false;
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    if (state !== 'code') {
+      if (c === '\\') i++;
+      else if (c === (state === 'sq' ? "'" : '"')) state = 'code';
+      continue;
+    }
+    if (c === "'") { state = 'sq'; continue; }
+    if (c === '"') { state = 'dq'; continue; }
+    if ('([{'.includes(c)) { depth++; continue; }
+    if (')]}'.includes(c)) {
+      if (depth === 0) return i - 1;
+      depth--;
+      continue;
+    }
+    if (depth === 0 && c === ':' && !inBody) { inBody = true; continue; }
+    if (c === '\n') return i - 1;
+    if (depth === 0 && c === ',' && inBody) return i - 1;
+  }
+  return text.length - 1;
+}
+
+/**
+ * Languages whose blocks come from INDENTATION, not braces. Everything else uses
+ * the brace scanner, including languages with optional braces — a braceless Ruby
+ * or a Nim file would need its own entry and its own trap tests before being
+ * added here, and guessing costs more than it saves.
+ */
+const INDENT_SCOPED = new Set(['python']);
+
+/**
+ * Blocks for a document, picking the scanner its language actually needs.
+ *
+ * Every caller should use this rather than `scanBraceBlocks` directly: the two
+ * scanners return the same shape, so the only thing that must not be forgotten
+ * is choosing between them. `languageId` is VS Code's, so the call sites pass
+ * `doc.languageId` straight through.
+ */
+export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
+  if (languageId !== undefined && INDENT_SCOPED.has(languageId)) {
+    const suites = scanIndentBlocks(text);
+    const exprs = scanPyExprBlocks(text, suites);
+    if (exprs.length === 0) return suites;
+    return [...suites, ...exprs].sort((a, b) => a.openOffset - b.openOffset);
+  }
+  return scanBraceBlocks(text);
+}
+
+/**
  * The synthetic block representing MODULE TOP LEVEL — the region outside every
  * brace-block. Top-level `const`/`var`/`let` declarations are data identities
  * like any other, so the file itself has to be a focusable scope; otherwise the
@@ -588,15 +1039,47 @@ export function declRegionFor(text: string, block: BraceBlock): { start: number;
 /** Does this block's header read as control flow (rather than a function signature)? */
 function isControlFlowHeader(text: string, block: BraceBlock): boolean {
   const header = text.slice(block.headerStart, block.openOffset);
+  // A Python `def`/`class`/`lambda` is a DECLARATION even though its header also
+  // contains words this regex would otherwise match (`for` inside a default, say),
+  // so it is checked first and short-circuits. Without this, `def load_config(...)`
+  // read as control flow, its params were widened into block-locals, and they
+  // stopped tracing across the function.
+  if (/^\s*(async\s+)?(def|class|lambda)\b/.test(header)) {
+    return false;
+  }
   // Control-flow keywords are unambiguous and take precedence — `for (...) {`,
   // `if (...) {`, `while (...) {` all have parens too, so paren-based function
-  // detection must not override them.
-  return /\b(if|for|while|switch|else|do|range|select|case)\b/.test(header);
+  // detection must not override them. `with`/`except`/`elif`/`try`/`finally`/
+  // `match`/`case` are Python's, and each binds names in its header
+  // (`with open(f) as fh:`, `except E as e:`) exactly like `for … in …:` does.
+  return /\b(if|elif|for|while|switch|else|do|range|select|case|match|with|try|except|finally)\b/.test(header);
 }
 
-/** Does this block's header declare a function (so its params belong to it)? */
+/**
+ * Does this block's header declare a function (so its params belong to it)?
+ *
+ * Python's `def`/`lambda` are included, and `class` deliberately is NOT: a class
+ * body's names are attributes, not parameters, and a dataclass field like
+ * `name: str` is band-1 furniture rather than a data identity. Treating `class`
+ * as a function header would widen its header into the param region and pull
+ * those fields in as bindings.
+ */
 export function isFunctionHeader(text: string, block: BraceBlock): boolean {
   const header = text.slice(block.headerStart, block.openOffset);
+  // A synthetic lambda/comprehension block has headerStart === openOffset, so the
+  // header slice is EMPTY and no pattern can match it. Read forward from the start
+  // offset instead: `lambda` there means the block IS the lambda, and its
+  // parameters belong to it. Without this a lambda's params classified as
+  // block-locals rather than fn-locals, so they stopped tracing across the body.
+  if (block.headerStart === block.openOffset) {
+    return /^\s*lambda\b/.test(text.slice(block.openOffset, block.openOffset + 12));
+  }
+  if (/^\s*(async\s+)?(def|lambda)\b/.test(header)) {
+    return true;
+  }
+  if (/^\s*class\b/.test(header)) {
+    return false;
+  }
   return /\b(func|function)\b|=>\s*$|\)\s*(:[^)]*)?\s*$/.test(header);
 }
 
@@ -733,7 +1216,32 @@ export function lexIdentifiers(text: string, start = 0, end = text.length): LexI
   // its brace depth so identifiers inside `${…}` ARE lexed (they're real code)
   // while the surrounding template text stays opaque. Handles nesting:
   //   `a ${ obj.f(`b ${x}`) } c`.
-  const interp: { braceDepth: number }[] = [];
+  //
+  // `quote` records how the frame's string was opened, so the closing delimiter
+  // is the right one when we return to the string body. JS templates are always
+  // backticks; PYTHON F-STRINGS use ' or " and interpolate with a bare `{`, so
+  // without this the whole f-string was opaque and every name inside it was
+  // invisible. That is not cosmetic: names are gated on being used at least twice,
+  // and `prefix`, `page` and `timeout_sum` in samples/sample.py each have exactly
+  // one plain use plus one f-string use — so all three silently failed the gate
+  // and never tinted anywhere.
+  const interp: { braceDepth: number; quote: string }[] = [];
+  // True while the current sq/dq string is an f-string, i.e. its opening quote was
+  // preceded by an `f` prefix (`f"…"`, `rf'…'`, `F"…"`). Only then does `{` open
+  // an interpolation; in a plain string a brace is just a character.
+  let fstring = false;
+  const isFStringPrefix = (at: number): boolean => {
+    // Walk back over the string prefix letters immediately before the quote.
+    let j = at - 1;
+    let sawF = false;
+    while (j >= 0 && /[A-Za-z]/.test(text[j])) {
+      if (text[j] === 'f' || text[j] === 'F') sawF = true;
+      j--;
+    }
+    // A prefix is only a prefix if it is not part of a longer identifier.
+    if (j >= 0 && /[A-Za-z0-9_$]/.test(text[j])) return false;
+    return sawF && at - 1 - j <= 2; // f, rf, fr, br… at most two letters
+  };
 
   for (let i = 0; i < text.length && i < end; i++) {
     const c = text[i];
@@ -742,6 +1250,7 @@ export function lexIdentifiers(text: string, start = 0, end = text.length): LexI
     if (c === '\n') {
       if (state === 'line-comment' || state === 'sq' || state === 'dq') {
         state = 'code';
+        fstring = false;
       }
       continue;
     }
@@ -751,13 +1260,19 @@ export function lexIdentifiers(text: string, start = 0, end = text.length): LexI
         if (c === '/' && next === '/') {
           state = 'line-comment';
           i++;
+        } else if (c === '#') {
+          // Python's comment marker. Without it a `#` comment was treated as code,
+          // so words in it were lexed as identifiers and inflated use counts.
+          state = 'line-comment';
         } else if (c === '/' && next === '*') {
           state = 'block-comment';
           i++;
         } else if (c === "'") {
           state = 'sq';
+          fstring = isFStringPrefix(i);
         } else if (c === '"') {
           state = 'dq';
+          fstring = isFStringPrefix(i);
         } else if (c === '`') {
           state = 'bq';
         } else if (c === '{' && interp.length > 0) {
@@ -765,9 +1280,11 @@ export function lexIdentifiers(text: string, start = 0, end = text.length): LexI
         } else if (c === '}' && interp.length > 0) {
           const frame = interp[interp.length - 1];
           if (frame.braceDepth === 0) {
-            // closes the `${…}` — return to the enclosing template body
+            // closes the interpolation — return to the enclosing string body, in
+            // whichever quote style opened it.
             interp.pop();
-            state = 'bq';
+            state = frame.quote === '`' ? 'bq' : (frame.quote === "'" ? 'sq' : 'dq');
+            fstring = frame.quote !== '`';
           } else {
             frame.braceDepth--;
           }
@@ -779,6 +1296,15 @@ export function lexIdentifiers(text: string, start = 0, end = text.length): LexI
           }
           const name = text.slice(from, i);
           i--; // the for-loop ++ will re-advance past the last consumed char
+          // A STRING PREFIX is not an identifier. `f"{x}"`, `rb'…'`, `u"…"` put one
+          // or two letters directly against the opening quote, and lexing them
+          // emitted a name called `f` — which, in any f-string-heavy file, cleared
+          // the two-use gate, won a hue, and consumed one of the palette's few
+          // slots for a token that is punctuation.
+          if (/^[A-Za-z]{1,2}$/.test(name) && /^["']/.test(text[i + 1] ?? '')
+              && /^[fFrRbBuU]+$/.test(name)) {
+            break;
+          }
           if (from >= start && from < end) {
             ids.push({ name, offset: from, length: name.length });
           }
@@ -796,27 +1322,29 @@ export function lexIdentifiers(text: string, start = 0, end = text.length): LexI
         break;
 
       case 'sq':
+      case 'dq': {
+        const closer = state === 'sq' ? "'" : '"';
         if (c === '\\') {
           i++;
-        } else if (c === "'") {
+        } else if (fstring && c === '{' && next === '{') {
+          i++; // `{{` is an escaped literal brace, not an interpolation
+        } else if (fstring && c === '{') {
+          // A Python f-string hole. Its body is real code, so lex it.
+          interp.push({ braceDepth: 0, quote: closer });
           state = 'code';
+        } else if (c === closer) {
+          state = 'code';
+          fstring = false;
         }
         break;
-
-      case 'dq':
-        if (c === '\\') {
-          i++;
-        } else if (c === '"') {
-          state = 'code';
-        }
-        break;
+      }
 
       case 'bq':
         if (c === '\\') {
           i++;
         } else if (c === '$' && next === '{') {
           // enter an interpolation: the `${…}` body is code
-          interp.push({ braceDepth: 0 });
+          interp.push({ braceDepth: 0, quote: '`' });
           state = 'code';
           i++; // consume the `{`
         } else if (c === '`') {
