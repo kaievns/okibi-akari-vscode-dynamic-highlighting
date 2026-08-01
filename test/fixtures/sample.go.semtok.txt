@@ -78,7 +78,7 @@
 }
 
 /*⇒76,comment,[]*/// summarize shows closures: c and acc keep stable hues across .Sort/append.
-/*⇒4,keyword,[]*/func /*⇒9,function,[definition signature]*/summarize(/*⇒4,parameter,[definition slice]*/cfgs []/*⇒6,type,[struct]*/Config) /*⇒6,type,[defaultLibrary string]*/string {
+/*⇒4,keyword,[]*/func /*⇒9,function,[definition signature]*/summarize(/*⇒4,parameter,[definition slice]*/cfgs []/*⇒6,type,[struct]*/Config, /*⇒1,parameter,[definition interface]*/_ /*⇒3,type,[defaultLibrary interface]*/any, /*⇒1,parameter,[definition interface]*/_ /*⇒9,keyword,[]*/interface{}) /*⇒6,type,[defaultLibrary string]*/string {
 	/*⇒3,keyword,[]*/var /*⇒1,variable,[definition struct]*/b /*⇒7,namespace,[]*/strings./*⇒7,type,[struct]*/Builder
 	/*⇒5,variable,[definition slice]*/names /*⇒2,operator,[]*/:= /*⇒4,function,[defaultLibrary]*/make([]/*⇒6,type,[defaultLibrary string]*/string, /*⇒1,number,[]*/0, /*⇒3,function,[defaultLibrary]*/len(/*⇒4,parameter,[slice]*/cfgs))
 
@@ -88,6 +88,9 @@
 		}
 		/*⇒5,variable,[slice]*/names /*⇒1,operator,[]*/= /*⇒6,function,[defaultLibrary]*/append(/*⇒5,variable,[slice]*/names, /*⇒1,variable,[struct]*/c./*⇒4,property,[string]*/Name)
 	}
+
+	/*⇒1,variable,[]*/_ /*⇒1,operator,[]*/= /*⇒6,keyword,[]*/struct{}{}
+	/*⇒1,variable,[]*/_ /*⇒1,operator,[]*/= /*⇒4,function,[defaultLibrary]*/make(/*⇒4,keyword,[]*/chan /*⇒4,type,[defaultLibrary bool]*/bool, /*⇒1,number,[]*/1)
 
 	/*⇒5,variable,[definition map]*/stuff /*⇒2,operator,[]*/:= /*⇒4,function,[defaultLibrary]*/make(/*⇒3,keyword,[]*/map[/*⇒6,type,[defaultLibrary string]*/string]/*⇒6,type,[defaultLibrary string]*/string)
 

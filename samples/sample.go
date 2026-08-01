@@ -78,7 +78,7 @@ func loadConfig(name string) Config {
 }
 
 // summarize shows closures: c and acc keep stable hues across .Sort/append.
-func summarize(cfgs []Config) string {
+func summarize(cfgs []Config, _ any, _ interface{}) string {
 	var b strings.Builder
 	names := make([]string, 0, len(cfgs))
 
@@ -88,6 +88,9 @@ func summarize(cfgs []Config) string {
 		}
 		names = append(names, c.Name)
 	}
+
+	_ = struct{}{}
+	_ = make(chan bool, 1)
 
 	stuff := make(map[string]string)
 

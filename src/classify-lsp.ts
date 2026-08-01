@@ -78,15 +78,22 @@ export class Classifier implements vscode.Disposable {
     block: BraceBlock,
     paletteSize: number,
     token: vscode.CancellationToken,
+    /**
+     * Text + blocks the caller already has for this document version. Both are
+     * expensive to recompute (`getText()` rebuilds the whole string; the block scan
+     * is a full lex), and the decorator caches them per version — so recomputing
+     * here doubled the cost of every classify for nothing.
+     */
+    cached?: { text: string; blocks: BraceBlock[] },
   ): Promise<{ focused: Classification; coloring: ScopeColoring } | null> {
-    const text = doc.getText();
+    const text = cached?.text ?? doc.getText();
     const bundle = await this.bundleFor(doc, text, token);
     if (token.isCancellationRequested) {
       return null;
     }
 
     const colorScopeFn = outermostFnOf(bundle.fnRanges, block.openOffset);
-    const allBlocks = scanBraceBlocks(text);
+    const allBlocks = cached?.blocks ?? scanBraceBlocks(text);
 
     // Every block whose focus would share this colour scope. At module top level
     // (no enclosing fn) the scope is just the focused block itself.

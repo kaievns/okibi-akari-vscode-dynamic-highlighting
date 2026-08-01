@@ -45,21 +45,80 @@ if (clean !== src) {
   process.exit(1);
 }
 
+/**
+ * Types whose text is a bare identifier. Only these can be shape-checked: a
+ * `string` token legitimately contains quotes, and a `comment` contains anything.
+ */
+const IDENT_TYPES = new Set([
+  'namespace', 'type', 'parameter', 'variable', 'property',
+  'function', 'method', 'member', 'keyword', 'label',
+]);
+
+/** Does `src[offset, offset+len)` sit on a whole identifier? */
+function isWholeWord(offset, len, type) {
+  if (offset < 0 || offset + len > src.length) {
+    return false;
+  }
+  if (type !== undefined && !IDENT_TYPES.has(type)) {
+    return true; // strings, comments, numbers, operators — shape check not meaningful
+  }
+  const body = src.substr(offset, len);
+  // An identifier must not contain a quote; that is the signature of an
+  // off-by-one landing across a string boundary.
+  if (/["'`]/.test(body)) {
+    return false;
+  }
+  const before = offset > 0 ? src[offset - 1] : '';
+  const after = offset + len < src.length ? src[offset + len] : '';
+  const idChar = /[A-Za-z0-9_]/;
+  if (idChar.test(before) && idChar.test(body[0])) {
+    return false; // starts mid-identifier
+  }
+  if (idChar.test(after) && idChar.test(body[len - 1])) {
+    return false; // ends mid-identifier
+  }
+  return true;
+}
+
 const out = [];
 for (const mk of markers) {
-  // ⇒ : token starts AT the marker position (marker precedes token).
-  // ⇐ : token ENDS at the marker position (marker follows token).
-  const offset = mk.dir === '⇒' ? mk.cleanPos : mk.cleanPos - mk.len;
-  const name = src.substr(offset, mk.len);
-  out.push({ name, offset, length: mk.len, type: mk.type, modifiers: mk.mods });
+  let offset;
+  if (mk.dir === '⇒') {
+    // Marker PRECEDES its token: the token starts right where the marker was.
+    offset = mk.cleanPos;
+  } else {
+    // Marker FOLLOWS its token. Naively that means the token ends at cleanPos —
+    // but for an import path gopls puts the marker after the CLOSING QUOTE while
+    // reporting only the identifier inside it, so the true end is one char
+    // earlier. Probe both and take whichever lands on a whole word.
+    //   "errors"/*⇐6,namespace*/   len 6, marker at 657, `errors` is at 650..656
+    const endAtMarker = mk.cleanPos - mk.len;
+    const endBeforeQuote = mk.cleanPos - 1 - mk.len;
+    offset = isWholeWord(endAtMarker, mk.len, mk.type)
+      ? endAtMarker
+      : isWholeWord(endBeforeQuote, mk.len, mk.type)
+        ? endBeforeQuote
+        : endAtMarker; // neither fits — keep the naive value so the check below fails loudly
+  }
+  out.push({
+    name: src.substr(offset, mk.len),
+    offset,
+    length: mk.len,
+    type: mk.type,
+    modifiers: mk.mods,
+  });
 }
 
 out.sort((a, b) => a.offset - b.offset);
 
-const bad = out.filter((t) => src.substr(t.offset, t.length) !== t.name);
+// NOTE: do NOT verify by re-slicing at the same offset — `name` was produced that
+// way, so the comparison is vacuously true. That tautology is exactly why an
+// off-by-one in the ⇐ branch shipped undetected: every token "verified" while
+// `errors` was recorded as `rrors"`. Check the SHAPE instead.
+const bad = out.filter((t) => !isWholeWord(t.offset, t.length, t.type));
 if (bad.length) {
-  console.error(`MISMATCH: ${bad.length}/${out.length} tokens failed offset verification`);
-  console.error(bad.slice(0, 5));
+  console.error(`MISMATCH: ${bad.length}/${out.length} tokens are not whole words`);
+  console.error(bad.slice(0, 8));
   process.exit(1);
 }
 console.log(JSON.stringify(out, null, 0));

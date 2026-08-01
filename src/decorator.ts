@@ -75,7 +75,13 @@ export class Decorator implements vscode.Disposable {
   // No colour ledgers: hues come from the per-scope co-visibility colouring
   // (scopecolor.ts), which is a pure function of the document — so there is no
   // navigation-history state that could make colours order-dependent.
-  private blockCache = new WeakMap<vscode.TextDocument, { version: number; blocks: BraceBlock[] }>();
+  // Text + blocks per document version. Caching the TEXT matters as much as the
+  // blocks: doc.getText() rebuilds the whole document string, and it was being
+  // called several times per caret move.
+  private blockCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; text: string; blocks: BraceBlock[] }
+  >();
   // Bounded LRU keyed `${docVersion}::${focusKey}`.
   private classCache = new Map<string, CacheEntry>();
   private static CACHE_LIMIT = 16;
@@ -224,15 +230,30 @@ export class Decorator implements vscode.Disposable {
   }
 
 
-  private blocksFor(doc: vscode.TextDocument): BraceBlock[] {
+  /**
+   * Blocks AND text for a document, cached together per version.
+   *
+   * `doc.getText()` materialises the whole document into a fresh string — it is not
+   * a cheap accessor. It was being called on every caret move (twice: once here,
+   * once for the top-level fallback) and again in every render, which is what made
+   * navigation feel laggy on large files. One cache serves all of them.
+   */
+  private docStateFor(doc: vscode.TextDocument): { text: string; blocks: BraceBlock[] } {
     const cached = this.blockCache.get(doc);
     if (cached && cached.version === doc.version) {
-      return cached.blocks;
+      return cached;
     }
-    const blocks = scanBraceBlocks(doc.getText());
-    this.blockCache.set(doc, { version: doc.version, blocks });
-    return blocks;
+    const text = doc.getText();
+    const state = { version: doc.version, text, blocks: scanBraceBlocks(text) };
+    this.blockCache.set(doc, state);
+    return state;
   }
+
+  /** Cached document text for the current version (see docStateFor). */
+  private textFor(doc: vscode.TextDocument): string {
+    return this.docStateFor(doc).text;
+  }
+
 
   /**
    * The focused block for an editor's caret, using both line and offset so a
@@ -246,7 +267,8 @@ export class Decorator implements vscode.Disposable {
   private focusedBlock(editor: vscode.TextEditor): BraceBlock | null {
     const caret = editor.selection.active;
     const doc = editor.document;
-    return innermostBlock(this.blocksFor(doc), caret.line, doc.offsetAt(caret), doc.getText());
+    const { text, blocks } = this.docStateFor(doc);
+    return innermostBlock(blocks, caret.line, doc.offsetAt(caret), text);
   }
 
   /**
@@ -450,7 +472,13 @@ export class Decorator implements vscode.Disposable {
 
     let scoped: { focused: Classification; coloring: ScopeColoring } | null;
     try {
-      scoped = await this.classifier.classifyScope(doc, block, TOKENS.id.length, token);
+      scoped = await this.classifier.classifyScope(
+        doc,
+        block,
+        TOKENS.id.length,
+        token,
+        this.docStateFor(doc), // reuse the cached text + block scan
+      );
     } catch {
       return;
     }
@@ -498,6 +526,20 @@ export class Decorator implements vscode.Disposable {
   // ── Render (cheap clock) ─────────────────────────────────────────────────────
 
   private render(): void {
+    const t0 = this.debugChan ? performance.now() : 0;
+    try {
+      this.renderInner();
+    } finally {
+      if (this.debugChan) {
+        const ms = performance.now() - t0;
+        if (ms > 2) {
+          this.dbg(`  render took ${ms.toFixed(1)} ms`);
+        }
+      }
+    }
+  }
+
+  private renderInner(): void {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
       // No active text editor — focus is in a webview, panel or another split.
@@ -581,6 +623,20 @@ export class Decorator implements vscode.Disposable {
       this.clearBand3(editor);
     }
 
+    // 4. Clay numeric literals — the ENGAGED half of the spec's number pair.
+    //
+    // `--syn-number` / `--syn-number-engaged` are both `--syn-*` (band 1), not
+    // `--risk-*`, and the token comments read "literal numbers REST receded" /
+    // "clay — focused scope, engaged phases only". A scope becomes *engaged* at
+    // Focus (band 2's word for it), so clay arrives with Focus and persists through
+    // Edit — it was previously gated on Edit alone, so numbers stayed slate for the
+    // whole of Focus.
+    if (showBand2 && block) {
+      this.renderEngagedNumbers(editor, doc, block);
+    } else {
+      this.applyType(editor, this.pool.numberEngaged, []);
+    }
+
     this.updateStatus();
   }
 
@@ -603,7 +659,7 @@ export class Decorator implements vscode.Disposable {
 
     // Header-inclusive for control-flow blocks, so header-line bindings tint too
     // (matches the range used at classify time). See focus.ts.
-    const blockRange: OffsetRange = lexRegionFor(doc.getText(), block);
+    const blockRange: OffsetRange = lexRegionFor(this.textFor(doc), block);
     const targets = computeTraceRanges(entry.classification, entry.plan, blockRange);
     if (this.debugChan) {
       this.dbg(
@@ -642,14 +698,37 @@ export class Decorator implements vscode.Disposable {
     this.renderedBand2Key = focusKey;
   }
 
+  /**
+   * Clay numeric literals in the focused block.
+   *
+   * The spec pairs `--syn-number` (receded, at rest) with `--syn-number-engaged`
+   * (clay, "focused scope, engaged phases only"). Both are band-1 `--syn-*`
+   * tokens, so this is a resting-register swap inside the focused scope rather
+   * than a risk mark — which is why it rides Focus, not Edit.
+   */
+  private renderEngagedNumbers(
+    editor: vscode.TextEditor,
+    doc: vscode.TextDocument,
+    block: BraceBlock,
+  ): void {
+    const text = this.textFor(doc);
+    const lex = lexicalRisk(text, lexRegionFor(text, block));
+    this.applyType(
+      editor,
+      this.pool.numberEngaged,
+      lex.numberEngaged.map((r) => this.toRange(doc, r)),
+    );
+  }
+
   private renderBand3(editor: vscode.TextEditor, doc: vscode.TextDocument, block: BraceBlock): void {
-    const text = doc.getText();
+    const text = this.textFor(doc);
     const blockRange: OffsetRange = lexRegionFor(text, block);
     const lex = lexicalRisk(text, blockRange);
 
     this.applyType(editor, this.pool.riskAsync, lex.async.map((r) => this.toRange(doc, r)));
     this.applyType(editor, this.pool.riskDanger, lex.danger.map((r) => this.toRange(doc, r)));
-    this.applyType(editor, this.pool.numberEngaged, lex.numberEngaged.map((r) => this.toRange(doc, r)));
+    // numberEngaged is NOT painted here — it belongs to Focus+Edit, not Edit alone.
+    // See renderEngagedNumbers().
 
     // Escape marks need the classification; use the cached one if present, else
     // leave escape empty until classify resolves (it will trigger a re-render).
@@ -702,7 +781,10 @@ export class Decorator implements vscode.Disposable {
     this.applyType(editor, this.pool.riskAsync, []);
     this.applyType(editor, this.pool.riskDanger, []);
     this.applyType(editor, this.pool.riskEscape, []);
-    this.applyType(editor, this.pool.numberEngaged, []);
+    // numberEngaged is deliberately NOT cleared here: it rides Focus, and
+    // clearBand3 runs on every Focus render (Edit → Focus relaxation included), so
+    // clearing it would strip the clay the moment typing stopped. render() owns its
+    // lifecycle alongside band 2.
   }
 
   /**

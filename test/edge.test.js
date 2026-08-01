@@ -206,6 +206,29 @@ test('engagement gate: switching to a fresh tab drops to Survey; back to an enga
   assert.equal(h.phase, phases.Phase.Focus, 'a document you worked in stays engaged');
 });
 
+test('clay numbers ride FOCUS, not Edit — they share band 2\'s gate', () => {
+  // The spec pairs --syn-number ("literal numbers REST receded") with
+  // --syn-number-engaged ("clay — focused scope, engaged phases only"). BOTH are
+  // band-1 `--syn-*` tokens, not `--risk-*`, and a scope becomes *engaged* at
+  // Focus. Gating clay on Edit alone left numbers slate for the whole of Focus.
+  const showClay = (engaged, phase, block) =>
+    engaged && block !== null && (phase === phases.Phase.Focus || phase === phases.Phase.Edit);
+  const showRisk = (engaged, phase, block) =>
+    engaged && block !== null && phase === phases.Phase.Edit;
+  const block = { openLine: 0, closeLine: 9, depth: 0 };
+
+  // The bug: Focus used to paint risk=false AND clay=false.
+  assert.equal(showClay(true, phases.Phase.Focus, block), true, 'clay arrives WITH Focus');
+  assert.equal(showRisk(true, phases.Phase.Focus, block), false, 'risk marks do not');
+  // Edit is a superset, so clay persists.
+  assert.equal(showClay(true, phases.Phase.Edit, block), true, 'clay persists into Edit');
+  assert.equal(showRisk(true, phases.Phase.Edit, block), true);
+  // Survey rests receded, and an unengaged doc never paints.
+  assert.equal(showClay(true, phases.Phase.Survey, block), false, 'Survey rests receded');
+  assert.equal(showClay(false, phases.Phase.Focus, block), false, 'unengaged paints nothing');
+  assert.equal(showClay(true, phases.Phase.Focus, null), false, 'no block, no clay');
+});
+
 test('engagement gate: an unengaged document paints NOTHING even if the phase is Focus', () => {
   // The final gate in render(). Three fixes tried to keep the PHASE correct on a
   // tab switch and a newly shown file still lit up, so the invariant is enforced
