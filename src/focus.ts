@@ -43,16 +43,45 @@ export interface BraceBlock {
 type ScanState = 'code' | 'line-comment' | 'block-comment' | 'sq' | 'dq' | 'bq';
 
 /**
+ * Is the `'` at `offset` a Rust LIFETIME rather than a char literal?
+ *
+ * A char literal is always `'x'` or `'\n'` — one character, or an escape, then a
+ * closing quote. A lifetime is an apostrophe followed by an identifier and NO
+ * closing quote: `'a`, `'_`, `'static`. The distinguishing test is therefore
+ * whether a quote closes it within the width a char literal can occupy.
+ *
+ * Language-neutral by construction: `'a` is not valid in C, Java or Go either
+ * (they all require the closing quote), so treating an unclosed short apostrophe
+ * as "not a string" is the safer reading in every language the layer supports.
+ */
+function isRustLifetime(text: string, offset: number): boolean {
+  const next = text[offset + 1];
+  if (next === undefined) return false;
+  // `'\n'` — an escape, so the closing quote is at +3.
+  if (next === '\\') return text[offset + 3] !== "'";
+  // A lifetime name starts with a letter or `_`; `'1` is neither.
+  if (!/[A-Za-z_]/.test(next)) return false;
+  // `'a'` is a char literal, `'a` and `'ab` are lifetimes.
+  return text[offset + 2] !== "'";
+}
+
+/**
  * Scan the whole document once and return every brace-block, each as a
  * (openLine, closeLine, depth, offsets) tuple. A single pass is O(chars); we
  * re-run it on document change and cache per version (see decorator).
  *
  * The scanner is intentionally lexical and language-neutral. It understands the
  * common string/comment shapes (//, block comments, ', ", `) well enough that
- * their braces don't count. It is not a parser — it does not know that Python
- * has no braces, or that Rust lifetimes use `'`. Those are acceptable: on a
- * braceless language the block list is simply empty and the layer stays in
- * Survey, which is the correct at-rest behaviour anyway.
+ * their braces don't count. It is not a parser — it does not know that Python has
+ * no braces, which is acceptable: on a braceless language the block list is simply
+ * empty and the layer stays in Survey, the correct at-rest behaviour anyway.
+ *
+ * Rust LIFETIMES are the one exception that had to be taught, because they fail
+ * loudly rather than quietly. `'a` opens an apostrophe that never closes, so the
+ * scanner treated the remainder of the file as one string literal: a function whose
+ * signature contains `<'_>` produced NO block at all, every caret inside it fell
+ * through to the whole-file fallback, and the layer tinted everything at once. See
+ * `isRustLifetime`.
  */
 export function scanBraceBlocks(text: string): BraceBlock[] {
   const blocks: BraceBlock[] = [];
@@ -83,7 +112,7 @@ export function scanBraceBlocks(text: string): BraceBlock[] {
         } else if (c === '/' && next === '*') {
           state = 'block-comment';
           i++;
-        } else if (c === "'") {
+        } else if (c === "'" && !isRustLifetime(text, i)) {
           state = 'sq';
         } else if (c === '"') {
           state = 'dq';
@@ -896,12 +925,213 @@ function pyExprEnd(text: string, from: number): number {
 }
 
 /**
+ * Rust CLOSURES whose body is a bare expression: `|c| c.name`, `|a, b| a + b`.
+ *
+ * A closure IS a scope — its parameters are bindings, and it captures from the
+ * enclosing frame — but a braceless one has no `{` for the brace scanner to find.
+ * The effect is the same one Python lambdas had before `scanPyExprBlocks`: the
+ * caret inside `.map(|c| ...)` fell through to the enclosing function, so `c`
+ * classified as a local of the OUTER scope rather than a parameter of the closure.
+ * `samples/sample.rs` states the contract in its own header — "closures: captured
+ * `prefix` + iterator params keep stable hues" — and an iterator chain of bare
+ * closures is the single most common shape in idiomatic Rust.
+ *
+ * A closure with a braced body (`|c| { ... }`) is already found by the brace
+ * scanner and is skipped here, so the two never produce overlapping blocks.
+ *
+ * The `|` is deliberately hard to match: it is also bitwise-or, `||` is logical
+ * or, and an or-PATTERN in a match arm (`A | B => ...`) uses it too. The opener
+ * therefore requires the `|` to sit where a VALUE cannot have just ended — after
+ * `(`, `,` or `=` — because `a | b` always has an operand before it. Two shapes
+ * that slipped through an earlier draft and are now excluded explicitly:
+ *
+ *   Status::Pending => "pending",   `=` matched the `=` of `=>`, and the arm's
+ *                                   own trailing comma looked like a body end
+ *   F: Fn(T, &Config) -> T,         a `where` clause: the `,` before a bound's
+ *                                   `|`-free text still opened a candidate
+ *
+ * so `=` must not be part of `=>`, `>=`, `<=`, `==` or `!=`, and the parameter
+ * list must actually look like one — bare identifiers, `mut`, `&` and `_` only.
+ */
+function scanRustClosures(text: string, braced: BraceBlock[]): BraceBlock[] {
+  const out: BraceBlock[] = [];
+  // 0-based line of an offset. `innermostBlock` filters by caret LINE, so a block
+  // with no openLine/closeLine can never be selected — the bug that left every
+  // closure caret resolving to its enclosing function, so `name`/`acc`/`item`
+  // inside a `.map(|x| …)` tinted against the wrong scope and read as page white.
+  const lineStarts = lineStartOffsetsLocal(text);
+  const lineOf = (offset: number): number => {
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineStarts[mid] <= offset) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+  const isBraced = (bodyStart: number): boolean => {
+    // `|c| { ... }` — the brace scanner already owns it.
+    const m = /^\s*\{/.exec(text.slice(bodyStart, bodyStart + 8));
+    return m !== null;
+  };
+  // `(?<![=!<>])=` rejects the `=` of `=>`, `==`, `!=`, `<=` and `>=`, which is
+  // what let match arms in as closures.
+  const re = /([(,]|(?<![=!<>])=)\s*(\|)(?!\|)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const bar = m.index + m[0].length - 1;
+    if (inStringOrComment(text, bar)) continue;
+    // The parameter list runs to the closing `|` on the same line. A `|` inside a
+    // nested pattern cannot occur in a closure's parameter list, so a plain scan is
+    // enough; bailing at the newline keeps a stray bitwise-or from running away.
+    let close = -1;
+    for (let i = bar + 1; i < text.length; i++) {
+      if (text[i] === '\n') break;
+      if (text[i] === '|') { close = i; break; }
+    }
+    if (close < 0) continue;
+    // It must LOOK like a parameter list. A closure binds patterns, so only
+    // identifiers, `mut`, `ref`, `&`, `_` and separators may appear between the
+    // bars; anything else (a type path, an operator, a literal) means the `|`
+    // pair was really two bitwise-ors or an or-pattern.
+    const params = text.slice(bar + 1, close);
+    if (params.length > 0 && !/^[\s&_a-zA-Z0-9,:<>()\[\]]*$/.test(params)) continue;
+    const bodyStart = close + 1;
+    if (isBraced(bodyStart)) continue;
+    const end = rustExprEnd(text, bodyStart);
+    if (end <= bodyStart) continue;
+    const depth = braced.filter((b) => b.openOffset <= bar && bar <= b.closeOffset).length;
+    out.push({
+      openLine: lineOf(bar),
+      closeLine: lineOf(end),
+      openOffset: bar,
+      closeOffset: end,
+      headerStart: bar,
+      depth,
+    });
+  }
+  return out;
+}
+
+/**
+ * Where a braceless closure body ENDS: at the comma or closing bracket that
+ * belongs to the call containing it, whichever comes first at depth 0.
+ *
+ * `.map(|c| format!("{}", c.name))` — the body ends at the `)` that closes `map`,
+ * not at the one closing `format!`, so brackets have to be counted. Strings are
+ * skipped because `")"` inside a format string is not a bracket, and a `//`
+ * comment ends the line.
+ */
+function rustExprEnd(text: string, from: number): number {
+  let depth = 0;
+  let state: 'code' | 'str' | 'chr' = 'code';
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    if (state !== 'code') {
+      if (c === '\\') { i++; continue; }
+      if (c === (state === 'str' ? '"' : "'")) state = 'code';
+      continue;
+    }
+    if (c === '"') { state = 'str'; continue; }
+    if (c === '/' && text[i + 1] === '/') {
+      const nl = text.indexOf('\n', i);
+      return nl < 0 ? text.length - 1 : nl - 1;
+    }
+    if ('([{'.includes(c)) { depth++; continue; }
+    if (')]}'.includes(c)) {
+      if (depth === 0) return i - 1;
+      depth--;
+      continue;
+    }
+    if (depth === 0 && (c === ',' || c === ';')) return i - 1;
+  }
+  return text.length - 1;
+}
+
+/** Is `offset` inside a string literal or a comment? */
+function inStringOrComment(text: string, offset: number): boolean {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const line = text.slice(lineStart, offset);
+  const slash = line.indexOf('//');
+  if (slash >= 0) return true;
+  let quotes = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\\') { i++; continue; }
+    if (line[i] === '"') quotes++;
+  }
+  return quotes % 2 === 1;
+}
+
+/**
  * Languages whose blocks come from INDENTATION, not braces. Everything else uses
  * the brace scanner, including languages with optional braces — a braceless Ruby
  * or a Nim file would need its own entry and its own trap tests before being
  * added here, and guessing costs more than it saves.
  */
 const INDENT_SCOPED = new Set(['python']);
+
+/**
+ * Languages that are PROSE, not data flow: they have no scopes to focus, so bands
+ * 2–3 must never paint in them and the phase stays Survey while the caret moves.
+ *
+ * This is not an optimisation, it is the register. `samples/sample.md` states the
+ * contract in its own text — "there are no identity tints here and the phase stays
+ * Survey 構 while the caret moves through text. That is deliberate: prose is not
+ * data flow." Markdown gets exactly two marks from this extension (the
+ * `==highlight==` wash and the link-underline cancellation) and both are band 1.
+ *
+ * The bug this closes: a markdown file DOES contain braces — every fenced Go, TS or
+ * JSON block in it — so `scanBraceBlocks` found real blocks, and a caret in prose
+ * fell through to the synthetic whole-file scope. That made the entire document one
+ * "function" whose most frequent words are `the`, `a` and `The`, so the layer
+ * cheerfully tinted English articles as data identities.
+ */
+const PROSE_LANGUAGES = new Set([
+  'markdown', 'plaintext', 'restructuredtext', 'asciidoc', 'latex', 'tex', 'bibtex',
+  'quarto', 'rmarkdown', 'mdx', 'git-commit', 'log',
+]);
+
+/**
+ * STATIC CONTENT / DATA-FORMAT languages: config, markup and data files that have
+ * braces and identifiers but no DATA FLOW — nothing moves through them, so there is
+ * no binding to trace and bands 2–3 have nothing to say. A JSON object's keys are
+ * schema, not locals; an HTML tag is structure, not a variable.
+ *
+ * They are kept SEPARATE from PROSE_LANGUAGES because the two are different claims —
+ * prose is "not code", this is "code-shaped but not imperative" — but they take the
+ * same action: no focusable scope, so the phase stays Survey and the layer never
+ * tints. The difference matters for the block scanner: a JSON/YAML/HTML file is full
+ * of braces or tags, so unlike prose it would otherwise produce a dense forest of
+ * meaningless blocks and light up quoted keys as it was navigated.
+ *
+ * CSS/SCSS/LESS are included: a selector or property name is not a data identity.
+ * Restricted to VS Code's built-in languageIds so a made-up id cannot silently
+ * disable the layer for a real code file.
+ */
+const STATIC_CONTENT_LANGUAGES = new Set([
+  'json', 'jsonc', 'json5', 'yaml', 'toml', 'ini', 'properties', 'dotenv',
+  'xml', 'xsl', 'html', 'xhtml', 'vue-html', 'svg',
+  'css', 'scss', 'less', 'sass', 'stylus',
+  'graphql', 'proto', 'csv', 'tsv', 'dockercompose', 'dockerfile', 'makefile',
+]);
+
+/** True when a document is prose, so bands 2–3 must not paint in it. */
+export function isProseLanguage(languageId?: string): boolean {
+  return languageId !== undefined && PROSE_LANGUAGES.has(languageId);
+}
+
+/**
+ * True when a document has no data flow to focus at all — prose OR a static
+ * content/data-format file. This is the gate the layer uses to decide "paint
+ * nothing, stay in Survey". Kept as one predicate so every call site treats both
+ * families identically; the two sets stay separate because they are distinct
+ * claims about the file (see STATIC_CONTENT_LANGUAGES).
+ */
+export function isNonFlowLanguage(languageId?: string): boolean {
+  return isProseLanguage(languageId)
+    || (languageId !== undefined && STATIC_CONTENT_LANGUAGES.has(languageId));
+}
 
 /**
  * Blocks for a document, picking the scanner its language actually needs.
@@ -912,13 +1142,30 @@ const INDENT_SCOPED = new Set(['python']);
  * `doc.languageId` straight through.
  */
 export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
+  // Prose has no focusable scope. Returning nothing here is what keeps the phase in
+  // Survey: `focusedBlock` finds no block, `runClassify` returns early, and bands
+  // 2–3 never paint. Note it is NOT enough to skip the scan and let the top-level
+  // fallback apply — that fallback is the whole file, which is precisely the bug.
+  if (isNonFlowLanguage(languageId)) {
+    return [];
+  }
   if (languageId !== undefined && INDENT_SCOPED.has(languageId)) {
     const suites = scanIndentBlocks(text);
     const exprs = scanPyExprBlocks(text, suites);
     if (exprs.length === 0) return suites;
     return [...suites, ...exprs].sort((a, b) => a.openOffset - b.openOffset);
   }
-  return scanBraceBlocks(text);
+  const braced = scanBraceBlocks(text);
+  // Rust closures with a bare expression body have no brace to find, so they are
+  // added on top of the brace scan rather than replacing it — same shape as the
+  // Python lambda pass above.
+  if (languageId === 'rust') {
+    const closures = scanRustClosures(text, braced);
+    if (closures.length > 0) {
+      return [...braced, ...closures].sort((a, b) => a.openOffset - b.openOffset);
+    }
+  }
+  return braced;
 }
 
 /**
@@ -1037,6 +1284,19 @@ export function declRegionFor(text: string, block: BraceBlock): { start: number;
 }
 
 /** Does this block's header read as control flow (rather than a function signature)? */
+/**
+ * Offset of the control keyword (`match`, `if`, `for`, …) that opens a
+ * control-flow block, searched within the header. Falls back to `headerStart` if
+ * none is found, so behaviour is unchanged for a header that is nothing but the
+ * keyword. This is what keeps a `let x = match … {` binding OUT of the match's
+ * scope region — see scopeRegionFor.
+ */
+function controlKeywordStart(text: string, block: BraceBlock): number {
+  const header = text.slice(block.headerStart, block.openOffset);
+  const m = /\b(if|elif|for|while|switch|else|do|range|select|case|match|with|try|except|finally|loop)\b/.exec(header);
+  return m ? block.headerStart + m.index : block.headerStart;
+}
+
 function isControlFlowHeader(text: string, block: BraceBlock): boolean {
   const header = text.slice(block.headerStart, block.openOffset);
   // A Python `def`/`class`/`lambda` is a DECLARATION even though its header also
@@ -1072,12 +1332,33 @@ export function isFunctionHeader(text: string, block: BraceBlock): boolean {
   // parameters belong to it. Without this a lambda's params classified as
   // block-locals rather than fn-locals, so they stopped tracing across the body.
   if (block.headerStart === block.openOffset) {
-    return /^\s*lambda\b/.test(text.slice(block.openOffset, block.openOffset + 12));
+    // A Rust closure block starts ON its opening `|`, so the same test applies:
+    // the block IS the closure and its parameters belong to it.
+    return /^\s*lambda\b/.test(text.slice(block.openOffset, block.openOffset + 12))
+      || text[block.openOffset] === '|';
   }
   if (/^\s*(async\s+)?(def|lambda)\b/.test(header)) {
     return true;
   }
   if (/^\s*class\b/.test(header)) {
+    return false;
+  }
+  // Rust. `fn` has to be named explicitly: the generic fallback below keys on a
+  // header ENDING in `)`, and a Rust signature almost never does — `-> Self`,
+  // `-> String` or a `where` clause sits after the parameter list. So only the one
+  // bare `fn main()` in the sample was recognised, and the parameters of every
+  // other function classified as block-locals instead of fn-locals, stopping them
+  // tracing across the body. The visibility and qualifier prefixes are consumed
+  // first because `pub fn`, `pub(crate) fn` and `pub async unsafe fn` are all one
+  // construct.
+  if (/^\s*(pub\s*(\([^)]*\)\s*)?)?(const\s+|async\s+|unsafe\s+|extern\s+("[^"]*"\s+)?)*fn\b/.test(header)) {
+    return true;
+  }
+  // A Rust TYPE body is not a function: `struct`, `enum`, `trait`, `impl`, `mod`
+  // and `union` hold fields and signatures, not bindings. Without this an `impl`
+  // header reaches the fallback, whose `\)\s*$` arm matches an `impl Trait for
+  // Type` line carrying generics and pulls the type names in as parameters.
+  if (/^\s*(pub\s*(\([^)]*\)\s*)?)?(struct|enum|trait|impl|mod|union)\b/.test(header)) {
     return false;
   }
   return /\b(func|function)\b|=>\s*$|\)\s*(:[^)]*)?\s*$/.test(header);
@@ -1105,7 +1386,18 @@ export function isFunctionHeader(text: string, block: BraceBlock): boolean {
  */
 export function scopeRegionFor(text: string, block: BraceBlock): { start: number; end: number } {
   if (isControlFlowHeader(text, block)) {
-    return { start: block.headerStart, end: block.closeOffset + 1 };
+    // Start the sub-scope at the CONTROL KEYWORD, not the line start. A block used
+    // as an EXPRESSION is preceded by a binding on the same line:
+    //
+    //   let label = match self {
+    //   ^^^^^^^^^ enclosing scope's own    ^ the match's own scope starts here
+    //
+    // Taking the whole header line (`block.headerStart`) swallowed `let label` into
+    // the match's scope region, so from the function body `label` scored proximity 2
+    // (declared-in-sub-scope) and was excluded from the attention budget — it never
+    // tinted, though it is an ordinary fn-body local. `match`/`if`/`while` as
+    // expressions are common in Rust; the keyword is the true start of their scope.
+    return { start: controlKeywordStart(text, block), end: block.closeOffset + 1 };
   }
   if (isFunctionHeader(text, block)) {
     // Only the PARAMETER LIST belongs to the function, not the whole header line.
@@ -1267,7 +1559,7 @@ export function lexIdentifiers(text: string, start = 0, end = text.length): LexI
         } else if (c === '/' && next === '*') {
           state = 'block-comment';
           i++;
-        } else if (c === "'") {
+        } else if (c === "'" && !isRustLifetime(text, i)) {
           state = 'sq';
           fstring = isFStringPrefix(i);
         } else if (c === '"') {

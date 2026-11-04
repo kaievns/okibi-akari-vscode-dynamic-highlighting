@@ -467,7 +467,13 @@ test('scopeRegionFor: function + control-flow headers included, literal headers 
   const loop = pick('for i');
   const clo = pick('func(q');
   assert.equal(focus.scopeRegionFor(text, lit).start, lit.openOffset, 'literal header excluded');
-  assert.equal(focus.scopeRegionFor(text, loop).start, loop.headerStart, 'loop binding included');
+  // The loop's region starts at the `for` KEYWORD, not the line's leading
+  // whitespace — so a `let x = match … {` binding before the keyword stays with the
+  // enclosing scope (see scopeRegionFor / controlKeywordStart). What matters is that
+  // the loop's own binding `i` is inside the region; the leading tab is not.
+  const loopR = focus.scopeRegionFor(text, loop);
+  assert.equal(loopR.start, text.indexOf('for i'), 'region starts at the control keyword');
+  assert.ok(loopR.start <= text.indexOf('i :=') && text.indexOf('i :=') < loopR.end, 'loop binding included');
   // A function's region starts at its PARAMETER LIST, not headerStart — the text
   // before it (`g(`, or an outer `const jobs =`) belongs to the enclosing scope.
   const cloR = focus.scopeRegionFor(text, clo);
@@ -729,7 +735,7 @@ test('planFromColoring: out-of-fn non-capture is bold (idg); captures and locals
   assert.equal(plan.get('loc').kind, 'id');
 });
 
-test('planFromColoring: visible-but-uncoloured → explicit neutral; self never painted', () => {
+test('planFromColoring: visible-but-uncoloured → explicit neutral; self gets a self entry', () => {
   const classification = {
     focusKey: 'B',
     byName: new Map([['x', nameInfo('block')], ['this', nameInfo('self')]]),
@@ -737,7 +743,27 @@ test('planFromColoring: visible-but-uncoloured → explicit neutral; self never 
   const coloring = { hue: new Map(), visible: new Map([['B', ['x', 'this']]]) };
   const plan = colors.planFromColoring(classification, coloring);
   assert.equal(plan.get('x').kind, 'neutral');
-  assert.ok(!plan.has('this'), 'self is band-1 only');
+  // `self`/`this` IS emitted, as `kind: 'self'`. It used to be omitted on the grounds
+  // that band 1 owns it — true until a semantic token overrides band 1. Outside a
+  // cargo workspace rust-analyzer degrades a `self` USE to type `const`, which has no
+  // theme mapping and no fallback scope, so it rendered plain white. The decoration
+  // is band 1's own colour at normal weight, so it changes nothing where the grammar
+  // already won and restores it where it did not. See planFromColoring.
+  assert.equal(plan.get('this').kind, 'self', 'self is emitted so the decorator can restore band 1');
+});
+
+test('planFromColoring: self is emitted even when it is NOT in the visible set', () => {
+  // `self` never enters `visible` — it is excluded upstream so it cannot consume a hue
+  // slot. So reading it from the visible list (as the loop below does for real
+  // identities) would never find it; it has to come from byName directly.
+  const classification = {
+    focusKey: 'B',
+    byName: new Map([['self', nameInfo('self')], ['x', nameInfo('block')]]),
+  };
+  const coloring = { hue: new Map([['x', 0]]), visible: new Map([['B', ['x']]]) };
+  const plan = colors.planFromColoring(classification, coloring);
+  assert.equal(plan.get('self').kind, 'self', 'self is emitted from byName, not from visible');
+  assert.equal(plan.get('x').kind, 'id');
 });
 
 // ── degenerate inputs ────────────────────────────────────────────────────────

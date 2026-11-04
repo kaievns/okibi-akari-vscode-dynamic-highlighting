@@ -362,6 +362,25 @@ export function planFromColoring(
   const plan: ColorPlan = new Map();
   const visible = coloring.visible.get(classification.focusKey) ?? [];
 
+  // `self` never appears in `visible` — it is excluded upstream so it cannot consume
+  // a hue slot (scopecolor.ts `eligible`). So it is picked up from byName directly,
+  // and emitted so the decorator can RESTORE band 1's keyword colour.
+  //
+  // Why that restoration is needed at all: on a `.rs` file outside a cargo workspace
+  // — no Cargo.toml above it, which is every loose Rust file — rust-analyzer degrades
+  // a `self` USE to the semantic type `const`. A semantic token overrides the
+  // grammar, and `const` has no declared fallback scope, so `self.retries` rendered
+  // at editor.foreground: plain white, while the `self` in the signature (still typed
+  // `selfKeyword`) looked correct. No theme rule can separate them, because the
+  // degraded `self` and an ordinary local carry the SAME type — only this layer knows
+  // which is which. The decoration is band 1's own colour at normal weight, so it is
+  // invisible wherever the grammar already won, and there is no flip on focus change.
+  for (const [name, info] of classification.byName) {
+    if (info.cls === 'self') {
+      plan.set(name, { kind: 'self' });
+    }
+  }
+
   for (const name of visible) {
     const info = classification.byName.get(name);
     if (!info || info.cls === 'self') {

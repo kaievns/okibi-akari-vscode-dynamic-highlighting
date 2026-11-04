@@ -14,6 +14,10 @@
 //     • write to a binding bound OUTSIDE the block → dashed underline (escape)
 //   Stop typing ~2s: band-3 relaxes back to band-2 (one clean cut).
 
+import { default as node } from "node";
+
+node.Stuff();
+
 // ── globals (file-order fixes their hue; used across functions) ──
 const registry = new Map<string, number>();
 let totalCalls = 0;
@@ -41,6 +45,13 @@ async function runJob(job: Job): Promise<number> {
   const started = Date.now(); // block-local, used ≥2 → tinted
   const onceOnly = job.id; //     block-local, used 1x → neutral
   void onceOnly;
+
+  const stuff = {
+    a: 1,
+    b: 2,
+    c: 3,
+  };
+  const tags = [1, 2, 3];
 
   if (job.attempts >= 0) {
     totalCalls += 1; // ESCAPE: writes the out-of-block global → dashed underline

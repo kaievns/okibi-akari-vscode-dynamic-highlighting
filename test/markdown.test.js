@@ -231,3 +231,83 @@ test('linkSpans + highlightSpans: the real sample yields only intended marks', (
     );
   }
 });
+
+// ── prose is not a data scope ─────────────────────────────────────────────────
+
+test('markdown has NO focusable block, so bands 2-3 cannot paint', () => {
+  // The contract is stated in samples/sample.md itself: "there are no identity
+  // tints here and the phase stays Survey 構 while the caret moves through text.
+  // That is deliberate: prose is not data flow."
+  //
+  // The bug: a markdown file DOES contain braces — every fenced Go/TS/JSON block in
+  // it — so the brace scan found real blocks, and a caret in PROSE fell through to
+  // the synthetic whole-file scope. That made the entire document one "function"
+  // whose most frequent words are `the`, `a` and `The`, and the layer tinted English
+  // articles as data identities.
+  const focus = require('../out/focus');
+  const classify = require('../out/classify');
+  const scopecolor = require('../out/scopecolor');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const text = fs.readFileSync(path.join(__dirname, '../samples/sample.md'), 'utf8');
+
+  assert.equal(focus.scanBlocks(text, 'markdown').length, 0, 'prose has no blocks');
+  assert.equal(focus.isProseLanguage('markdown'), true);
+  assert.equal(focus.isProseLanguage('typescript'), false);
+
+  // The caret in prose must focus NOTHING. Withholding the text fallback is what
+  // does it — passing text would hand back the whole-file scope.
+  // Any plain prose line will do; locate one by shape rather than by wording so
+  // editing the sample's text cannot break the test. A paragraph line here starts
+  // with a letter and carries no fence, list, heading or table markup.
+  const lines = text.split('\n');
+  const li = lines.findIndex((l, i) => /^[A-Za-z]/.test(l) && !/^[#>|`-]/.test(l)
+    && l.length > 40 && !l.includes('|')
+    // not inside a fenced block: an odd number of ``` fences above means we are in one
+    && lines.slice(0, i).filter((p) => p.startsWith('```')).length % 2 === 0);
+  assert.ok(li > 0, 'no prose line found in sample.md');
+  assert.equal(
+    focus.innermostBlock(focus.scanBlocks(text, 'markdown'), li, undefined, undefined),
+    null,
+    'no block → runClassify returns early → the phase stays Survey',
+  );
+
+  // And the regression itself: with the whole file as the scope, English articles
+  // were the top-ranked "data identities". This asserts the shape of the bug so it
+  // cannot come back through a different route.
+  const whole = focus.topLevelBlock(text);
+  const cls = classify.classifyFromHeuristic(
+    text, focus.scopeRegionFor(text, whole), undefined, [], 1,
+    focus.focusKeyOf(whole), undefined, focus.declRegionFor(text, whole), [],
+  );
+  const wouldTint = scopecolor.colorScope(
+    [{ focusKey: focus.focusKeyOf(whole), byName: cls.byName }], 7,
+  ).visible.get(focus.focusKeyOf(whole)) ?? [];
+  assert.ok(
+    wouldTint.some((n) => ['the', 'a', 'The', 'A'].includes(n)),
+    'if this stops being true the guard above is no longer load-bearing — re-check why',
+  );
+});
+
+test('markdown still gets its two BAND-1 marks', () => {
+  // Suppressing bands 2-3 must not touch the resting register: the ==highlight==
+  // wash and the link-underline cancellation are band 1 and paint in Survey.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const text = fs.readFileSync(path.join(__dirname, '../samples/sample.md'), 'utf8');
+  assert.ok(md.highlightSpans(text).length > 0, 'the highlight wash survives');
+  assert.ok(md.linkSpans(text).length > 0, 'the underline cancellation survives');
+});
+
+test('code languages still resolve blocks normally', () => {
+  const focus = require('../out/focus');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  for (const [file, lang] of [['sample.ts', 'typescript'], ['sample.go', 'go'], ['sample.py', 'python']]) {
+    const src = fs.readFileSync(path.join(__dirname, '../samples', file), 'utf8');
+    assert.ok(
+      focus.scanBlocks(src, lang).length > 10,
+      `${lang} must still have blocks — the prose guard is language-gated`,
+    );
+  }
+});

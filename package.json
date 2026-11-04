@@ -73,7 +73,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/pure.test.js test/golden.test.js test/scopecolor.test.js test/edge.test.js test/markdown.test.js test/python.test.js",
+    "test": "npm run compile && node --test test/pure.test.js test/golden.test.js test/scopecolor.test.js test/edge.test.js test/markdown.test.js test/python.test.js test/rust.test.js test/render.test.js",
     "vscode:prepublish": "npm run compile",
     "bench": "npm run compile && node test/bench.js && node test/bench-nav.js"
   },

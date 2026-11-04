@@ -20,9 +20,10 @@ headers are the prose colour plus weight, never another hue. The only hues prose
 is allowed are sora for links and footnotes, ~~the~~ one yamabuki ==highlight==,
 and violet for a #tag.
 
-The spec's specimen sets prose one step below primary (n10). This ships at n11
-instead, because `editor.foreground` has no per-language override and the
-mismatch repainted the whole page when tokenization landed.
+Prose sits one step below primary (n10), as the spec's specimen sets it, so
+emphasis above reads as brighter *and* heavier. The cost is that `editor.foreground`
+has no per-language override, so every character starts at n11 and steps down when
+tokenization lands — a one-off repaint while VS Code starts its TextMate worker.
 
 The reference render this file is checked against lives in the spec at
 `scripts/spec/doc-markdown.html`; `node scripts/md_spec_diff.js` asserts the two
@@ -59,7 +60,7 @@ them ==on one line== is already ==too many==.
 ##### H5
 ###### H6
 
-Setext form, which uses a different scope than `#`:
+See text form, which uses a different scope than `#`:
 
 Alternate H1
 ============

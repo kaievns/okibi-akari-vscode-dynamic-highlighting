@@ -23,7 +23,7 @@
  */
 
 import * as vscode from 'vscode';
-import { scanBlocks, innermostBlock, focusKeyOf, lexRegionFor, BraceBlock } from './focus';
+import { scanBlocks, innermostBlock, focusKeyOf, lexRegionFor, lexIdentifiers, isNonFlowLanguage, BraceBlock } from './focus';
 import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL } from './phases';
 import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool } from './tokens';
 import { Classifier } from './classify-lsp';
@@ -33,6 +33,7 @@ import { ScopeColoring } from './scopecolor';
 import { computeTraceRanges } from './traces';
 import { lexicalRisk, escapeRisk } from './risk';
 import { highlightSpans, linkSpans } from './markdown';
+import { rustPlaceholderSpans } from './placeholders';
 
 interface Config {
   enabled: boolean;
@@ -89,6 +90,12 @@ export class Decorator implements vscode.Disposable {
   private mdCache = new WeakMap<
     vscode.TextDocument,
     { version: number; highlight: vscode.Range[]; link: vscode.Range[] }
+  >();
+  // Rust format-placeholder ranges per document version. Same reasoning as mdCache:
+  // the scan walks the whole document and render runs on every caret move.
+  private placeholderCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; ranges: vscode.Range[] }
   >();
   // Bounded LRU keyed `${docVersion}::${focusKey}`.
   private classCache = new Map<string, CacheEntry>();
@@ -276,7 +283,14 @@ export class Decorator implements vscode.Disposable {
     const caret = editor.selection.active;
     const doc = editor.document;
     const { text, blocks } = this.docStateFor(doc);
-    return innermostBlock(blocks, caret.line, doc.offsetAt(caret), text);
+    // `text` is what enables the synthetic MODULE TOP LEVEL scope, so a caret among
+    // top-level declarations still focuses something. Prose must NOT get it: that
+    // fallback spans the whole document, which in a markdown file made every English
+    // word a candidate data identity — the layer tinted `the`, `a` and `The`.
+    // Withholding it returns null, so the phase stays Survey and bands 2-3 never
+    // paint. See `isProseLanguage`.
+    const fallback = isNonFlowLanguage(doc.languageId) ? undefined : text;
+    return innermostBlock(blocks, caret.line, doc.offsetAt(caret), fallback);
   }
 
   /**
@@ -654,7 +668,78 @@ export class Decorator implements vscode.Disposable {
       this.applyType(editor, this.pool.numberEngaged, []);
     }
 
+    // 5. BAND 1 — `self` / `this`, file-wide and phase-independent.
+    //
+    // Not gated on the phase or on there being a focused block, because it is not a
+    // phase mark: --id-self equals band 1's resting keyword colour, so this paint is
+    // a no-op wherever band 1 already rendered correctly. It exists to correct the
+    // one case band 1 cannot: on a `.rs` file outside a cargo workspace,
+    // rust-analyzer types a `self` USE as `const`, and a semantic token outranks the
+    // grammar — so `self.retries` renders at editor.foreground, plain white.
+    //
+    // It was previously painted inside renderBand2, clipped to the focused block and
+    // cleared by clearBand2. That produced exactly the reported artefact: correct on
+    // first paint, white as soon as the phase relaxed to Survey, slate again on
+    // Focus. A correction for a phase-independent defect has to be phase-independent
+    // too.
+    this.renderSelf(editor, doc);
+
+    // 6. BAND 1 — Rust format placeholders. Also phase-independent, and also a
+    // correction for a semantic token the theme cannot outrank: rust-analyzer emits
+    // ONE `string` token spanning a whole literal, so the grammar's
+    // `meta.interpolation.rust` — which the theme does select — is annihilated and
+    // the holes render string green. Go, Python and TS need nothing here; their
+    // grammars scope placeholders separately and the theme reaches them. See
+    // src/placeholders.ts.
+    this.renderPlaceholders(editor, doc);
+
     this.updateStatus();
+  }
+
+  /**
+   * Paint `self` / `this` file-wide, at band 1's keyword colour.
+   *
+   * Deliberately a plain lex rather than a classification: it needs no scope
+   * analysis (every `self` in a file is the same identity to band 1), it must work
+   * in Survey where there is no classification at all, and it must not wait on the
+   * language server. `lexIdentifiers` already skips strings and comments, so a
+   * `self` inside a doc comment is not painted.
+   */
+  private renderSelf(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    const text = this.textFor(doc);
+    const ranges: vscode.Range[] = [];
+    for (const id of lexIdentifiers(text)) {
+      if (id.name === 'self' || id.name === 'this') {
+        ranges.push(this.toRange(doc, { start: id.offset, end: id.offset + id.length }));
+      }
+    }
+    this.dbg(`  band1 self: ${ranges.length} ranges (phase-independent)`);
+    this.applyType(editor, this.pool.self, ranges);
+  }
+
+  /**
+   * Paint Rust format placeholders at member steel, file-wide and phase-independent.
+   *
+   * Rust only: the other languages' grammars emit a distinct scope for a placeholder
+   * and the theme handles them, so painting here would be redundant work on every
+   * render. Cached per document version because the scan walks the whole file and
+   * render runs on every caret move.
+   */
+  private renderPlaceholders(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    if (doc.languageId !== 'rust') {
+      this.applyType(editor, this.pool.placeholder, []);
+      return;
+    }
+    const cached = this.placeholderCache.get(doc);
+    let ranges: vscode.Range[];
+    if (cached && cached.version === doc.version) {
+      ranges = cached.ranges;
+    } else {
+      ranges = rustPlaceholderSpans(this.textFor(doc)).map((s) => this.toRange(doc, s));
+      this.placeholderCache.set(doc, { version: doc.version, ranges });
+    }
+    this.dbg(`  band1 placeholders: ${ranges.length} ranges (${doc.languageId})`);
+    this.applyType(editor, this.pool.placeholder, ranges);
   }
 
   private renderBand2(editor: vscode.TextEditor, doc: vscode.TextDocument, block: BraceBlock): void {
@@ -700,9 +785,10 @@ export class Decorator implements vscode.Disposable {
           idgRanges[t.entry.poolIndex].push(...vranges);
           break;
         case 'self':
-          // this/self is NOT painted by the dynamic layer — --id-self equals
-          // band 1's keyword colour, so painting it would only add a weight
-          // flip on focus change. Band 1 owns it, in and out of focus.
+          // Not painted here: `self` is band 1 and phase-independent, so renderSelf()
+          // owns it file-wide. Painting it from the block plan clipped it to the
+          // focused block and tied it to clearBand2, which is what made it flash
+          // white on every relaxation to Survey.
           break;
         case 'neutral':
           break;
@@ -711,7 +797,6 @@ export class Decorator implements vscode.Disposable {
 
     this.pool.id.forEach((type, i) => this.applyType(editor, type, idRanges[i]));
     this.pool.idg.forEach((type, i) => this.applyType(editor, type, idgRanges[i]));
-    this.applyType(editor, this.pool.self, []);
     this.renderedBand2Key = focusKey;
   }
 
@@ -823,7 +908,15 @@ export class Decorator implements vscode.Disposable {
   private clearBand2(editor: vscode.TextEditor): void {
     this.pool.id.forEach((t) => this.applyType(editor, t, []));
     this.pool.idg.forEach((t) => this.applyType(editor, t, []));
-    this.applyType(editor, this.pool.self, []);
+    // `self` is NOT cleared here. It is a BAND-1 mark that this layer happens to
+    // paint: --id-self equals band 1's resting keyword colour, so it must look the
+    // same in Survey, Focus and Edit alike. Clearing it with band 2 made `self`
+    // render correctly at first paint, flash white the moment the phase relaxed to
+    // Survey, and come back on Focus — because the thing it is correcting is a
+    // SEMANTIC token (`const`, outside a cargo workspace) that band 1 cannot
+    // outrank on its own. A phase-independent mark has to survive the phase change.
+    // It is cleared by clearAllVisible(true) when the layer is switched off or the
+    // editor goes away, which is the only time it genuinely should disappear.
     this.renderedBand2Key = null;
   }
 

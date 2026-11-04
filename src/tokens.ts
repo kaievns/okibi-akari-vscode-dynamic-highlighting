@@ -42,9 +42,22 @@ export const TOKENS = {
     { dark: '#f685b6', light: '#b34378' }, // slot 5 · akabeni rose 354
   ] as TokenPair[],
   // this/self — --id-self = var(--syn-keyword): identical to band 1's resting
-  // keyword colour. The dynamic layer does NOT paint self at all — it renders
-  // the same in and out of focus (no weight flip), band 1 owns it entirely.
+  // keyword colour, so painting it is a NO-OP wherever band 1 already got it right.
+  // It is painted anyway, because band 1 cannot always get it right: when
+  // rust-analyzer runs on a file outside a cargo workspace (no Cargo.toml — which is
+  // every loose `.rs` file), a `self` USE degrades to the semantic type `const`,
+  // indistinguishable from an ordinary local. A semantic token overrides the
+  // grammar, and `const` is unmapped-with-no-fallback, so `self.retries` rendered at
+  // `editor.foreground` — plain white. No theme rule can fix that, because the
+  // degraded `self` and a real local carry the SAME type; only this layer knows
+  // which is which. Weight stays normal so there is still no flip on focus change.
   idSelf: { dark: '#7c8894', light: '#6b7681' },
+  // Format placeholders — member steel, the register for reaching into data. Same
+  // value as the theme's FORMAT PLACEHOLDERS rule, because this decoration exists
+  // only to reach the ONE case a theme rule cannot: rust-analyzer emits a single
+  // `string` semantic token over a whole literal, which outranks the grammar's
+  // `meta.interpolation.rust` and turns the holes green. See src/placeholders.ts.
+  placeholder: { dark: '#a2bedb', light: '#516f8e' },
   // --id-outer — designer token, role not yet specified in the dynamic spec;
   // carried here unwired until its behaviour is defined.
   idOuter: { dark: '#ff9c7c', light: '#bb461e' },
@@ -163,6 +176,7 @@ export interface DecorationPool {
   riskDanger: vscode.TextEditorDecorationType;
   riskEscape: vscode.TextEditorDecorationType;
   numberEngaged: vscode.TextEditorDecorationType;
+  placeholder: vscode.TextEditorDecorationType;
   mdHighlight: vscode.TextEditorDecorationType;
   mdLinkPlain: vscode.TextEditorDecorationType;
   /** Every type in the pool, for bulk dispose. */
@@ -192,7 +206,11 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
   // Out-of-fn tier: same tints, bold weight — weight alone carries the
   // distinction (the separate idg-* hue set is retired from the spec).
   const idg = TOKENS.id.map((p) => colorType(pick(p, isDark), true));
-  const self = colorType(pick(TOKENS.idSelf, isDark), true);
+  // NOT bold: --id-self equals band 1's keyword colour, so this decoration must be
+  // visually identical to the resting render — its only job is to restore that
+  // colour when a degraded semantic token has overridden it. See TOKENS.idSelf.
+  const self = colorType(pick(TOKENS.idSelf, isDark), false);
+  const placeholder = colorType(pick(TOKENS.placeholder, isDark), false);
   const riskAsync = colorType(pick(TOKENS.riskAsync, isDark), false);
   const riskDanger = colorType(pick(TOKENS.riskDanger, isDark), true);
   const riskEscape = vscode.window.createTextEditorDecorationType({
@@ -232,13 +250,21 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     riskDanger,
     riskEscape,
     numberEngaged,
+    placeholder,
     mdHighlight,
     mdLinkPlain,
     all(): vscode.TextEditorDecorationType[] {
-      return [...this.banded(), mdHighlight, mdLinkPlain];
+      return [...this.banded(), self, placeholder, mdHighlight, mdLinkPlain];
     },
+    // The PHASE bands: withdrawn when the caret leaves the editor, restored when it
+    // comes back. `self` is deliberately NOT here — it is a band-1 mark this layer
+    // paints (--id-self equals band 1's resting keyword colour), so it must look
+    // identical in Survey, Focus and Edit and must not blink when focus moves to a
+    // panel. It lives in `all()` instead, so only switching the extension off
+    // removes it. Keeping it banded made `self` flash white on every relaxation to
+    // Survey, because the semantic `const` token it corrects is still in force.
     banded(): vscode.TextEditorDecorationType[] {
-      return [...id, ...idg, self, riskAsync, riskDanger, riskEscape, numberEngaged];
+      return [...id, ...idg, riskAsync, riskDanger, riskEscape, numberEngaged];
     },
   };
 }

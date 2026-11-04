@@ -348,6 +348,14 @@ export function buildFileIndex(
     if (!tintable) {
       continue;
     }
+    // `self` / `this` own the gold self-slot and are lexed separately below; band 1
+    // paints them. Kept as a guard because in a toolchain-less rust-analyzer a `self`
+    // USE degrades to bare `const` (its declaration is `selfKeyword`), and `const`
+    // is tintable — so without this skip every `self.field` read could be pulled
+    // into the hue palette and drop off band 1, the "self renders white" report.
+    if (isSelfName(tok.name)) {
+      continue;
+    }
     // Builtins (console, Math…) are library surface, not this file's data.
     if (tok.modifiers.some((m) => NON_DATA_MODIFIERS.has(m))) {
       continue;
@@ -401,9 +409,105 @@ export function buildFileIndex(
     }
   }
 
+  // MACRO ARGUMENTS are a semantic-token DESERT. rust-analyzer (and every server
+  // that does not expand macros for highlighting) emits NO tokens for the
+  // identifiers inside `println!(…)`, `write!(…)`, `format!(…)` and friends — the
+  // callee and the format string are tokenized, the arguments are not. So a binding
+  // used ONLY inside a macro call had no occurrence there:
+  //   - `cfg` in `load_config` is read as `cfg.name` inside `println!`, so it went
+  //     dead the moment the caret entered the loop that only uses it there;
+  //   - `label` is built on one line and consumed solely by `write!(f, "{}", label)`,
+  //     so it never tinted at all.
+  // Lex the macro-argument regions and add occurrences — but ONLY for names that are
+  // ALREADY data identities from a real token elsewhere. That is the safety rail: it
+  // extends the trace of a known binding into the macro, and never invents an
+  // identity from a bare word (a type, a macro name, a path segment) that happens to
+  // sit in the arguments. Member and label positions (`cfg.name`, `name=`) are
+  // skipped for the same reason they are in the token loop.
+  for (const region of macroArgRanges(text)) {
+    for (const id of lexIdentifiers(text, region.start, region.end)) {
+      if (!occurrences.has(id.name) || isSelfName(id.name)) {
+        continue; // only extend a KNOWN binding; never mint one from a macro arg
+      }
+      if (isMemberOrLabelPosition(text, id.offset, id.length)) {
+        continue; // `cfg.name` — the member is band-1, the receiver `cfg` is not
+      }
+      occurrences.get(id.name)!.push({ start: id.offset, end: id.offset + id.length });
+    }
+  }
+  // The occurrence lists per name are no longer in offset order after the macro
+  // pass appended to them. Downstream consumers (trace clipping, first-offset) do
+  // not require order, but keep each list sorted so a range never precedes an
+  // earlier one — cheap, and it makes the index deterministic to inspect.
+  for (const ranges of occurrences.values()) {
+    ranges.sort((a, b) => a.start - b.start);
+  }
+
   const fileGlobalsInOrder = computeFileGlobals(occurrences, declOffsets, fnRanges);
   const shadowScopes = computeShadowScopes(declOffsets, fnRanges);
   return { occurrences, declOffsets, firstFileOffset, fileGlobalsInOrder, shadowScopes };
+}
+
+/**
+ * Argument regions of Rust MACRO calls: the span inside the `(`, `[` or `{` that
+ * follows a `name!`. Returns `[start, end)` offsets of the interior, excluding the
+ * brackets themselves.
+ *
+ * Why a dedicated scan rather than reusing the block scanner: a macro call is
+ * `ident! ( … )`, and the delimiter can be any of the three bracket kinds
+ * (`vec![…]`, `println!(…)`, `quote!{…}`). The scan skips strings, chars and
+ * comments so a `)` inside a format string does not close the span early, and it
+ * handles the lifetime apostrophe the same way `scanBraceBlocks` does.
+ *
+ * Language-neutral callers pass any text; only Rust source contains `name!`
+ * followed by a bracket, so on other languages this simply finds nothing.
+ */
+function macroArgRanges(text: string): OffsetRange[] {
+  const out: OffsetRange[] = [];
+  const bang = /(?<![.\w])([A-Za-z_]\w*)!\s*([([{])/g;
+  const CLOSER: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+  let m: RegExpExecArray | null;
+  while ((m = bang.exec(text)) !== null) {
+    const open = m.index + m[0].length - 1;
+    const closer = CLOSER[m[2]];
+    let depth = 0;
+    let state: 'code' | 'str' | 'chr' | 'line' | 'block' = 'code';
+    let i = open;
+    for (; i < text.length; i++) {
+      const c = text[i];
+      if (state === 'str') { if (c === '\\') i++; else if (c === '"') state = 'code'; continue; }
+      if (state === 'chr') { if (c === '\\') i++; else if (c === "'") state = 'code'; continue; }
+      if (state === 'line') { if (c === '\n') state = 'code'; continue; }
+      if (state === 'block') { if (c === '*' && text[i + 1] === '/') { i++; state = 'code'; } continue; }
+      if (c === '"') { state = 'str'; continue; }
+      if (c === "'" && !isRustLifetimeChar(text, i)) { state = 'chr'; continue; }
+      if (c === '/' && text[i + 1] === '/') { state = 'line'; i++; continue; }
+      if (c === '/' && text[i + 1] === '*') { state = 'block'; i++; continue; }
+      if ('([{'.includes(c)) { depth++; continue; }
+      if (')]}'.includes(c)) {
+        depth--;
+        if (depth === 0) break; // matched the macro's own closer
+      }
+    }
+    if (depth === 0 && text[i] === closer) {
+      out.push({ start: open + 1, end: i });
+      bang.lastIndex = i + 1; // resume after the span, so a nested `name!` inside is still found next pass
+    }
+  }
+  return out;
+}
+
+/**
+ * A char-literal apostrophe vs a Rust lifetime `'a`, mirroring focus.ts's
+ * `isRustLifetime`. Duplicated small and local rather than exported across the
+ * module boundary: this file must not depend on focus.ts's internals.
+ */
+function isRustLifetimeChar(text: string, offset: number): boolean {
+  const next = text[offset + 1];
+  if (next === undefined) return false;
+  if (next === '\\') return text[offset + 3] !== "'";
+  if (!/[A-Za-z_]/.test(next)) return false;
+  return text[offset + 2] !== "'";
 }
 
 /**
@@ -415,7 +519,28 @@ export function buildFileIndex(
  * field access, not a binding. Excluding them also frees the 6-slot budget for
  * the variables that actually carry data.
  */
-const TINTABLE_TYPES = new Set(['variable', 'parameter']);
+const TINTABLE_TYPES = new Set(['variable', 'parameter', 'const']);
+
+/**
+ * `const` is tintable for RUST because it means exactly one thing: a genuine
+ * constant (`const MAX_RETRIES: u32 = 3;` and its reads). rust-analyzer types it
+ * `const` at both its declaration and its uses, with a `constant` modifier. A
+ * module constant is precisely the identity the reader wants traced — declared
+ * once at the top, read far away inside functions — which is why the top-level
+ * scope already exempts it from the use-count floor (see scopecolor.ts `eligible`,
+ * `isTopLevel`). Leaving `const` out meant `MAX_RETRIES` rendered page-white at its
+ * declaration while its reads elsewhere took a colour: one identity, two looks.
+ *
+ * IMPORTANT — a correction to an earlier draft of this file. It claimed ordinary
+ * LOCALS come back as `const` at their uses and only `variable` at declaration, and
+ * skipped `const.declaration` to keep "real constants" band-1. That was measured
+ * against a rust-analyzer running WITHOUT cargo/rustc on PATH, where name
+ * resolution is degraded. With a real toolchain and a cleanly-loading workspace,
+ * a local is `variable` at BOTH its declaration and its uses; only a true constant
+ * is ever `const`. So the discriminator is the type itself — no modifier check, no
+ * skip. `self` is still guarded separately above, because a toolchain-less server
+ * degrades a `self` use to bare `const`.
+ */
 
 /**
  * Modifiers that disqualify a token from identity tinting even when its type is
@@ -460,6 +585,18 @@ const HEURISTIC_KEYWORDS = new Set([
   // above.
   'lambda', 'def', 'elif', 'pass', 'raise', 'except', 'with', 'global', 'nonlocal',
   'assert', 'del', 'None', 'True', 'False', 'and', 'or', 'not', 'match',
+  // Rust. Same failure mode as `lambda` above, at a much larger scale: only `let`
+  // was already here, so `fn`, `mut`, `impl`, `pub` and `where` each ranked as a
+  // data identity and took one of the palette's few slots in every block that
+  // mentioned them — `mut` and `pub` appear on more lines than most real bindings
+  // do. `self`/`Self` are deliberately absent: they go through isSelfName() and get
+  // the gold self-slot, exactly as in Python.
+  'fn', 'mut', 'impl', 'trait', 'pub', 'crate', 'mod', 'dyn', 'ref', 'move',
+  'unsafe', 'where', 'loop', 'extern', 'union', 'box',
+  // The primitive types. These are `entity.name.type` in the grammar and type slate
+  // at rest, so tinting them as data would contradict band 1.
+  'u8', 'u16', 'u32', 'u64', 'u128', 'usize', 'i8', 'i16', 'i32', 'i64', 'i128',
+  'isize', 'f32', 'f64', 'str',
 ]);
 
 /** Declaration keywords that introduce a binding on the following identifier. */

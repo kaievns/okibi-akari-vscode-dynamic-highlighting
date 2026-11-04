@@ -98,7 +98,7 @@ edit.
 ```bash
 npm install
 npm run compile       # or: npm run watch
-npm test              # 171 tests
+npm test              # 174 tests
 npm run bench         # performance
 ```
 
@@ -151,6 +151,17 @@ as a default, but gopls must restart to pick it up.
   LSP scopes while staying language-agnostic and not awaiting on every caret move.
   *Classification* does use LSP semantic tokens, with a heuristic fallback for
   languages that have no server.
+- **Prose is not a data scope, and markdown contains braces.** A markdown file is
+  full of them — every fenced Go, TS or JSON block — so the brace scan found real
+  blocks, and a caret in PROSE fell through to the synthetic whole-file scope. That
+  made the entire document one "function" whose most frequent words are `the`, `a`
+  and `The`, so the layer tinted English articles as data identities.
+  `samples/sample.md` states the contract in its own text: "there are no identity
+  tints here and the phase stays Survey 構 while the caret moves through text."
+  `scanBlocks` returns nothing for a prose language and `focusedBlock` withholds the
+  top-level fallback, so no block is focused, `runClassify` returns early, and bands
+  2-3 never paint. The two band-1 markdown marks are unaffected — they are applied
+  before the phase gate.
 - **Indentation-scoped languages need their own scanner.** Python has no braces, so
   the brace scan found **one** block in 140 lines of `samples/sample.py` — a dict
   literal — and every caret fell through to the synthetic module-level scope. The

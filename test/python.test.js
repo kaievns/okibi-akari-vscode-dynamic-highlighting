@@ -43,27 +43,32 @@ function lineStarts(text) {
 }
 
 /**
- * A Pylance-shaped semantic token for `name` on the line whose trimmed text is
- * exactly `lineText`.
+ * A Pylance-shaped semantic token for `name` on the first line CONTAINING
+ * `lineText`.
  *
- * Located by CONTENT, not by line number: an earlier draft hard-coded 0-based
- * line numbers and every one of them broke the moment two lines were added to the
- * sample's docstring. The failure was loud rather than silent, but the test should
- * not care where in the file its subject lives.
+ * Located by content, not by line number, and by substring, not by equality. Both
+ * were learned the hard way: an early draft hard-coded 0-based line numbers and
+ * every one broke when two lines were added to the sample's docstring; the
+ * replacement matched whole trimmed lines and broke again when a dict literal was
+ * extracted to its own variable. Pass the shortest needle that identifies the line.
  */
 function tokenFor(text, name, lineText, type = 'variable', modifiers = ['declaration']) {
   const { lines, starts } = lineStarts(text);
-  const line = lines.findIndex((l) => l.trim() === lineText);
-  assert.ok(line >= 0, `no line reads exactly ${JSON.stringify(lineText)} in sample.py`);
+  // SUBSTRING, not equality. An exact match ties the test to the sample's exact
+  // wording: editing `Config(name=name, tags={...})` to `Config(name=name, tags=tags)`
+  // broke two tests that cared only about WHERE `cfg` and `name` are, not about the
+  // rest of the line.
+  const line = lines.findIndex((l) => l.includes(lineText));
+  assert.ok(line >= 0, `no line contains ${JSON.stringify(lineText)} in sample.py`);
   const col = lines[line].indexOf(name);
   assert.ok(col >= 0, `"${name}" is not on ${JSON.stringify(lineText)}`);
   return { name, type, modifiers, offset: starts[line] + col, length: name.length, line };
 }
 
-/** 0-based index of the line whose trimmed text is exactly `lineText`. */
+/** 0-based index of the first line CONTAINING `lineText`. */
 function lineWith(text, lineText) {
-  const line = text.split('\n').findIndex((l) => l.trim() === lineText);
-  assert.ok(line >= 0, `no line reads exactly ${JSON.stringify(lineText)} in sample.py`);
+  const line = text.split('\n').findIndex((l) => l.includes(lineText));
+  assert.ok(line >= 0, `no line contains ${JSON.stringify(lineText)} in sample.py`);
   return line;
 }
 
@@ -288,7 +293,7 @@ test('method params and locals still tint', () => {
   const text = fs.readFileSync(SAMPLE, 'utf8');
   const inside = [
     tokenFor(text, 'retries', 'def with_retries(self, retries: int) -> "Config":', 'parameter'),
-    tokenFor(text, 'cfg', 'cfg = Config(name=name, tags={"env": "dev"})'),
+    tokenFor(text, 'cfg', 'cfg = Config('),
     tokenFor(text, 'backoff', 'backoff = 1 << i'),
     tokenFor(text, 'num_bytes', 'num_bytes = sum(len(r.name) for r in results)'),
   ];
@@ -537,7 +542,7 @@ test('an ATTRIBUTE and a same-named LOCAL do not share a hue', () => {
 test('a KEYWORD-ARGUMENT LABEL is not data, but its value is', () => {
   const text = fs.readFileSync(SAMPLE, 'utf8');
   const { lines, starts } = lineStarts(text);
-  const li = lineWith(text, 'cfg = Config(name=name, tags={"env": "dev"})');
+  const li = lineWith(text, 'cfg = Config(');
   const at = (name, col) => ({ name, type: 'variable', modifiers: [], offset: starts[li] + col, length: name.length, line: li });
   const tokens = [
     at('name', lines[li].indexOf('name=')),

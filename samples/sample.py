@@ -55,13 +55,21 @@ class Config:
 
 def load_config(name: str) -> Config:
     global total_calls
-    cfg = Config(name=name, tags={"env": "dev"})
+    tags = {
+        "env": "dev"
+    }
+    cfg = Config(name=name, tags=tags)
+
+    things = [
+        1, 2, 3, 4
+    ]
 
     if cfg.retries > 0:
         for i in range(cfg.retries):
             # deepest block — cfg + i + backoff are the data identities
             backoff = 1 << i
             print(f"attempt {i} for {cfg.name} (backoff={backoff}ms)")
+            print("blh %s blah %d" % [cfg.name, backoff])
 
     total_calls += 1  # escapes the scope — writes the module global
     return cfg
@@ -118,7 +126,7 @@ class Worker:
 
 def page_through(items: list[Config], size: int):
     for start in range(0, len(items), size):
-        yield items[start : start + size]
+        yield items[start: start + size]
 
 
 def main() -> None:

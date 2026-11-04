@@ -1,0 +1,2729 @@
+[
+ {
+  "name": "// Sample Rust file for exercising the Okibi dynamic focus layer.",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 0,
+  "length": 65
+ },
+ {
+  "name": "// Move the caret into different { } blocks and watch the ember bar + fill.",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 66,
+  "length": 75
+ },
+ {
+  "name": "// Type to flip Survey 構 -> Focus 流 -> Edit 異 (status bar, bottom-right).",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 142,
+  "length": 73
+ },
+ {
+  "name": "//",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 216,
+  "length": 2
+ },
+ {
+  "name": "// What to look for:",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 219,
+  "length": 20
+ },
+ {
+  "name": "//   Focus 流 — data identities tint (locals, params, `self`, captured closure",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 240,
+  "length": 77
+ },
+ {
+  "name": "//     vars). Struct/enum/trait names, field names, method names, and macros",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 318,
+  "length": 76
+ },
+ {
+  "name": "//     stay band-1.",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 395,
+  "length": 19
+ },
+ {
+  "name": "//   Edit 異 — numbers go clay; writes escaping the block get a dashed underline;",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 415,
+  "length": 80
+ },
+ {
+  "name": "//     `.await` cyan. Relaxes to Focus after ~2s.",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 496,
+  "length": 49
+ },
+ {
+  "name": "//   Stability — a binding keeps one hue across sub-blocks and closures.",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 546,
+  "length": 72
+ },
+ {
+  "name": "use",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 620,
+  "length": 3
+ },
+ {
+  "name": "std",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 624,
+  "length": 3
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 627,
+  "length": 2
+ },
+ {
+  "name": "collections",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 629,
+  "length": 11
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 640,
+  "length": 2
+ },
+ {
+  "name": "HashMap",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 642,
+  "length": 7
+ },
+ {
+  "name": "use",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 651,
+  "length": 3
+ },
+ {
+  "name": "std",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 655,
+  "length": 3
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 658,
+  "length": 2
+ },
+ {
+  "name": "fmt",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 660,
+  "length": 3
+ },
+ {
+  "name": "const",
+  "type": "keyword",
+  "modifiers": [
+   "constant"
+  ],
+  "offset": 666,
+  "length": 5
+ },
+ {
+  "name": "MAX_RETRIES",
+  "type": "const",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 672,
+  "length": 11
+ },
+ {
+  "name": "u32",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 685,
+  "length": 3
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 689,
+  "length": 1
+ },
+ {
+  "name": "3",
+  "type": "number",
+  "modifiers": [],
+  "offset": 691,
+  "length": 1
+ },
+ {
+  "name": "const",
+  "type": "keyword",
+  "modifiers": [
+   "constant"
+  ],
+  "offset": 694,
+  "length": 5
+ },
+ {
+  "name": "DEFAULT_TIMEOUT",
+  "type": "const",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 700,
+  "length": 15
+ },
+ {
+  "name": "u32",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 717,
+  "length": 3
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 721,
+  "length": 1
+ },
+ {
+  "name": "30",
+  "type": "number",
+  "modifiers": [],
+  "offset": 723,
+  "length": 2
+ },
+ {
+  "name": "// field names are band-1; the type name Config is band-1",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 728,
+  "length": 57
+ },
+ {
+  "name": "#",
+  "type": "attributeBracket",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 786,
+  "length": 1
+ },
+ {
+  "name": "[",
+  "type": "attributeBracket",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 787,
+  "length": 1
+ },
+ {
+  "name": "derive",
+  "type": "namespace",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 788,
+  "length": 6
+ },
+ {
+  "name": "Debug",
+  "type": "generic",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 795,
+  "length": 5
+ },
+ {
+  "name": "Clone",
+  "type": "generic",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 802,
+  "length": 5
+ },
+ {
+  "name": "]",
+  "type": "attributeBracket",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 808,
+  "length": 1
+ },
+ {
+  "name": "struct",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 810,
+  "length": 6
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 817,
+  "length": 6
+ },
+ {
+  "name": "name",
+  "type": "property",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 830,
+  "length": 4
+ },
+ {
+  "name": "String",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 836,
+  "length": 6
+ },
+ {
+  "name": "retries",
+  "type": "property",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 848,
+  "length": 7
+ },
+ {
+  "name": "u32",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 857,
+  "length": 3
+ },
+ {
+  "name": "timeout",
+  "type": "property",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 866,
+  "length": 7
+ },
+ {
+  "name": "u32",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 875,
+  "length": 3
+ },
+ {
+  "name": "tags",
+  "type": "property",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 884,
+  "length": 4
+ },
+ {
+  "name": "HashMap",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 890,
+  "length": 7
+ },
+ {
+  "name": "String",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 898,
+  "length": 6
+ },
+ {
+  "name": "String",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 906,
+  "length": 6
+ },
+ {
+  "name": "#",
+  "type": "attributeBracket",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 918,
+  "length": 1
+ },
+ {
+  "name": "[",
+  "type": "attributeBracket",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 919,
+  "length": 1
+ },
+ {
+  "name": "derive",
+  "type": "namespace",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 920,
+  "length": 6
+ },
+ {
+  "name": "Debug",
+  "type": "generic",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 927,
+  "length": 5
+ },
+ {
+  "name": "Clone",
+  "type": "generic",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 934,
+  "length": 5
+ },
+ {
+  "name": "Copy",
+  "type": "generic",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 941,
+  "length": 4
+ },
+ {
+  "name": "PartialEq",
+  "type": "generic",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 947,
+  "length": 9
+ },
+ {
+  "name": "]",
+  "type": "attributeBracket",
+  "modifiers": [
+   "attribute"
+  ],
+  "offset": 957,
+  "length": 1
+ },
+ {
+  "name": "enum",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 959,
+  "length": 4
+ },
+ {
+  "name": "Status",
+  "type": "enum",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 964,
+  "length": 6
+ },
+ {
+  "name": "Pending",
+  "type": "enumMember",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 977,
+  "length": 7
+ },
+ {
+  "name": "Active",
+  "type": "enumMember",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 990,
+  "length": 6
+ },
+ {
+  "name": "Closed",
+  "type": "enumMember",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1002,
+  "length": 6
+ },
+ {
+  "name": "// trait: method signatures are band-1; impls carry the data",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 1013,
+  "length": 60
+ },
+ {
+  "name": "trait",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1074,
+  "length": 5
+ },
+ {
+  "name": "Summarize",
+  "type": "interface",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1080,
+  "length": 9
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1096,
+  "length": 2
+ },
+ {
+  "name": "summary",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1099,
+  "length": 7
+ },
+ {
+  "name": "self",
+  "type": "selfKeyword",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1108,
+  "length": 4
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1114,
+  "length": 2
+ },
+ {
+  "name": "String",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1117,
+  "length": 6
+ },
+ {
+  "name": "impl",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1128,
+  "length": 4
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1133,
+  "length": 6
+ },
+ {
+  "name": "// `self` is the gold self-slot across the impl",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 1146,
+  "length": 47
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1198,
+  "length": 2
+ },
+ {
+  "name": "new",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1201,
+  "length": 3
+ },
+ {
+  "name": "name",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1205,
+  "length": 4
+ },
+ {
+  "name": "str",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 1212,
+  "length": 3
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1217,
+  "length": 2
+ },
+ {
+  "name": "Self",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1220,
+  "length": 4
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1235,
+  "length": 3
+ },
+ {
+  "name": "mut",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1239,
+  "length": 3
+ },
+ {
+  "name": "tags",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1243,
+  "length": 4
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1248,
+  "length": 1
+ },
+ {
+  "name": "HashMap",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1250,
+  "length": 7
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1257,
+  "length": 2
+ },
+ {
+  "name": "new",
+  "type": "function",
+  "modifiers": [],
+  "offset": 1259,
+  "length": 3
+ },
+ {
+  "name": "tags",
+  "type": "const",
+  "modifiers": [],
+  "offset": 1274,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1278,
+  "length": 1
+ },
+ {
+  "name": "insert",
+  "type": "method",
+  "modifiers": [],
+  "offset": 1279,
+  "length": 6
+ },
+ {
+  "name": "\"env\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 1286,
+  "length": 5
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1291,
+  "length": 1
+ },
+ {
+  "name": "to_string",
+  "type": "method",
+  "modifiers": [],
+  "offset": 1292,
+  "length": 9
+ },
+ {
+  "name": "\"dev\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 1305,
+  "length": 5
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1310,
+  "length": 1
+ },
+ {
+  "name": "to_string",
+  "type": "method",
+  "modifiers": [],
+  "offset": 1311,
+  "length": 9
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1333,
+  "length": 6
+ },
+ {
+  "name": "name",
+  "type": "property",
+  "modifiers": [],
+  "offset": 1354,
+  "length": 4
+ },
+ {
+  "name": "name",
+  "type": "const",
+  "modifiers": [],
+  "offset": 1360,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1364,
+  "length": 1
+ },
+ {
+  "name": "to_string",
+  "type": "method",
+  "modifiers": [],
+  "offset": 1365,
+  "length": 9
+ },
+ {
+  "name": "retries",
+  "type": "property",
+  "modifiers": [],
+  "offset": 1390,
+  "length": 7
+ },
+ {
+  "name": "MAX_RETRIES",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1399,
+  "length": 11
+ },
+ {
+  "name": "timeout",
+  "type": "property",
+  "modifiers": [],
+  "offset": 1424,
+  "length": 7
+ },
+ {
+  "name": "DEFAULT_TIMEOUT",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1433,
+  "length": 15
+ },
+ {
+  "name": "tags",
+  "type": "const",
+  "modifiers": [],
+  "offset": 1462,
+  "length": 4
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1489,
+  "length": 2
+ },
+ {
+  "name": "with_retries",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1492,
+  "length": 12
+ },
+ {
+  "name": "mut",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1505,
+  "length": 3
+ },
+ {
+  "name": "self",
+  "type": "selfKeyword",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1509,
+  "length": 4
+ },
+ {
+  "name": "retries",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1515,
+  "length": 7
+ },
+ {
+  "name": "u32",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 1524,
+  "length": 3
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1529,
+  "length": 2
+ },
+ {
+  "name": "Self",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1532,
+  "length": 4
+ },
+ {
+  "name": "self",
+  "type": "const",
+  "modifiers": [],
+  "offset": 1547,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1551,
+  "length": 1
+ },
+ {
+  "name": "retries",
+  "type": "property",
+  "modifiers": [],
+  "offset": 1552,
+  "length": 7
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1560,
+  "length": 1
+ },
+ {
+  "name": "retries",
+  "type": "const",
+  "modifiers": [],
+  "offset": 1562,
+  "length": 7
+ },
+ {
+  "name": "// write to a self field",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 1571,
+  "length": 24
+ },
+ {
+  "name": "self",
+  "type": "const",
+  "modifiers": [],
+  "offset": 1604,
+  "length": 4
+ },
+ {
+  "name": "impl",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1618,
+  "length": 4
+ },
+ {
+  "name": "Summarize",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1623,
+  "length": 9
+ },
+ {
+  "name": "for",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1633,
+  "length": 3
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1637,
+  "length": 6
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1650,
+  "length": 2
+ },
+ {
+  "name": "summary",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1653,
+  "length": 7
+ },
+ {
+  "name": "self",
+  "type": "selfKeyword",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1662,
+  "length": 4
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1668,
+  "length": 2
+ },
+ {
+  "name": "String",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1671,
+  "length": 6
+ },
+ {
+  "name": "format",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 1688,
+  "length": 6
+ },
+ {
+  "name": "!",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 1694,
+  "length": 1
+ },
+ {
+  "name": "\"{} x{} ({}s)\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 1696,
+  "length": 14
+ },
+ {
+  "name": "self",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1712,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1716,
+  "length": 1
+ },
+ {
+  "name": "self",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1723,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1727,
+  "length": 1
+ },
+ {
+  "name": "self",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1737,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1741,
+  "length": 1
+ },
+ {
+  "name": "impl",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1760,
+  "length": 4
+ },
+ {
+  "name": "fmt",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 1765,
+  "length": 3
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1768,
+  "length": 2
+ },
+ {
+  "name": "Display",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1770,
+  "length": 7
+ },
+ {
+  "name": "for",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1778,
+  "length": 3
+ },
+ {
+  "name": "Status",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1782,
+  "length": 6
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1795,
+  "length": 2
+ },
+ {
+  "name": "fmt",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1798,
+  "length": 3
+ },
+ {
+  "name": "self",
+  "type": "selfKeyword",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1803,
+  "length": 4
+ },
+ {
+  "name": "f",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1809,
+  "length": 1
+ },
+ {
+  "name": "mut",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1813,
+  "length": 3
+ },
+ {
+  "name": "fmt",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 1817,
+  "length": 3
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1820,
+  "length": 2
+ },
+ {
+  "name": "Formatter",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1822,
+  "length": 9
+ },
+ {
+  "name": "'_",
+  "type": "lifetime",
+  "modifiers": [],
+  "offset": 1832,
+  "length": 2
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1837,
+  "length": 2
+ },
+ {
+  "name": "fmt",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 1840,
+  "length": 3
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1843,
+  "length": 2
+ },
+ {
+  "name": "Result",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1845,
+  "length": 6
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 1862,
+  "length": 3
+ },
+ {
+  "name": "label",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 1866,
+  "length": 5
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1872,
+  "length": 1
+ },
+ {
+  "name": "match",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 1874,
+  "length": 5
+ },
+ {
+  "name": "self",
+  "type": "const",
+  "modifiers": [],
+  "offset": 1880,
+  "length": 4
+ },
+ {
+  "name": "Status",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1899,
+  "length": 6
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1905,
+  "length": 2
+ },
+ {
+  "name": "Pending",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1907,
+  "length": 7
+ },
+ {
+  "name": "=>",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1915,
+  "length": 2
+ },
+ {
+  "name": "\"pending\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 1918,
+  "length": 9
+ },
+ {
+  "name": "Status",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1941,
+  "length": 6
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1947,
+  "length": 2
+ },
+ {
+  "name": "Active",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1949,
+  "length": 6
+ },
+ {
+  "name": "=>",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1956,
+  "length": 2
+ },
+ {
+  "name": "\"active\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 1959,
+  "length": 8
+ },
+ {
+  "name": "Status",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1981,
+  "length": 6
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1987,
+  "length": 2
+ },
+ {
+  "name": "Closed",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 1989,
+  "length": 6
+ },
+ {
+  "name": "=>",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 1996,
+  "length": 2
+ },
+ {
+  "name": "\"closed\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 1999,
+  "length": 8
+ },
+ {
+  "name": "write",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 2028,
+  "length": 5
+ },
+ {
+  "name": "!",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 2033,
+  "length": 1
+ },
+ {
+  "name": "\"{}\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 2038,
+  "length": 4
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2060,
+  "length": 2
+ },
+ {
+  "name": "load_config",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2063,
+  "length": 11
+ },
+ {
+  "name": "name",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2075,
+  "length": 4
+ },
+ {
+  "name": "str",
+  "type": "namespace",
+  "modifiers": [],
+  "offset": 2082,
+  "length": 3
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2087,
+  "length": 2
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2090,
+  "length": 6
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2103,
+  "length": 3
+ },
+ {
+  "name": "cfg",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2107,
+  "length": 3
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2111,
+  "length": 1
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2113,
+  "length": 6
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2119,
+  "length": 2
+ },
+ {
+  "name": "new",
+  "type": "function",
+  "modifiers": [],
+  "offset": 2121,
+  "length": 3
+ },
+ {
+  "name": "name",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2125,
+  "length": 4
+ },
+ {
+  "name": "if",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 2137,
+  "length": 2
+ },
+ {
+  "name": "cfg",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2140,
+  "length": 3
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2143,
+  "length": 1
+ },
+ {
+  "name": "retries",
+  "type": "property",
+  "modifiers": [],
+  "offset": 2144,
+  "length": 7
+ },
+ {
+  "name": ">",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2152,
+  "length": 1
+ },
+ {
+  "name": "0",
+  "type": "number",
+  "modifiers": [],
+  "offset": 2154,
+  "length": 1
+ },
+ {
+  "name": "for",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 2166,
+  "length": 3
+ },
+ {
+  "name": "i",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2170,
+  "length": 1
+ },
+ {
+  "name": "in",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 2172,
+  "length": 2
+ },
+ {
+  "name": "0",
+  "type": "number",
+  "modifiers": [],
+  "offset": 2175,
+  "length": 1
+ },
+ {
+  "name": "..",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2176,
+  "length": 2
+ },
+ {
+  "name": "cfg",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2178,
+  "length": 3
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2181,
+  "length": 1
+ },
+ {
+  "name": "retries",
+  "type": "property",
+  "modifiers": [],
+  "offset": 2182,
+  "length": 7
+ },
+ {
+  "name": "// deepest block — cfg + i + backoff are the data identities",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 2204,
+  "length": 60
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2277,
+  "length": 3
+ },
+ {
+  "name": "backoff",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2281,
+  "length": 7
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2289,
+  "length": 1
+ },
+ {
+  "name": "1u32",
+  "type": "number",
+  "modifiers": [],
+  "offset": 2291,
+  "length": 4
+ },
+ {
+  "name": "<<",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2296,
+  "length": 2
+ },
+ {
+  "name": "i",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2299,
+  "length": 1
+ },
+ {
+  "name": "println",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 2314,
+  "length": 7
+ },
+ {
+  "name": "!",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 2321,
+  "length": 1
+ },
+ {
+  "name": "\"attempt {} for {} (backoff={}ms)\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 2323,
+  "length": 34
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2365,
+  "length": 1
+ },
+ {
+  "name": "cfg",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2403,
+  "length": 3
+ },
+ {
+  "name": "// closures: captured `prefix` + iterator params keep stable hues",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 2410,
+  "length": 65
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2476,
+  "length": 2
+ },
+ {
+  "name": "summarize",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2479,
+  "length": 9
+ },
+ {
+  "name": "cfgs",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2489,
+  "length": 4
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2497,
+  "length": 6
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2506,
+  "length": 2
+ },
+ {
+  "name": "String",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2509,
+  "length": 6
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2522,
+  "length": 3
+ },
+ {
+  "name": "prefix",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2526,
+  "length": 6
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2533,
+  "length": 1
+ },
+ {
+  "name": "\"cfg\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 2535,
+  "length": 5
+ },
+ {
+  "name": "cfgs",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2546,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2550,
+  "length": 1
+ },
+ {
+  "name": "iter",
+  "type": "method",
+  "modifiers": [],
+  "offset": 2551,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2566,
+  "length": 1
+ },
+ {
+  "name": "filter",
+  "type": "method",
+  "modifiers": [],
+  "offset": 2567,
+  "length": 6
+ },
+ {
+  "name": "c",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2575,
+  "length": 1
+ },
+ {
+  "name": "!",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2578,
+  "length": 1
+ },
+ {
+  "name": "c",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2579,
+  "length": 1
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2580,
+  "length": 1
+ },
+ {
+  "name": "name",
+  "type": "property",
+  "modifiers": [],
+  "offset": 2581,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2585,
+  "length": 1
+ },
+ {
+  "name": "is_empty",
+  "type": "method",
+  "modifiers": [],
+  "offset": 2586,
+  "length": 8
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2606,
+  "length": 1
+ },
+ {
+  "name": "map",
+  "type": "method",
+  "modifiers": [],
+  "offset": 2607,
+  "length": 3
+ },
+ {
+  "name": "c",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2612,
+  "length": 1
+ },
+ {
+  "name": "format",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 2615,
+  "length": 6
+ },
+ {
+  "name": "!",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 2621,
+  "length": 1
+ },
+ {
+  "name": "\"{}:{} x{}\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 2623,
+  "length": 11
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2645,
+  "length": 1
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2653,
+  "length": 1
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2672,
+  "length": 1
+ },
+ {
+  "name": "collect",
+  "type": "method",
+  "modifiers": [],
+  "offset": 2673,
+  "length": 7
+ },
+ {
+  "name": "::",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2680,
+  "length": 2
+ },
+ {
+  "name": "Vec",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2683,
+  "length": 3
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2701,
+  "length": 1
+ },
+ {
+  "name": "join",
+  "type": "method",
+  "modifiers": [],
+  "offset": 2702,
+  "length": 4
+ },
+ {
+  "name": "\"; \"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 2707,
+  "length": 4
+ },
+ {
+  "name": "// generics: T is a type param (band-1); acc/item are data",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 2716,
+  "length": 58
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2775,
+  "length": 2
+ },
+ {
+  "name": "fold",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2778,
+  "length": 4
+ },
+ {
+  "name": "T",
+  "type": "typeParameter",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2783,
+  "length": 1
+ },
+ {
+  "name": "F",
+  "type": "typeParameter",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2786,
+  "length": 1
+ },
+ {
+  "name": "cfgs",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2789,
+  "length": 4
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2797,
+  "length": 6
+ },
+ {
+  "name": "seed",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2806,
+  "length": 4
+ },
+ {
+  "name": "T",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2812,
+  "length": 1
+ },
+ {
+  "name": "reducer",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2815,
+  "length": 7
+ },
+ {
+  "name": "F",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2824,
+  "length": 1
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2827,
+  "length": 2
+ },
+ {
+  "name": "T",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2830,
+  "length": 1
+ },
+ {
+  "name": "where",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2832,
+  "length": 5
+ },
+ {
+  "name": "F",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2842,
+  "length": 1
+ },
+ {
+  "name": "Fn",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2845,
+  "length": 2
+ },
+ {
+  "name": "T",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2848,
+  "length": 1
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2852,
+  "length": 6
+ },
+ {
+  "name": "->",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2860,
+  "length": 2
+ },
+ {
+  "name": "T",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2863,
+  "length": 1
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2872,
+  "length": 3
+ },
+ {
+  "name": "mut",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2876,
+  "length": 3
+ },
+ {
+  "name": "acc",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2880,
+  "length": 3
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2884,
+  "length": 1
+ },
+ {
+  "name": "seed",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2886,
+  "length": 4
+ },
+ {
+  "name": "for",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 2896,
+  "length": 3
+ },
+ {
+  "name": "item",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2900,
+  "length": 4
+ },
+ {
+  "name": "in",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 2905,
+  "length": 2
+ },
+ {
+  "name": "cfgs",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2908,
+  "length": 4
+ },
+ {
+  "name": "acc",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2923,
+  "length": 3
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 2927,
+  "length": 1
+ },
+ {
+  "name": "reducer",
+  "type": "function",
+  "modifiers": [],
+  "offset": 2929,
+  "length": 7
+ },
+ {
+  "name": "acc",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2937,
+  "length": 3
+ },
+ {
+  "name": "item",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2942,
+  "length": 4
+ },
+ {
+  "name": "acc",
+  "type": "const",
+  "modifiers": [],
+  "offset": 2959,
+  "length": 3
+ },
+ {
+  "name": "fn",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2966,
+  "length": 2
+ },
+ {
+  "name": "main",
+  "type": "function",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2969,
+  "length": 4
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 2982,
+  "length": 3
+ },
+ {
+  "name": "cfgs",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 2986,
+  "length": 4
+ },
+ {
+  "name": "Vec",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2992,
+  "length": 3
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 2996,
+  "length": 6
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3004,
+  "length": 1
+ },
+ {
+  "name": "\"alpha\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 3007,
+  "length": 7
+ },
+ {
+  "name": "\"beta\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 3016,
+  "length": 6
+ },
+ {
+  "name": "\"gamma\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 3024,
+  "length": 7
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3041,
+  "length": 1
+ },
+ {
+  "name": "iter",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3042,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3057,
+  "length": 1
+ },
+ {
+  "name": "map",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3058,
+  "length": 3
+ },
+ {
+  "name": "name",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3063,
+  "length": 4
+ },
+ {
+  "name": "load_config",
+  "type": "function",
+  "modifiers": [],
+  "offset": 3069,
+  "length": 11
+ },
+ {
+  "name": "name",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3081,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3096,
+  "length": 1
+ },
+ {
+  "name": "collect",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3097,
+  "length": 7
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 3113,
+  "length": 3
+ },
+ {
+  "name": "mut",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 3117,
+  "length": 3
+ },
+ {
+  "name": "total",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3121,
+  "length": 5
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3127,
+  "length": 1
+ },
+ {
+  "name": "0u32",
+  "type": "number",
+  "modifiers": [],
+  "offset": 3129,
+  "length": 4
+ },
+ {
+  "name": "for",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 3139,
+  "length": 3
+ },
+ {
+  "name": "c",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3143,
+  "length": 1
+ },
+ {
+  "name": "in",
+  "type": "keyword",
+  "modifiers": [
+   "controlFlow"
+  ],
+  "offset": 3145,
+  "length": 2
+ },
+ {
+  "name": "&",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3148,
+  "length": 1
+ },
+ {
+  "name": "cfgs",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3149,
+  "length": 4
+ },
+ {
+  "name": "total",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3164,
+  "length": 5
+ },
+ {
+  "name": "+=",
+  "type": "operator",
+  "modifiers": [
+   "mutable"
+  ],
+  "offset": 3170,
+  "length": 2
+ },
+ {
+  "name": "c",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3173,
+  "length": 1
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3174,
+  "length": 1
+ },
+ {
+  "name": "retries",
+  "type": "property",
+  "modifiers": [],
+  "offset": 3175,
+  "length": 7
+ },
+ {
+  "name": "// escapes the loop body — writes outer `total`",
+  "type": "comment",
+  "modifiers": [],
+  "offset": 3184,
+  "length": 47
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 3243,
+  "length": 3
+ },
+ {
+  "name": "tuned",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3247,
+  "length": 5
+ },
+ {
+  "name": "Vec",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 3254,
+  "length": 3
+ },
+ {
+  "name": "Config",
+  "type": "struct",
+  "modifiers": [],
+  "offset": 3258,
+  "length": 6
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3266,
+  "length": 1
+ },
+ {
+  "name": "cfgs",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3268,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3281,
+  "length": 1
+ },
+ {
+  "name": "iter",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3282,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3297,
+  "length": 1
+ },
+ {
+  "name": "cloned",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3298,
+  "length": 6
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3315,
+  "length": 1
+ },
+ {
+  "name": "map",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3316,
+  "length": 3
+ },
+ {
+  "name": "c",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3321,
+  "length": 1
+ },
+ {
+  "name": "c",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3324,
+  "length": 1
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3325,
+  "length": 1
+ },
+ {
+  "name": "with_retries",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3326,
+  "length": 12
+ },
+ {
+  "name": "5",
+  "type": "number",
+  "modifiers": [],
+  "offset": 3339,
+  "length": 1
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3351,
+  "length": 1
+ },
+ {
+  "name": "collect",
+  "type": "method",
+  "modifiers": [],
+  "offset": 3352,
+  "length": 7
+ },
+ {
+  "name": "let",
+  "type": "keyword",
+  "modifiers": [],
+  "offset": 3368,
+  "length": 3
+ },
+ {
+  "name": "sum",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3372,
+  "length": 3
+ },
+ {
+  "name": "=",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3376,
+  "length": 1
+ },
+ {
+  "name": "fold",
+  "type": "function",
+  "modifiers": [],
+  "offset": 3378,
+  "length": 4
+ },
+ {
+  "name": "&",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3383,
+  "length": 1
+ },
+ {
+  "name": "tuned",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3384,
+  "length": 5
+ },
+ {
+  "name": "0u32",
+  "type": "number",
+  "modifiers": [],
+  "offset": 3391,
+  "length": 4
+ },
+ {
+  "name": "acc",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3398,
+  "length": 3
+ },
+ {
+  "name": "item",
+  "type": "variable",
+  "modifiers": [
+   "declaration"
+  ],
+  "offset": 3403,
+  "length": 4
+ },
+ {
+  "name": "acc",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3409,
+  "length": 3
+ },
+ {
+  "name": "+",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3413,
+  "length": 1
+ },
+ {
+  "name": "item",
+  "type": "const",
+  "modifiers": [],
+  "offset": 3415,
+  "length": 4
+ },
+ {
+  "name": ".",
+  "type": "operator",
+  "modifiers": [],
+  "offset": 3419,
+  "length": 1
+ },
+ {
+  "name": "timeout",
+  "type": "property",
+  "modifiers": [],
+  "offset": 3420,
+  "length": 7
+ },
+ {
+  "name": "println",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 3435,
+  "length": 7
+ },
+ {
+  "name": "!",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 3442,
+  "length": 1
+ },
+ {
+  "name": "\"{}\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 3444,
+  "length": 4
+ },
+ {
+  "name": "println",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 3473,
+  "length": 7
+ },
+ {
+  "name": "!",
+  "type": "macro",
+  "modifiers": [],
+  "offset": 3480,
+  "length": 1
+ },
+ {
+  "name": "\"total_retries={} timeout_sum={}\"",
+  "type": "string",
+  "modifiers": [],
+  "offset": 3482,
+  "length": 33
+ }
+]
