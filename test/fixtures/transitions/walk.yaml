@@ -1,0 +1,18 @@
+# YAML with self, this, async and numbers, each of which paints in a code file.
+anchors:
+  base: &base { retries: 3, timeout: 1.5e3, owner: self }
+  derived:
+    <<: *base
+    retries: 5
+scalars: [0x1F, 0o17, -42, +7, .inf, .nan, null, ~, true, no]
+strings:
+  plain: this is self
+  double: "tab\t{name} ${HOME}"
+  literal: |
+    async line {1}
+    await line
+nested:
+  - name: a
+    items:
+      - { id: 1, self: true }
+      - [1, 2, { deep: [3, 4] }]

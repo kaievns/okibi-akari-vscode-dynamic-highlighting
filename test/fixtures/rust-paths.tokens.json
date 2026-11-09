@@ -1,0 +1,3167 @@
+{
+ "detached": [
+  {
+   "name": "// Path keywords for the detached-file restore: Self, crate and super.",
+   "type": "comment",
+   "modifiers": [],
+   "offset": 0,
+   "length": 70
+  },
+  {
+   "name": "// A Self, crate or super in a comment stays a comment.",
+   "type": "comment",
+   "modifiers": [],
+   "offset": 71,
+   "length": 55
+  },
+  {
+   "name": "mod",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 128,
+   "length": 3
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 132,
+   "length": 5
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 144,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 148,
+   "length": 2
+  },
+  {
+   "name": "helper",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 151,
+   "length": 6
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 160,
+   "length": 2
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 163,
+   "length": 3
+  },
+  {
+   "name": "super",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 177,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 182,
+   "length": 2
+  },
+  {
+   "name": "BASE",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 184,
+   "length": 4
+  },
+  {
+   "name": "+",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 189,
+   "length": 1
+  },
+  {
+   "name": "1",
+   "type": "number",
+   "modifiers": [],
+   "offset": 191,
+   "length": 1
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 204,
+   "length": 3
+  },
+  {
+   "name": "crate",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 208,
+   "length": 5
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 215,
+   "length": 2
+  },
+  {
+   "name": "twice",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 218,
+   "length": 5
+  },
+  {
+   "name": "n",
+   "type": "variable",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 224,
+   "length": 1
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 227,
+   "length": 3
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 232,
+   "length": 2
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 235,
+   "length": 3
+  },
+  {
+   "name": "n",
+   "type": "const",
+   "modifiers": [],
+   "offset": 249,
+   "length": 1
+  },
+  {
+   "name": "*",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 251,
+   "length": 1
+  },
+  {
+   "name": "2",
+   "type": "number",
+   "modifiers": [],
+   "offset": 253,
+   "length": 1
+  },
+  {
+   "name": "use",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 264,
+   "length": 3
+  },
+  {
+   "name": "crate",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 268,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 273,
+   "length": 2
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 275,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 280,
+   "length": 2
+  },
+  {
+   "name": "helper",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 282,
+   "length": 6
+  },
+  {
+   "name": "const",
+   "type": "keyword",
+   "modifiers": [
+    "constant"
+   ],
+   "offset": 291,
+   "length": 5
+  },
+  {
+   "name": "BASE",
+   "type": "const",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 297,
+   "length": 4
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 303,
+   "length": 3
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 307,
+   "length": 1
+  },
+  {
+   "name": "40",
+   "type": "number",
+   "modifiers": [],
+   "offset": 309,
+   "length": 2
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 314,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 315,
+   "length": 1
+  },
+  {
+   "name": "derive",
+   "type": "namespace",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 316,
+   "length": 6
+  },
+  {
+   "name": "Debug",
+   "type": "generic",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 323,
+   "length": 5
+  },
+  {
+   "name": "Clone",
+   "type": "generic",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 330,
+   "length": 5
+  },
+  {
+   "name": "Copy",
+   "type": "generic",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 337,
+   "length": 4
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 342,
+   "length": 1
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 344,
+   "length": 3
+  },
+  {
+   "name": "struct",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 348,
+   "length": 6
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 355,
+   "length": 7
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 369,
+   "length": 5
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 376,
+   "length": 3
+  },
+  {
+   "name": "impl",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 384,
+   "length": 4
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 389,
+   "length": 7
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 403,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 407,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 410,
+   "length": 3
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 416,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 419,
+   "length": 4
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 434,
+   "length": 4
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 441,
+   "length": 5
+  },
+  {
+   "name": "helper",
+   "type": "function",
+   "modifiers": [],
+   "offset": 448,
+   "length": 6
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 470,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 474,
+   "length": 2
+  },
+  {
+   "name": "bumped",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 477,
+   "length": 6
+  },
+  {
+   "name": "self",
+   "type": "selfKeyword",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 484,
+   "length": 4
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 490,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 493,
+   "length": 4
+  },
+  {
+   "name": "let",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 508,
+   "length": 3
+  },
+  {
+   "name": "label",
+   "type": "variable",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 512,
+   "length": 5
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 518,
+   "length": 1
+  },
+  {
+   "name": "\"Self crate super\"",
+   "type": "string",
+   "modifiers": [],
+   "offset": 520,
+   "length": 18
+  },
+  {
+   "name": "println",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 548,
+   "length": 7
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 555,
+   "length": 1
+  },
+  {
+   "name": "\"{} {}\"",
+   "type": "string",
+   "modifiers": [],
+   "offset": 557,
+   "length": 7
+  },
+  {
+   "name": "self",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 573,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 577,
+   "length": 1
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 594,
+   "length": 4
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 601,
+   "length": 5
+  },
+  {
+   "name": "crate",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 608,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 613,
+   "length": 2
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 615,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 620,
+   "length": 2
+  },
+  {
+   "name": "twice",
+   "type": "function",
+   "modifiers": [],
+   "offset": 622,
+   "length": 5
+  },
+  {
+   "name": "self",
+   "type": "const",
+   "modifiers": [],
+   "offset": 628,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 632,
+   "length": 1
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 633,
+   "length": 5
+  },
+  {
+   "name": "impl",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 651,
+   "length": 4
+  },
+  {
+   "name": "Default",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 656,
+   "length": 7
+  },
+  {
+   "name": "for",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 664,
+   "length": 3
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 668,
+   "length": 7
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 682,
+   "length": 2
+  },
+  {
+   "name": "default",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 685,
+   "length": 7
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 695,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 698,
+   "length": 4
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 713,
+   "length": 4
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 717,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [],
+   "offset": 719,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 734,
+   "length": 2
+  },
+  {
+   "name": "main",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 737,
+   "length": 4
+  },
+  {
+   "name": "let",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 750,
+   "length": 3
+  },
+  {
+   "name": "c",
+   "type": "variable",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 754,
+   "length": 1
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 756,
+   "length": 1
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 758,
+   "length": 7
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 765,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [],
+   "offset": 767,
+   "length": 3
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 772,
+   "length": 1
+  },
+  {
+   "name": "bumped",
+   "type": "method",
+   "modifiers": [],
+   "offset": 773,
+   "length": 6
+  },
+  {
+   "name": "println",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 787,
+   "length": 7
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 794,
+   "length": 1
+  },
+  {
+   "name": "\"{}\"",
+   "type": "string",
+   "modifiers": [],
+   "offset": 796,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 803,
+   "length": 1
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 815,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 816,
+   "length": 1
+  },
+  {
+   "name": "cfg",
+   "type": "keyword",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 817,
+   "length": 3
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 826,
+   "length": 1
+  },
+  {
+   "name": "mod",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 828,
+   "length": 3
+  },
+  {
+   "name": "tests",
+   "type": "namespace",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 832,
+   "length": 5
+  },
+  {
+   "name": "use",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 844,
+   "length": 3
+  },
+  {
+   "name": "super",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 848,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 853,
+   "length": 2
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 863,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 864,
+   "length": 1
+  },
+  {
+   "name": "test",
+   "type": "namespace",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 865,
+   "length": 4
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 869,
+   "length": 1
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 875,
+   "length": 2
+  },
+  {
+   "name": "starts_at_base",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 878,
+   "length": 14
+  },
+  {
+   "name": "assert_eq",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 905,
+   "length": 9
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 914,
+   "length": 1
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 930,
+   "length": 1
+  },
+  {
+   "name": "super",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 938,
+   "length": 5
+  },
+  {
+   "name": "1",
+   "type": "number",
+   "modifiers": [],
+   "offset": 952,
+   "length": 1
+  }
+ ],
+ "cargoLoading": [
+  {
+   "name": "// Path keywords for the detached-file restore: Self, crate and super.",
+   "type": "comment",
+   "modifiers": [],
+   "offset": 0,
+   "length": 70
+  },
+  {
+   "name": "// A Self, crate or super in a comment stays a comment.",
+   "type": "comment",
+   "modifiers": [],
+   "offset": 71,
+   "length": 55
+  },
+  {
+   "name": "mod",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 128,
+   "length": 3
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 132,
+   "length": 5
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 144,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 148,
+   "length": 2
+  },
+  {
+   "name": "helper",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 151,
+   "length": 6
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 160,
+   "length": 2
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 163,
+   "length": 3
+  },
+  {
+   "name": "super",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 177,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 182,
+   "length": 2
+  },
+  {
+   "name": "BASE",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 184,
+   "length": 4
+  },
+  {
+   "name": "+",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 189,
+   "length": 1
+  },
+  {
+   "name": "1",
+   "type": "number",
+   "modifiers": [],
+   "offset": 191,
+   "length": 1
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 204,
+   "length": 3
+  },
+  {
+   "name": "crate",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 208,
+   "length": 5
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 215,
+   "length": 2
+  },
+  {
+   "name": "twice",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 218,
+   "length": 5
+  },
+  {
+   "name": "n",
+   "type": "variable",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 224,
+   "length": 1
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 227,
+   "length": 3
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 232,
+   "length": 2
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 235,
+   "length": 3
+  },
+  {
+   "name": "n",
+   "type": "const",
+   "modifiers": [],
+   "offset": 249,
+   "length": 1
+  },
+  {
+   "name": "*",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 251,
+   "length": 1
+  },
+  {
+   "name": "2",
+   "type": "number",
+   "modifiers": [],
+   "offset": 253,
+   "length": 1
+  },
+  {
+   "name": "use",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 264,
+   "length": 3
+  },
+  {
+   "name": "crate",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 268,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 273,
+   "length": 2
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 275,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 280,
+   "length": 2
+  },
+  {
+   "name": "helper",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 282,
+   "length": 6
+  },
+  {
+   "name": "const",
+   "type": "keyword",
+   "modifiers": [
+    "constant"
+   ],
+   "offset": 291,
+   "length": 5
+  },
+  {
+   "name": "BASE",
+   "type": "const",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 297,
+   "length": 4
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 303,
+   "length": 3
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 307,
+   "length": 1
+  },
+  {
+   "name": "40",
+   "type": "number",
+   "modifiers": [],
+   "offset": 309,
+   "length": 2
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 314,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 315,
+   "length": 1
+  },
+  {
+   "name": "derive",
+   "type": "namespace",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 316,
+   "length": 6
+  },
+  {
+   "name": "Debug",
+   "type": "generic",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 323,
+   "length": 5
+  },
+  {
+   "name": "Clone",
+   "type": "generic",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 330,
+   "length": 5
+  },
+  {
+   "name": "Copy",
+   "type": "generic",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 337,
+   "length": 4
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 342,
+   "length": 1
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 344,
+   "length": 3
+  },
+  {
+   "name": "struct",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 348,
+   "length": 6
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 355,
+   "length": 7
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 369,
+   "length": 5
+  },
+  {
+   "name": "u32",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 376,
+   "length": 3
+  },
+  {
+   "name": "impl",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 384,
+   "length": 4
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 389,
+   "length": 7
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 403,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 407,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 410,
+   "length": 3
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 416,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 419,
+   "length": 4
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 434,
+   "length": 4
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 441,
+   "length": 5
+  },
+  {
+   "name": "helper",
+   "type": "function",
+   "modifiers": [],
+   "offset": 448,
+   "length": 6
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 470,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 474,
+   "length": 2
+  },
+  {
+   "name": "bumped",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 477,
+   "length": 6
+  },
+  {
+   "name": "self",
+   "type": "selfKeyword",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 484,
+   "length": 4
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 490,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 493,
+   "length": 4
+  },
+  {
+   "name": "let",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 508,
+   "length": 3
+  },
+  {
+   "name": "label",
+   "type": "variable",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 512,
+   "length": 5
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 518,
+   "length": 1
+  },
+  {
+   "name": "\"Self crate super\"",
+   "type": "string",
+   "modifiers": [],
+   "offset": 520,
+   "length": 18
+  },
+  {
+   "name": "println",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 548,
+   "length": 7
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 555,
+   "length": 1
+  },
+  {
+   "name": "\"{} {}\"",
+   "type": "string",
+   "modifiers": [],
+   "offset": 557,
+   "length": 7
+  },
+  {
+   "name": "self",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 573,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 577,
+   "length": 1
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 594,
+   "length": 4
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 601,
+   "length": 5
+  },
+  {
+   "name": "crate",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 608,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 613,
+   "length": 2
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 615,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 620,
+   "length": 2
+  },
+  {
+   "name": "twice",
+   "type": "function",
+   "modifiers": [],
+   "offset": 622,
+   "length": 5
+  },
+  {
+   "name": "self",
+   "type": "const",
+   "modifiers": [],
+   "offset": 628,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 632,
+   "length": 1
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 633,
+   "length": 5
+  },
+  {
+   "name": "impl",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 651,
+   "length": 4
+  },
+  {
+   "name": "Default",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 656,
+   "length": 7
+  },
+  {
+   "name": "for",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 664,
+   "length": 3
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 668,
+   "length": 7
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 682,
+   "length": 2
+  },
+  {
+   "name": "default",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 685,
+   "length": 7
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 695,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 698,
+   "length": 4
+  },
+  {
+   "name": "Self",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 713,
+   "length": 4
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 717,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [],
+   "offset": 719,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 734,
+   "length": 2
+  },
+  {
+   "name": "main",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 737,
+   "length": 4
+  },
+  {
+   "name": "let",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 750,
+   "length": 3
+  },
+  {
+   "name": "c",
+   "type": "variable",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 754,
+   "length": 1
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 756,
+   "length": 1
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [],
+   "offset": 758,
+   "length": 7
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 765,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [],
+   "offset": 767,
+   "length": 3
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 772,
+   "length": 1
+  },
+  {
+   "name": "bumped",
+   "type": "method",
+   "modifiers": [],
+   "offset": 773,
+   "length": 6
+  },
+  {
+   "name": "println",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 787,
+   "length": 7
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 794,
+   "length": 1
+  },
+  {
+   "name": "\"{}\"",
+   "type": "string",
+   "modifiers": [],
+   "offset": 796,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 803,
+   "length": 1
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 815,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 816,
+   "length": 1
+  },
+  {
+   "name": "cfg",
+   "type": "keyword",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 817,
+   "length": 3
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 826,
+   "length": 1
+  },
+  {
+   "name": "mod",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 828,
+   "length": 3
+  },
+  {
+   "name": "tests",
+   "type": "namespace",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 832,
+   "length": 5
+  },
+  {
+   "name": "use",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 844,
+   "length": 3
+  },
+  {
+   "name": "super",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 848,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 853,
+   "length": 2
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 863,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 864,
+   "length": 1
+  },
+  {
+   "name": "test",
+   "type": "namespace",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 865,
+   "length": 4
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 869,
+   "length": 1
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 875,
+   "length": 2
+  },
+  {
+   "name": "starts_at_base",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 878,
+   "length": 14
+  },
+  {
+   "name": "assert_eq",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 905,
+   "length": 9
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 914,
+   "length": 1
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 930,
+   "length": 1
+  },
+  {
+   "name": "super",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 938,
+   "length": 5
+  },
+  {
+   "name": "1",
+   "type": "number",
+   "modifiers": [],
+   "offset": 952,
+   "length": 1
+  }
+ ],
+ "cargo": [
+  {
+   "name": "// Path keywords for the detached-file restore: Self, crate and super.",
+   "type": "comment",
+   "modifiers": [],
+   "offset": 0,
+   "length": 70
+  },
+  {
+   "name": "// A Self, crate or super in a comment stays a comment.",
+   "type": "comment",
+   "modifiers": [],
+   "offset": 71,
+   "length": 55
+  },
+  {
+   "name": "mod",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 128,
+   "length": 3
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 132,
+   "length": 5
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 144,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 148,
+   "length": 2
+  },
+  {
+   "name": "helper",
+   "type": "function",
+   "modifiers": [
+    "declaration",
+    "public"
+   ],
+   "offset": 151,
+   "length": 6
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 160,
+   "length": 2
+  },
+  {
+   "name": "u32",
+   "type": "builtinType",
+   "modifiers": [],
+   "offset": 163,
+   "length": 3
+  },
+  {
+   "name": "super",
+   "type": "keyword",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 177,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 182,
+   "length": 2
+  },
+  {
+   "name": "BASE",
+   "type": "const",
+   "modifiers": [
+    "constant"
+   ],
+   "offset": 184,
+   "length": 4
+  },
+  {
+   "name": "+",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 189,
+   "length": 1
+  },
+  {
+   "name": "1",
+   "type": "number",
+   "modifiers": [],
+   "offset": 191,
+   "length": 1
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 204,
+   "length": 3
+  },
+  {
+   "name": "crate",
+   "type": "keyword",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 208,
+   "length": 5
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 215,
+   "length": 2
+  },
+  {
+   "name": "twice",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 218,
+   "length": 5
+  },
+  {
+   "name": "n",
+   "type": "parameter",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 224,
+   "length": 1
+  },
+  {
+   "name": "u32",
+   "type": "builtinType",
+   "modifiers": [],
+   "offset": 227,
+   "length": 3
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 232,
+   "length": 2
+  },
+  {
+   "name": "u32",
+   "type": "builtinType",
+   "modifiers": [],
+   "offset": 235,
+   "length": 3
+  },
+  {
+   "name": "n",
+   "type": "parameter",
+   "modifiers": [],
+   "offset": 249,
+   "length": 1
+  },
+  {
+   "name": "*",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 251,
+   "length": 1
+  },
+  {
+   "name": "2",
+   "type": "number",
+   "modifiers": [],
+   "offset": 253,
+   "length": 1
+  },
+  {
+   "name": "use",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 264,
+   "length": 3
+  },
+  {
+   "name": "crate",
+   "type": "keyword",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 268,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 273,
+   "length": 2
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 275,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 280,
+   "length": 2
+  },
+  {
+   "name": "helper",
+   "type": "function",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 282,
+   "length": 6
+  },
+  {
+   "name": "const",
+   "type": "keyword",
+   "modifiers": [
+    "constant"
+   ],
+   "offset": 291,
+   "length": 5
+  },
+  {
+   "name": "BASE",
+   "type": "const",
+   "modifiers": [
+    "declaration",
+    "constant"
+   ],
+   "offset": 297,
+   "length": 4
+  },
+  {
+   "name": "u32",
+   "type": "builtinType",
+   "modifiers": [],
+   "offset": 303,
+   "length": 3
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 307,
+   "length": 1
+  },
+  {
+   "name": "40",
+   "type": "number",
+   "modifiers": [],
+   "offset": 309,
+   "length": 2
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 314,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 315,
+   "length": 1
+  },
+  {
+   "name": "derive",
+   "type": "decorator",
+   "modifiers": [
+    "defaultLibrary",
+    "attribute",
+    "library"
+   ],
+   "offset": 316,
+   "length": 6
+  },
+  {
+   "name": "Debug",
+   "type": "derive",
+   "modifiers": [
+    "defaultLibrary",
+    "attribute",
+    "library",
+    "macro"
+   ],
+   "offset": 323,
+   "length": 5
+  },
+  {
+   "name": "Clone",
+   "type": "derive",
+   "modifiers": [
+    "defaultLibrary",
+    "attribute",
+    "library",
+    "macro"
+   ],
+   "offset": 330,
+   "length": 5
+  },
+  {
+   "name": "Copy",
+   "type": "derive",
+   "modifiers": [
+    "defaultLibrary",
+    "attribute",
+    "library",
+    "macro"
+   ],
+   "offset": 337,
+   "length": 4
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 342,
+   "length": 1
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 344,
+   "length": 3
+  },
+  {
+   "name": "struct",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 348,
+   "length": 6
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [
+    "declaration",
+    "public"
+   ],
+   "offset": 355,
+   "length": 7
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 369,
+   "length": 5
+  },
+  {
+   "name": "u32",
+   "type": "builtinType",
+   "modifiers": [],
+   "offset": 376,
+   "length": 3
+  },
+  {
+   "name": "impl",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 384,
+   "length": 4
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 389,
+   "length": 7
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 403,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 407,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [
+    "declaration",
+    "static",
+    "associated",
+    "public"
+   ],
+   "offset": 410,
+   "length": 3
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 416,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "selfTypeKeyword",
+   "modifiers": [],
+   "offset": 419,
+   "length": 4
+  },
+  {
+   "name": "Self",
+   "type": "selfTypeKeyword",
+   "modifiers": [],
+   "offset": 434,
+   "length": 4
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 441,
+   "length": 5
+  },
+  {
+   "name": "helper",
+   "type": "function",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 448,
+   "length": 6
+  },
+  {
+   "name": "pub",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 470,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 474,
+   "length": 2
+  },
+  {
+   "name": "bumped",
+   "type": "method",
+   "modifiers": [
+    "declaration",
+    "associated",
+    "consuming",
+    "public"
+   ],
+   "offset": 477,
+   "length": 6
+  },
+  {
+   "name": "self",
+   "type": "selfKeyword",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 484,
+   "length": 4
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 490,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "selfTypeKeyword",
+   "modifiers": [],
+   "offset": 493,
+   "length": 4
+  },
+  {
+   "name": "let",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 508,
+   "length": 3
+  },
+  {
+   "name": "label",
+   "type": "variable",
+   "modifiers": [
+    "declaration",
+    "reference"
+   ],
+   "offset": 512,
+   "length": 5
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 518,
+   "length": 1
+  },
+  {
+   "name": "\"Self crate super\"",
+   "type": "string",
+   "modifiers": [],
+   "offset": 520,
+   "length": 18
+  },
+  {
+   "name": "println",
+   "type": "macro",
+   "modifiers": [
+    "defaultLibrary",
+    "library"
+   ],
+   "offset": 548,
+   "length": 7
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 555,
+   "length": 1
+  },
+  {
+   "name": "\"",
+   "type": "string",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 557,
+   "length": 1
+  },
+  {
+   "name": "{",
+   "type": "formatSpecifier",
+   "modifiers": [],
+   "offset": 558,
+   "length": 1
+  },
+  {
+   "name": "}",
+   "type": "formatSpecifier",
+   "modifiers": [],
+   "offset": 559,
+   "length": 1
+  },
+  {
+   "name": " ",
+   "type": "string",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 560,
+   "length": 1
+  },
+  {
+   "name": "{",
+   "type": "formatSpecifier",
+   "modifiers": [],
+   "offset": 561,
+   "length": 1
+  },
+  {
+   "name": "}",
+   "type": "formatSpecifier",
+   "modifiers": [],
+   "offset": 562,
+   "length": 1
+  },
+  {
+   "name": "\"",
+   "type": "string",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 563,
+   "length": 1
+  },
+  {
+   "name": "label",
+   "type": "variable",
+   "modifiers": [
+    "macro",
+    "reference"
+   ],
+   "offset": 566,
+   "length": 5
+  },
+  {
+   "name": "self",
+   "type": "selfKeyword",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 573,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 577,
+   "length": 1
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 578,
+   "length": 5
+  },
+  {
+   "name": "Self",
+   "type": "selfTypeKeyword",
+   "modifiers": [],
+   "offset": 594,
+   "length": 4
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 601,
+   "length": 5
+  },
+  {
+   "name": "crate",
+   "type": "keyword",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 608,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 613,
+   "length": 2
+  },
+  {
+   "name": "inner",
+   "type": "namespace",
+   "modifiers": [],
+   "offset": 615,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 620,
+   "length": 2
+  },
+  {
+   "name": "twice",
+   "type": "function",
+   "modifiers": [],
+   "offset": 622,
+   "length": 5
+  },
+  {
+   "name": "self",
+   "type": "selfKeyword",
+   "modifiers": [],
+   "offset": 628,
+   "length": 4
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 632,
+   "length": 1
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [],
+   "offset": 633,
+   "length": 5
+  },
+  {
+   "name": "impl",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 651,
+   "length": 4
+  },
+  {
+   "name": "Default",
+   "type": "interface",
+   "modifiers": [
+    "defaultLibrary",
+    "library"
+   ],
+   "offset": 656,
+   "length": 7
+  },
+  {
+   "name": "for",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 664,
+   "length": 3
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 668,
+   "length": 7
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 682,
+   "length": 2
+  },
+  {
+   "name": "default",
+   "type": "function",
+   "modifiers": [
+    "declaration",
+    "static",
+    "associated",
+    "trait"
+   ],
+   "offset": 685,
+   "length": 7
+  },
+  {
+   "name": "->",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 695,
+   "length": 2
+  },
+  {
+   "name": "Self",
+   "type": "selfTypeKeyword",
+   "modifiers": [],
+   "offset": 698,
+   "length": 4
+  },
+  {
+   "name": "Self",
+   "type": "selfTypeKeyword",
+   "modifiers": [],
+   "offset": 713,
+   "length": 4
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 717,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [
+    "static",
+    "associated",
+    "public"
+   ],
+   "offset": 719,
+   "length": 3
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 734,
+   "length": 2
+  },
+  {
+   "name": "main",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 737,
+   "length": 4
+  },
+  {
+   "name": "let",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 750,
+   "length": 3
+  },
+  {
+   "name": "c",
+   "type": "variable",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 754,
+   "length": 1
+  },
+  {
+   "name": "=",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 756,
+   "length": 1
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 758,
+   "length": 7
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 765,
+   "length": 2
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [
+    "static",
+    "associated",
+    "public"
+   ],
+   "offset": 767,
+   "length": 3
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 772,
+   "length": 1
+  },
+  {
+   "name": "bumped",
+   "type": "method",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 773,
+   "length": 6
+  },
+  {
+   "name": "println",
+   "type": "macro",
+   "modifiers": [
+    "defaultLibrary",
+    "library"
+   ],
+   "offset": 787,
+   "length": 7
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 794,
+   "length": 1
+  },
+  {
+   "name": "\"",
+   "type": "string",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 796,
+   "length": 1
+  },
+  {
+   "name": "{",
+   "type": "formatSpecifier",
+   "modifiers": [],
+   "offset": 797,
+   "length": 1
+  },
+  {
+   "name": "}",
+   "type": "formatSpecifier",
+   "modifiers": [],
+   "offset": 798,
+   "length": 1
+  },
+  {
+   "name": "\"",
+   "type": "string",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 799,
+   "length": 1
+  },
+  {
+   "name": "c",
+   "type": "variable",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 802,
+   "length": 1
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 803,
+   "length": 1
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 804,
+   "length": 5
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 815,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 816,
+   "length": 1
+  },
+  {
+   "name": "cfg",
+   "type": "keyword",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 817,
+   "length": 3
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 826,
+   "length": 1
+  },
+  {
+   "name": "mod",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 828,
+   "length": 3
+  },
+  {
+   "name": "tests",
+   "type": "namespace",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 832,
+   "length": 5
+  },
+  {
+   "name": "use",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 844,
+   "length": 3
+  },
+  {
+   "name": "super",
+   "type": "keyword",
+   "modifiers": [
+    "public"
+   ],
+   "offset": 848,
+   "length": 5
+  },
+  {
+   "name": "::",
+   "type": "operator",
+   "modifiers": [],
+   "offset": 853,
+   "length": 2
+  },
+  {
+   "name": "#",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 863,
+   "length": 1
+  },
+  {
+   "name": "[",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 864,
+   "length": 1
+  },
+  {
+   "name": "test",
+   "type": "decorator",
+   "modifiers": [
+    "defaultLibrary",
+    "attribute",
+    "library"
+   ],
+   "offset": 865,
+   "length": 4
+  },
+  {
+   "name": "]",
+   "type": "attributeBracket",
+   "modifiers": [
+    "attribute"
+   ],
+   "offset": 869,
+   "length": 1
+  },
+  {
+   "name": "fn",
+   "type": "keyword",
+   "modifiers": [],
+   "offset": 875,
+   "length": 2
+  },
+  {
+   "name": "starts_at_base",
+   "type": "function",
+   "modifiers": [
+    "declaration"
+   ],
+   "offset": 878,
+   "length": 14
+  },
+  {
+   "name": "assert_eq",
+   "type": "macro",
+   "modifiers": [
+    "defaultLibrary",
+    "library"
+   ],
+   "offset": 905,
+   "length": 9
+  },
+  {
+   "name": "!",
+   "type": "macro",
+   "modifiers": [],
+   "offset": 914,
+   "length": 1
+  },
+  {
+   "name": "Counter",
+   "type": "struct",
+   "modifiers": [
+    "macro",
+    "public"
+   ],
+   "offset": 916,
+   "length": 7
+  },
+  {
+   "name": ":",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 923,
+   "length": 1
+  },
+  {
+   "name": ":",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 924,
+   "length": 1
+  },
+  {
+   "name": "new",
+   "type": "function",
+   "modifiers": [
+    "static",
+    "associated",
+    "macro",
+    "public"
+   ],
+   "offset": 925,
+   "length": 3
+  },
+  {
+   "name": ".",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 930,
+   "length": 1
+  },
+  {
+   "name": "count",
+   "type": "property",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 931,
+   "length": 5
+  },
+  {
+   "name": "super",
+   "type": "keyword",
+   "modifiers": [
+    "macro",
+    "public"
+   ],
+   "offset": 938,
+   "length": 5
+  },
+  {
+   "name": ":",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 943,
+   "length": 1
+  },
+  {
+   "name": ":",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 944,
+   "length": 1
+  },
+  {
+   "name": "BASE",
+   "type": "const",
+   "modifiers": [
+    "constant",
+    "macro"
+   ],
+   "offset": 945,
+   "length": 4
+  },
+  {
+   "name": "+",
+   "type": "operator",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 950,
+   "length": 1
+  },
+  {
+   "name": "1",
+   "type": "number",
+   "modifiers": [
+    "macro"
+   ],
+   "offset": 952,
+   "length": 1
+  }
+ ]
+}

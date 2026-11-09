@@ -62,7 +62,7 @@ T fold(const std::vector<Config>& cfgs, T seed, Reducer reducer) {
     return acc;
 }
 
-// class: `this` is the gold self-slot; methods are band-1
+// class: `this` is the keyword colour; methods are band-1
 class Worker {
 public:
     explicit Worker(std::string id) : id_(std::move(id)), seen_(0) {}

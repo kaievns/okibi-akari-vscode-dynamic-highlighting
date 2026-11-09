@@ -631,7 +631,7 @@
   "length": 6
  },
  {
-  "name": "// `self` is the gold self-slot across the impl",
+  "name": "// `self` is the keyword colour across the impl",
   "type": "comment",
   "modifiers": [],
   "offset": 1146,

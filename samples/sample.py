@@ -48,7 +48,7 @@ class Config:
     tags: dict[str, str] = field(default_factory=dict)
 
     def with_retries(self, retries: int) -> "Config":
-        # `self` is the gold self-slot across the class
+        # `self` is the keyword colour across the class
         self.retries = retries
         return self
 
@@ -103,7 +103,7 @@ async def fetch_all(names: list[str]) -> list[Config]:
 
 
 class Worker:
-    """`self` is the gold self-slot; methods are band-1."""
+    """`self` is the keyword colour; methods are band-1."""
 
     def __init__(self, worker_id: str) -> None:
         self.id = worker_id

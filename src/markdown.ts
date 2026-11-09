@@ -1,7 +1,7 @@
 /**
  * Markdown band-1 marks that a colour theme physically cannot express.
  *
- * Neither of these is an attention-phase behaviour, so neither is phase-gated:
+ * Neither of these is an attention-phase behaviour, so neither is phase-bound:
  * they are part of the resting register, and they live here only because
  * `tokenColors` cannot reach them.
  *
@@ -26,7 +26,7 @@
  * TextMate token stream. They therefore have to reproduce one thing the
  * injection grammar gets for free: never matching inside code. The exclusions
  * here mirror `syntaxes/md-prose.injection.json`'s injection selector
- * (`-markup.fenced_code -markup.inline.raw -markup.raw -meta.embedded`).
+ * (`-markup.fenced_code -markup.inline.raw -markup.raw -meta.embedded -comment`).
  */
 
 /** A half-open offset span. */
@@ -42,7 +42,8 @@ export interface Span {
  *
  * Fence tracking follows CommonMark closely enough for the purpose: a fence is
  * opened by 3+ backticks or tildes, and closed only by a run of the SAME
- * character that is at least as long. Getting this wrong in the lenient
+ * character that is at least as long. Inside a list item a fence may be indented
+ * up to the item's content indent plus 3. Getting this wrong in the lenient
  * direction would paint marks inside code; in the strict direction it would
  * merely miss a mark, so the tie-breaks below all favour "treat as code".
  */
@@ -54,12 +55,16 @@ export function codeSpans(text: string): Span[] {
   let fenceChar = '';
   let fenceLen = 0;
   let fenceStart = -1;
+  let fenceIndent = 3;
   let inFrontmatter = false;
+  // Content indent of the list item the current lines belong to, 0 outside a list.
+  let listIndent = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineStart = offset;
     offset += line.length + 1;
+    const indent = indentWidth(line);
 
     // Frontmatter: only when `---` is the very first line of the document.
     if (i === 0 && /^-{3,}\s*$/.test(line)) {
@@ -76,12 +81,12 @@ export function codeSpans(text: string): Span[] {
       continue;
     }
 
-    const fence = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    const fence = /^\s*(`{3,}|~{3,})/.exec(line);
     if (fenceChar) {
       // Inside a fence: close only on the same character, at least as long, and
       // with no info string after it.
-      if (fence && fence[1][0] === fenceChar && fence[1].length >= fenceLen
-          && /^\s{0,3}([`~]{3,})\s*$/.test(line)) {
+      if (fence && indent <= fenceIndent && fence[1][0] === fenceChar && fence[1].length >= fenceLen
+          && /^\s*([`~]{3,})\s*$/.test(line)) {
         spans.push({ start: fenceStart, end: lineStart + line.length });
         fenceChar = '';
         fenceLen = 0;
@@ -89,10 +94,19 @@ export function codeSpans(text: string): Span[] {
       }
       continue;
     }
-    if (fence) {
+    if (line.trim() !== '') {
+      const item = /^(\s*)([-*+]|\d{1,9}[.)])( {1,4}|\t|$)/.exec(line);
+      if (item) {
+        listIndent = indentWidth(item[1]) + item[2].length + Math.max(1, indentWidth(item[3]));
+      } else if (indent < listIndent && !fence) {
+        listIndent = 0;
+      }
+    }
+    if (fence && indent <= listIndent + 3) {
       fenceChar = fence[1][0];
       fenceLen = fence[1].length;
       fenceStart = lineStart;
+      fenceIndent = listIndent + 3;
       continue;
     }
 
@@ -130,6 +144,33 @@ export function codeSpans(text: string): Span[] {
 const inAny = (spans: Span[], start: number, end: number): boolean =>
   spans.some((s) => start < s.end && end > s.start);
 
+/** Columns of leading whitespace, a tab counting to the next multiple of 4. */
+function indentWidth(line: string): number {
+  let n = 0;
+  for (const ch of line) {
+    if (ch === ' ') n++;
+    else if (ch === '\t') n += 4 - (n % 4);
+    else break;
+  }
+  return n;
+}
+
+/**
+ * `<!-- … -->` HTML comments outside code, multi-line; an unclosed one runs to
+ * the end of the document. The grammar paints them as comments.
+ */
+export function htmlCommentSpans(text: string, code: Span[] = codeSpans(text)): Span[] {
+  const out: Span[] = [];
+  for (let i = text.indexOf('<!--'); i >= 0; i = text.indexOf('<!--', i + 4)) {
+    if (inAny(code, i, i + 4)) continue;
+    const close = text.indexOf('-->', i + 4);
+    const end = close < 0 ? text.length : close + 3;
+    out.push({ start: i, end });
+    i = end - 4;
+  }
+  return out;
+}
+
 /**
  * The `==highlighted==` ranges, EXCLUDING the `==` sigils themselves — those
  * stay n7 furniture, which the theme already paints, and washing them would make
@@ -137,10 +178,15 @@ const inAny = (spans: Span[], start: number, end: number): boolean =>
  *
  * The pattern mirrors the injection grammar's, including the trap that cost
  * three attempts there: the content must not START with `=`, or a setext H1
- * underline (`=========`) parses as a chain of empty highlights.
+ * underline (`=========`) parses as a chain of empty highlights. Code and HTML
+ * comments are skipped, and so is a `==` inside a link target (`?a==b==c`); a
+ * mark may still contain a whole link.
  */
 export function highlightSpans(text: string): Span[] {
-  const skip = codeSpans(text);
+  const code = codeSpans(text);
+  const skip = [...code, ...htmlCommentSpans(text, code)];
+  const links = linkSpans(text, code);
+  const inLink = (at: number): boolean => inAny(links, at, at + 2);
   const out: Span[] = [];
   // Non-`=` first char, no blank first char, closer on the same line.
   const re = /==([^=\s](?:[^=\n]|=(?!=))*)==/g;
@@ -148,7 +194,7 @@ export function highlightSpans(text: string): Span[] {
   while ((m = re.exec(text))) {
     const start = m.index + 2;
     const end = start + m[1].length;
-    if (inAny(skip, m.index, end + 2)) continue;
+    if (inAny(skip, m.index, end + 2) || inLink(m.index) || inLink(end)) continue;
     out.push({ start, end });
   }
   return mergeSpans(out);
@@ -164,8 +210,8 @@ export function highlightSpans(text: string): Span[] {
  * underline is the only cue that the text is clickable — but the spec is
  * explicit that a URL is furniture, so consistency wins over that hint.
  */
-export function linkSpans(text: string): Span[] {
-  const skip = codeSpans(text);
+export function linkSpans(text: string, code: Span[] = codeSpans(text)): Span[] {
+  const skip = code;
   const out: Span[] = [];
   const push = (start: number, end: number): void => {
     if (!inAny(skip, start, end)) out.push({ start, end });

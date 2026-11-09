@@ -74,7 +74,7 @@ function lineWith(text, lineText) {
 
 /** Names the classifier would consider data identities. `self` is added separately. */
 function tintedNames(text, tokens) {
-  const index = classify.buildFileIndex(text, tokens, []);
+  const index = classify.buildFileIndex(text, tokens, [], 'python');
   return [...index.occurrences.keys()].filter((n) => n !== 'self').sort();
 }
 
@@ -305,23 +305,23 @@ test('method params and locals still tint', () => {
 test('identifiers inside an f-string hole are lexed', () => {
   // The lexer knew JS templates (backtick + `${`) but not Python f-strings (quote
   // + bare `{`), so the whole f-string was opaque. That is not cosmetic: names are
-  // gated on being used at least TWICE, and `prefix`, `page` and `timeout_sum` in
+  // required to be used at least TWICE, and `prefix`, `page` and `timeout_sum` in
   // sample.py each have one plain use plus one f-string use — so all three fell
-  // below the gate and never tinted anywhere.
+  // below that floor and never tinted anywhere.
   const src = 'prefix = "cfg"\nout = f"{prefix}:{c.name}"\n';
-  const names = focus.lexIdentifiers(src).map((i) => i.name);
+  const names = focus.lexIdentifiers(src, 0, undefined, 'python').map((i) => i.name);
   // No `f`: the string PREFIX is punctuation, not an identifier (see below).
   assert.deepEqual(names, ['prefix', 'out', 'prefix', 'c', 'name']);
 });
 
 test('a PLAIN string is still opaque, and `{{` is an escaped brace', () => {
   assert.deepEqual(
-    focus.lexIdentifiers('s = "not code here"\n').map((i) => i.name),
+    focus.lexIdentifiers('s = "not code here"\n', 0, undefined, 'python').map((i) => i.name),
     ['s'],
     'a string with no f prefix contributes no identifiers',
   );
   assert.deepEqual(
-    focus.lexIdentifiers('s = f"{{literal}} {real}"\n').map((i) => i.name),
+    focus.lexIdentifiers('s = f"{{literal}} {real}"\n', 0, undefined, 'python').map((i) => i.name),
     ['s', 'real'],
     '`{{` is a literal brace, so `literal` is text — only `real` is code',
   );
@@ -329,29 +329,29 @@ test('a PLAIN string is still opaque, and `{{` is an escaped brace', () => {
 
 test('a string PREFIX is not an identifier', () => {
   // `f"{x}"` put a one-letter name `f` in the stream. In an f-string-heavy file
-  // that cleared the two-use gate, won a hue, and consumed one of the palette's
+  // that cleared the two-use floor, won a hue, and consumed one of the palette's
   // few slots — for a token that is punctuation.
-  assert.deepEqual(focus.lexIdentifiers('out = f"{prefix}"\n').map((i) => i.name), ['out', 'prefix']);
-  assert.deepEqual(focus.lexIdentifiers('x = rf"{a}"\n').map((i) => i.name), ['x', 'a']);
-  assert.deepEqual(focus.lexIdentifiers('y = b"bytes"\n').map((i) => i.name), ['y']);
+  assert.deepEqual(focus.lexIdentifiers('out = f"{prefix}"\n', 0, undefined, 'python').map((i) => i.name), ['out', 'prefix']);
+  assert.deepEqual(focus.lexIdentifiers('x = rf"{a}"\n', 0, undefined, 'python').map((i) => i.name), ['x', 'a']);
+  assert.deepEqual(focus.lexIdentifiers('y = b"bytes"\n', 0, undefined, 'python').map((i) => i.name), ['y']);
   // The boundaries: only letters DIRECTLY against a quote, and only prefix letters.
-  assert.deepEqual(focus.lexIdentifiers('f = 5\n').map((i) => i.name), ['f'],
+  assert.deepEqual(focus.lexIdentifiers('f = 5\n', 0, undefined, 'python').map((i) => i.name), ['f'],
     'a real variable named `f` is still a name');
-  assert.deepEqual(focus.lexIdentifiers('x = f("a")\n').map((i) => i.name), ['x', 'f'],
+  assert.deepEqual(focus.lexIdentifiers('x = f("a")\n', 0, undefined, 'python').map((i) => i.name), ['x', 'f'],
     '`f(...)` is a call, not a prefix — the next char is a paren');
-  assert.deepEqual(focus.lexIdentifiers('conf = "x"\n').map((i) => i.name), ['conf'],
+  assert.deepEqual(focus.lexIdentifiers('conf = "x"\n', 0, undefined, 'python').map((i) => i.name), ['conf'],
     '`conf` is not a prefix even though it ends in f');
 });
 
 test('an f prefix is only a prefix when it is not part of an identifier', () => {
   assert.deepEqual(
-    focus.lexIdentifiers('conf = "{notcode}"\n').map((i) => i.name),
+    focus.lexIdentifiers('conf = "{notcode}"\n', 0, undefined, 'python').map((i) => i.name),
     ['conf'],
     'the `f` at the end of `conf` must not turn the next string into an f-string',
   );
   for (const src of ['x = rf"{a}"\n', 'x = F"{a}"\n', 'x = fr"{a}"\n']) {
     assert.ok(
-      focus.lexIdentifiers(src).map((i) => i.name).includes('a'),
+      focus.lexIdentifiers(src, 0, undefined, 'python').map((i) => i.name).includes('a'),
       `${src.trim()} is an f-string`,
     );
   }
@@ -359,7 +359,7 @@ test('an f prefix is only a prefix when it is not part of an identifier', () => 
 
 test('a `#` comment is not lexed as code', () => {
   assert.deepEqual(
-    focus.lexIdentifiers('x = 1  # total calls here\n').map((i) => i.name),
+    focus.lexIdentifiers('x = 1  # total calls here\n', 0, undefined, 'python').map((i) => i.name),
     ['x'],
     'words in a Python comment must not inflate use counts',
   );
@@ -369,10 +369,10 @@ test('the real sample.py lexes every f-string use', () => {
   // Ground truth is a plain word-boundary grep: the lexer must agree with it for
   // names that appear only in code and f-strings.
   const text = fs.readFileSync(SAMPLE, 'utf8');
-  const ids = focus.lexIdentifiers(text);
+  const ids = focus.lexIdentifiers(text, 0, undefined, 'python');
   for (const name of ['prefix', 'timeout_sum']) {
     const lexed = ids.filter((i) => i.name === name).length;
-    assert.ok(lexed >= 2, `${name} lexed ${lexed} times, needs >= 2 to clear the use gate`);
+    assert.ok(lexed >= 2, `${name} lexed ${lexed} times, needs >= 2 to clear the use floor`);
   }
 });
 
@@ -451,7 +451,7 @@ test('`lambda` and other Python keywords are not data identities', () => {
   const block = focus.scanBlocks(src, 'python').find((b) => src.slice(b.openOffset).startsWith('lambda'));
   const cls = classify.classifyFromHeuristic(
     src, focus.scopeRegionFor(src, block), undefined, [], 1,
-    focus.focusKeyOf(block), undefined, focus.declRegionFor(src, block), [],
+    focus.focusKeyOf(block), undefined, focus.declRegionFor(src, block), [], 'python',
   );
   const names = [...cls.byName.keys()];
   assert.ok(!names.includes('lambda'), `\`lambda\` must not be a candidate: ${names.join(' ')}`);
@@ -509,7 +509,7 @@ test('a module global read only inside an f-string is still a global', () => {
     .filter((b) => b.headerStart !== b.openOffset && focus.isFunctionHeader(text, b))
     .map((b) => ({ start: b.headerStart, end: b.closeOffset + 1 }));
   const index = classify.buildFileIndex(
-    text, [tok(declLine, ['declaration']), tok(readLine, [])], fnRanges,
+    text, [tok(declLine, ['declaration']), tok(readLine, [])], fnRanges, 'python',
   );
   assert.equal((index.occurrences.get('total_calls') ?? []).length, 2,
     'the f-string read must be counted');
@@ -530,7 +530,7 @@ test('an ATTRIBUTE and a same-named LOCAL do not share a hue', () => {
     { name: 'retries', type: 'variable', modifiers: [], offset: starts[li] + lines[li].indexOf('retries'), length: 7, line: li },
     { name: 'retries', type: 'parameter', modifiers: [], offset: starts[li] + lines[li].lastIndexOf('retries'), length: 7, line: li },
   ];
-  const occurrences = classify.buildFileIndex(text, tokens, []).occurrences.get('retries') ?? [];
+  const occurrences = classify.buildFileIndex(text, tokens, [], 'python').occurrences.get('retries') ?? [];
   assert.equal(occurrences.length, 1, 'only the parameter read is a data identity');
   assert.equal(
     occurrences[0].start,
@@ -549,7 +549,7 @@ test('a KEYWORD-ARGUMENT LABEL is not data, but its value is', () => {
     at('name', lines[li].indexOf('=name') + 1),
     at('tags', lines[li].indexOf('tags=')),
   ];
-  const index = classify.buildFileIndex(text, tokens, []);
+  const index = classify.buildFileIndex(text, tokens, [], 'python');
   assert.equal((index.occurrences.get('name') ?? []).length, 1, '`name=` is a label; `=name` is a real read');
   assert.equal((index.occurrences.get('tags') ?? []).length, 0, '`tags=` appears only as a label');
 });
@@ -596,7 +596,7 @@ test('the member/label guard leaves ordinary bindings alone', () => {
         tokens.push({ name, type: 'variable', modifiers: [], offset: i, length: name.length, line: 0 });
       }
     }
-    const got = (classify.buildFileIndex(src, tokens, []).occurrences.get(name) ?? []).length;
+    const got = (classify.buildFileIndex(src, tokens, [], 'python').occurrences.get(name) ?? []).length;
     assert.equal(got, expected, `${JSON.stringify(src)}: ${why}`);
   }
 });
@@ -622,4 +622,120 @@ test('a nested def inside a class body is not treated as a field run', () => {
   });
   const names = tintedNames(src, [at('field', 1), at('local', 3), at('other', 5)]);
   assert.deepEqual(names, ['local'], 'fields before AND after the method are furniture; the local is data');
+});
+
+// ── the heuristic fallback, type-shaped names, comprehension scopes ───────────
+
+const stub = require('./vscode-stub');
+stub.install();
+const { Classifier } = require('../out/classify-lsp');
+const colors = require('../out/colors');
+const traces = require('../out/traces');
+
+/**
+ * What the heuristic fallback paints with the caret in the block opening on the
+ * line containing `needle`: no semantic-token or symbol provider answers.
+ * Returns `name@line:col` (1-based line, 0-based column).
+ */
+async function heuristicPaint(src, lang, needle) {
+  stub.clearLspResponses();
+  const doc = new stub.TextDocument(src, lang, `file:///heuristic-${Math.random()}`);
+  const blocks = focus.scanBlocks(src, lang);
+  const at = src.indexOf(needle);
+  const line = src.slice(0, at).split('\n').length - 1;
+  const block = focus.innermostBlock(blocks, line, at, src);
+  const r = await new Classifier().classifyScope(doc, block, 5, { isCancellationRequested: false }, { text: src, blocks });
+  assert.equal(r.focused.source, 'heuristic');
+  const plan = colors.planFromColoring(r.focused, r.coloring);
+  return traces.computeTraceRanges(r.focused, plan, focus.lexRegionFor(src, block, lang))
+    .flatMap((t) => t.ranges.map((x) => {
+      const p = doc.positionAt(x.start);
+      return `${t.name}@${p.line + 1}:${p.character}`;
+    }));
+}
+
+test('parameters are the function\'s own data; prose, calls and docstrings are not', async () => {
+  const src = [
+    'def load(name, retries):',
+    '    """Load the config for name.',
+    '',
+    '    Retries the load up to retries times, then gives up on the config.',
+    '    """',
+    '    cfg = fetch(name)',
+    '    return cfg',
+    '',
+  ].join('\n');
+  const painted = await heuristicPaint(src, 'python', 'cfg = fetch');
+  assert.deepEqual(painted.sort(), ['cfg@6:4', 'cfg@7:11', 'name@1:9', 'name@6:16', 'retries@1:15']);
+});
+
+test('`cls` is not data, and an unrelated function\'s parameter is never traced', async () => {
+  const src = [
+    'class Box:',
+    '    @classmethod',
+    '    def make(cls, size):',
+    '        return cls(size)',
+    '',
+    'def other(size):',
+    '    return size * 2',
+    '',
+  ].join('\n');
+  const painted = await heuristicPaint(src, 'python', 'return cls(size)');
+  assert.deepEqual(painted.sort(), ['size@3:18', 'size@4:19'], 'only make\'s own `size`, no `cls`');
+});
+
+test('a Python variable named `type` is not a type declaration', () => {
+  const src = 'def handle(event):\n    type = event.get("type", default_kind)\n    if type == "x":\n        return type\n    return default_kind\n';
+  const toks = focus.lexIdentifiers(src, 0, src.length, 'python')
+    .filter((i) => ['type', 'event', 'default_kind'].includes(i.name))
+    .map((i) => ({ ...i, type: 'variable', modifiers: [] }));
+  const idx = classify.buildFileIndex(src, toks, [], 'python');
+  for (const name of ['type', 'event', 'default_kind']) {
+    assert.equal(idx.occurrences.get(name).length, toks.filter((t) => t.name === name).length, `${name} keeps every token`);
+  }
+  // A real type alias (3.12) still is.
+  const alias = 'type Pair[T] = tuple[T, T]\n';
+  const t = { name: 'T', offset: alias.indexOf('T]'), length: 1, type: 'typeParameter', modifiers: ['declaration'] };
+  assert.equal(classify.buildFileIndex(alias, [{ ...t, type: 'variable' }], [], 'python').occurrences.size, 0);
+});
+
+test('a `for` inside a string argument does not make the call a scope', () => {
+  const src = 'def f(xs):\n    print("waiting for input", xs)\n    log(f"retry for {xs}")\n    return xs\n';
+  const blocks = focus.scanBlocks(src, 'python');
+  assert.deepEqual(blocks.map((b) => [b.openLine, b.closeLine]), [[0, 3]], 'only the def');
+});
+
+// ── suites from indentation, under LF and CRLF ───────────────────────────────
+
+test('pySuiteTable: inline suites, a colon inside brackets, continued lines; the same under CRLF', () => {
+  const { lexFor } = require('../out/lex');
+  for (const nl of ['\n', '\r\n']) {
+    const src = ['def f(c):', '    if c: x = 1', '    else: x = 2', '    if g(a[0:1]): y = 1', '    z = x + \\', '        y', '    w = z', ''].join(nl);
+    const s = classify.pySuiteTable(lexFor(src, 'python'));
+    const at = (needle) => src.indexOf(needle);
+    const label = JSON.stringify(nl);
+    assert.equal(s.encloses(at('x = 1'), at('x = 2')), false, `${label}: sibling inline suites`);
+    assert.equal(s.encloses(at('x = 1'), at('c: x')), false, `${label}: the head before the colon is outside the inline suite`);
+    assert.equal(s.encloses(at('y = 1'), at('z = x')), false, `${label}: a colon inside brackets does not end the header`);
+    assert.equal(s.encloses(at('        y'), at('w = z')), true, `${label}: a continued line belongs to its statement`);
+    assert.equal(s.encloses(at('if c'), at('w = z')), true, `${label}: the function suite holds every statement`);
+  }
+});
+
+test('pyScopeAt: a blank line inside a def keeps the def scope, under LF and CRLF', () => {
+  const { lexFor } = require('../out/lex');
+  for (const nl of ['\n', '\r\n']) {
+    const src = ['def f():', '    a = 1', '', '    b = 2', 'c = 3', ''].join(nl);
+    const lx = lexFor(src, 'python');
+    assert.equal(classify.pyScopeAt(lx, src.indexOf('b = 2'))?.name, 'f', JSON.stringify(nl));
+    assert.equal(classify.pyScopeAt(lx, src.indexOf('c = 3')), null, JSON.stringify(nl));
+  }
+});
+
+test('shadow scopes: an inner def that ends where its outer one ends is its own scope', () => {
+  const src = 'def outer():\n    x = 1\n    def inner():\n        x = 2\n';
+  const fns = [{ start: 0, end: src.length }, { start: src.indexOf('def inner'), end: src.length }];
+  const decl = (needle) => ({ name: 'x', type: 'variable', modifiers: ['declaration'], offset: src.indexOf(needle), length: 1 });
+  const idx = classify.buildFileIndex(src, [decl('x = 1'), decl('x = 2')], fns, 'python');
+  assert.deepEqual(idx.shadowScopes.get('x'), fns);
 });

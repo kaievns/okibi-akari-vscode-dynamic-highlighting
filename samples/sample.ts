@@ -2,11 +2,11 @@
 // TS has the richest semantic-token provider, so this drives the LSP path.
 //
 //   Focus 流 (caret in a block): band-2 identity tints —
-//     • out-of-fn globals  → bold idg-* hue, traced file-wide
+//     • out-of-fn globals  → same hue, bold, traced file-wide
 //     • fn-local (borrowed) → normal id-* hue, traced across the function
 //     • block-local used ≥2 → normal id-* hue, in-block only
 //     • block-local used 1x → stays neutral
-//     • this / self        → gold, bold
+//     • this / self        → not tinted
 //   Edit 異 (start typing): band-3 on top, focused block only —
 //     • await / async      → cyan
 //     • as / any           → bold danger
@@ -78,7 +78,7 @@ function fold<T>(jobs: Job[], seed: T, reducer: Reducer<T>): T {
   return acc;
 }
 
-// ── class: `this` is the gold self-slot across the whole class ──
+// ── class: `this` is the keyword colour across the whole class ──
 class Worker {
   private seen = 0;
   private readonly phases = new Map<JobId, Phase>();

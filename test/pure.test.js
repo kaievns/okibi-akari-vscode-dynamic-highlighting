@@ -3,15 +3,14 @@
 //   node --test   (after `npm run compile`)
 //
 // Coverage is weighted toward the logic the adversarial review flagged:
-// colour-assignment ordering/overflow/stability, classification, escape
-// detection, numeric lexing, and trace clipping.
+// classification, escape detection, numeric lexing, and trace clipping. Colour
+// ordering is test/scopecolor.test.js's.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const focus = require('../out/focus');
 const classify = require('../out/classify');
-const colors = require('../out/colors');
 const traces = require('../out/traces');
 const risk = require('../out/risk');
 
@@ -377,7 +376,7 @@ test('classifyFromSemantic: shorthand read with declaration modifier is NOT a bi
   // TS marks `{ name }` shorthand with a `declaration` modifier (it declares the
   // object property). When that object literal is the FOCUSED block, the token
   // must not be counted as declaring the `name` variable — else `name` becomes
-  // block-local, hits the freq≥2 gate on its single use, and goes neutral (white).
+  // block-local, hits the freq≥2 floor on its single use, and goes neutral (white).
   const text = 'function f(name) {\n  const o = {\n    name,\n    x: 1,\n  }\n  return o\n}';
   const blocks = focus.scanBraceBlocks(text);
   const objBlock = blocks.reduce((a, b) => (b.depth > a.depth ? b : a)); // the { name, x } literal
@@ -394,7 +393,7 @@ test('classifyFromSemantic: shorthand read with declaration modifier is NOT a bi
   assert.equal(c.byName.get('name').cls, 'fn');
 });
 
-// ── colors.ts ─────────────────────────────────────────────────────────────────
+// ── traces.ts ─────────────────────────────────────────────────────────────────
 
 function nameInfo(cls, opts = {}) {
   return {
@@ -408,241 +407,6 @@ function nameInfo(cls, opts = {}) {
     proximity: opts.proximity ?? (cls === 'block' ? 0 : 1),
   };
 }
-
-// Build an AssignScope; derives the local/global order from byName unless given.
-function scope(opts = {}) {
-  return {
-    fileGlobalsInOrder: opts.fileGlobals ?? [],
-    fnLocalsInOrder: opts.fnLocals ?? [],
-    fnGlobals: opts.fnGlobals ?? [],
-    fnKey: opts.fnKey ?? 'fn0',
-  };
-}
-
-test('assignColors: attention priority — direct block-locals win hues over nested/borrowed when scarce', () => {
-  // 6 locals, 5 hues. Priority: proximity (0 direct > 1 borrowed > 2 nested),
-  // then frequency. The two nested (proximity 2) low-freq names should lose.
-  const gl = new colors.GlobalColorLedger();
-  const ll = new colors.LocalColorLedger();
-  const byName = new Map([
-    ['direct1', nameInfo('block', { freq: 2, proximity: 0, block: 1 })],
-    ['direct2', nameInfo('block', { freq: 2, proximity: 0, block: 2 })],
-    ['direct3', nameInfo('block', { freq: 2, proximity: 0, block: 3 })],
-    ['borrowed', nameInfo('fn', { freq: 2, proximity: 1, block: 4 })],
-    ['nestedHi', nameInfo('block', { freq: 9, proximity: 2, block: 5 })], // high freq but nested
-    ['nestedLo', nameInfo('block', { freq: 2, proximity: 2, block: 6 })],
-  ]);
-  const fnLocals = ['direct1', 'direct2', 'direct3', 'borrowed', 'nestedHi', 'nestedLo'];
-  const plan = colors.assignColors(byName, gl, ll, scope({ fnLocals, fnKey: 'fn' }));
-  // All three direct + the borrowed + one nested (the higher-freq) get hues; the 6th overflows.
-  for (const n of ['direct1', 'direct2', 'direct3', 'borrowed']) {
-    assert.notEqual(plan.get(n)?.kind, 'neutral', `${n} (proximity<2) must tint`);
-    assert.ok(plan.get(n)?.poolIndex !== undefined);
-  }
-  // nestedHi beats nestedLo on frequency within the proximity-2 tier → nestedLo overflows.
-  assert.ok(plan.get('nestedHi')?.poolIndex !== undefined, 'higher-freq nested wins the last slot');
-  assert.ok(plan.get('nestedLo') === undefined || plan.get('nestedLo').kind === 'neutral', 'lower-freq nested overflows');
-});
-
-test('assignColors: salience — out-of-fn bold idg, fn/block≥2 id, once-used block neutral', () => {
-  const byName = new Map([
-    ['g', nameInfo('out', { file: 0 })],
-    ['p', nameInfo('fn', { block: 10 })],
-    ['b2', nameInfo('block', { freq: 2, block: 20 })],
-    ['b1', nameInfo('block', { freq: 1, block: 30 })], // once-used → neutral
-  ]);
-  const plan = colors.assignColors(
-    byName,
-    new colors.GlobalColorLedger(),
-    new colors.LocalColorLedger(),
-    scope({ fileGlobals: ['g'], fnLocals: ['p', 'b2', 'b1'] }),
-  );
-  assert.equal(plan.get('g').kind, 'idg'); // out-of-fn bold
-  assert.equal(plan.get('p').kind, 'id'); // fn-local normal
-  assert.equal(plan.get('b2').kind, 'id'); // block ≥2
-  const b1 = plan.get('b1');
-  assert.ok(b1 === undefined || b1.kind === 'neutral'); // once-used → neutral
-});
-
-test('assignColors: self is gold and never consumes a slot', () => {
-  const byName = new Map([
-    ['this', nameInfo('self')],
-    ['a', nameInfo('fn', { block: 1 })],
-    ['b', nameInfo('fn', { block: 2 })],
-  ]);
-  const plan = colors.assignColors(
-    byName,
-    new colors.GlobalColorLedger(),
-    new colors.LocalColorLedger(),
-    scope({ fnLocals: ['a', 'b'] }),
-  );
-  assert.equal(plan.get('this').kind, 'self');
-  assert.equal(plan.get('a').poolIndex, 0);
-  assert.equal(plan.get('b').poolIndex, 1);
-});
-
-test('assignColors: global hue fixed by FILE order regardless of visit order', () => {
-  const gl = new colors.GlobalColorLedger();
-  const ll = new colors.LocalColorLedger();
-  // Focus a block showing only g2 first.
-  const plan2 = colors.assignColors(
-    new Map([['g2', nameInfo('out', { file: 100 })]]),
-    gl,
-    ll,
-    scope({ fileGlobals: ['g1', 'g2'] }),
-  );
-  // Then a block showing g1.
-  const plan1 = colors.assignColors(
-    new Map([['g1', nameInfo('out', { file: 0 })]]),
-    gl,
-    ll,
-    scope({ fileGlobals: ['g1', 'g2'] }),
-  );
-  assert.equal(plan1.get('g1').poolIndex, 0);
-  assert.equal(plan2.get('g2').poolIndex, 1);
-});
-
-test('assignColors: LOCAL hue is stable across a function\'s sub-blocks (the cfg fix)', () => {
-  const gl = new colors.GlobalColorLedger();
-  const ll = new colors.LocalColorLedger();
-  const fnLocals = ['cfg', 'label', 'name']; // function-order
-  // Sub-block 1 (function body): cfg is a fn-local here.
-  const b1 = colors.assignColors(
-    new Map([['cfg', nameInfo('fn', { block: 5 })], ['label', nameInfo('block', { freq: 2, block: 9 })]]),
-    gl,
-    ll,
-    scope({ fnLocals, fnKey: 'loadConfig' }),
-  );
-  // Sub-block 2 (the `if`): cfg now reads as block-local, different block order.
-  const b2 = colors.assignColors(
-    new Map([['cfg', nameInfo('block', { freq: 3, block: 40 })]]),
-    gl,
-    ll,
-    scope({ fnLocals, fnKey: 'loadConfig' }),
-  );
-  // Sub-block 3 (the `for`): cfg again, yet another block order.
-  const b3 = colors.assignColors(
-    new Map([['cfg', nameInfo('block', { freq: 2, block: 70 })]]),
-    gl,
-    ll,
-    scope({ fnLocals, fnKey: 'loadConfig' }),
-  );
-  // cfg must keep ONE hue across all three sub-blocks.
-  assert.equal(b1.get('cfg').poolIndex, b2.get('cfg').poolIndex);
-  assert.equal(b2.get('cfg').poolIndex, b3.get('cfg').poolIndex);
-});
-
-test('assignColors: local ledger resets across DIFFERENT functions', () => {
-  const gl = new colors.GlobalColorLedger();
-  const ll = new colors.LocalColorLedger();
-  // Function A: `x` is the first local → slot index 0.
-  const a = colors.assignColors(
-    new Map([['x', nameInfo('fn', { block: 1 })]]),
-    gl,
-    ll,
-    scope({ fnLocals: ['x'], fnKey: 'fnA' }),
-  );
-  // Function B: `y` is the first local → also slot index 0 (fresh scope).
-  const b = colors.assignColors(
-    new Map([['y', nameInfo('fn', { block: 1 })]]),
-    gl,
-    ll,
-    scope({ fnLocals: ['y'], fnKey: 'fnB' }),
-  );
-  assert.equal(a.get('x').poolIndex, 0);
-  assert.equal(b.get('y').poolIndex, 0);
-});
-
-test('assignColors: slots are a per-BLOCK budget — sibling sub-blocks reuse hues, no overflow', () => {
-  // A function with MORE locals than the 5-hue rotation, but split across sibling
-  // sub-blocks so no single block needs >5. Every block must tint all its locals.
-  const ll = new colors.LocalColorLedger();
-  const gl = new colors.GlobalColorLedger();
-  // function-appearance order across the whole function (8 locals > 5 slots)
-  const fnLocals = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-  const mk = (names) => new Map(names.map((n, i) => [n, nameInfo('block', { freq: 2, block: i })]));
-
-  // sub-block 1 uses a,b,c
-  const p1 = colors.assignColors(mk(['a', 'b', 'c']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
-  // sub-block 2 uses d,e,f (siblings — reuse slots)
-  const p2 = colors.assignColors(mk(['d', 'e', 'f']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
-  // sub-block 3 uses g,h
-  const p3 = colors.assignColors(mk(['g', 'h']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
-
-  for (const [p, names] of [[p1, ['a', 'b', 'c']], [p2, ['d', 'e', 'f']], [p3, ['g', 'h']]]) {
-    for (const n of names) {
-      assert.notEqual(p.get(n)?.kind, 'neutral', `${n} must tint (per-block budget, not per-function)`);
-      assert.ok(p.get(n)?.poolIndex !== undefined, `${n} got a hue`);
-    }
-    // within a block, hues are distinct
-    const idxs = names.map((n) => p.get(n).poolIndex);
-    assert.equal(new Set(idxs).size, idxs.length, 'distinct hues within a block');
-  }
-
-  // Stability: revisiting sub-block 1 keeps a/b/c's original hues.
-  const p1again = colors.assignColors(mk(['a', 'b', 'c']), gl, ll, scope({ fnLocals, fnKey: 'fn' }));
-  for (const n of ['a', 'b', 'c']) {
-    assert.equal(p1again.get(n).poolIndex, p1.get(n).poolIndex, `${n} hue stable across revisit`);
-  }
-});
-
-test('assignColors: >5 locals in ONE block — the 6th+ overflow to neutral', () => {
-  const ll = new colors.LocalColorLedger();
-  const gl = new colors.GlobalColorLedger();
-  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']; // 7 in one block, 5 slots
-  const plan = colors.assignColors(
-    new Map(names.map((n, i) => [n, nameInfo('block', { freq: 2, block: i })])),
-    gl,
-    ll,
-    scope({ fnLocals: names, fnKey: 'fn' }),
-  );
-  const tinted = names.filter((n) => plan.get(n)?.poolIndex !== undefined);
-  const neutral = names.filter((n) => plan.get(n) === undefined || plan.get(n).kind === 'neutral');
-  assert.equal(tinted.length, colors.INTERLEAVE.length, 'exactly rotation-many tint');
-  assert.equal(neutral.length, names.length - colors.INTERLEAVE.length, 'the rest overflow to neutral');
-});
-
-test('assignColors: local hues skip slots held by globals in the same function', () => {
-  const gl = new colors.GlobalColorLedger();
-  const ll = new colors.LocalColorLedger();
-  // Global `g` appears in the function → its slot is reserved from locals.
-  const plan = colors.assignColors(
-    new Map([['g', nameInfo('out', { file: 0 })], ['loc', nameInfo('fn', { block: 5 })]]),
-    gl,
-    ll,
-    scope({ fileGlobals: ['g'], fnGlobals: ['g'], fnLocals: ['loc'], fnKey: 'fn0' }),
-  );
-  assert.notEqual(plan.get('loc').poolIndex, plan.get('g').poolIndex);
-});
-
-test('assignColors: overflow → neutral, never recycles a hue', () => {
-  const byName = new Map();
-  for (let i = 0; i < 8; i++) {
-    byName.set('g' + i, nameInfo('out', { file: i }));
-  }
-  const globals = [...byName.keys()];
-  const plan = colors.assignColors(byName, new colors.GlobalColorLedger(), new colors.LocalColorLedger(), scope({ fileGlobals: globals }));
-  const used = [...plan.values()].filter((e) => e.kind === 'idg').map((e) => e.poolIndex);
-  assert.equal(used.length, colors.INTERLEAVE.length, 'uses exactly the rotation size (5 after moegi pull)');
-  assert.equal(new Set(used).size, used.length); // never recycle
-  const neutrals = [...plan.values()].filter((e) => e.kind === 'neutral').length;
-  assert.equal(neutrals, byName.size - used.length);
-});
-
-test('assignColors: determinism — same input yields same plan', () => {
-  const mk = () =>
-    new Map([
-      ['g', nameInfo('out', { file: 0 })],
-      ['p', nameInfo('fn', { block: 5 })],
-      ['b', nameInfo('block', { freq: 2, block: 9 })],
-    ]);
-  const s = () => scope({ fileGlobals: ['g'], fnLocals: ['p', 'b'] });
-  const p1 = colors.assignColors(mk(), new colors.GlobalColorLedger(), new colors.LocalColorLedger(), s());
-  const p2 = colors.assignColors(mk(), new colors.GlobalColorLedger(), new colors.LocalColorLedger(), s());
-  assert.deepEqual([...p1.entries()], [...p2.entries()]);
-});
-
-// ── traces.ts ─────────────────────────────────────────────────────────────────
 
 test('computeTraceRanges: block-local clipped to block, global file-wide', () => {
   const block = { start: 10, end: 20 };
@@ -735,7 +499,7 @@ test('computeTraceRanges: neutral plan entries produce no ranges', () => {
 test('lexicalRisk: await/async cyan, as/any danger, numbers clay', () => {
   const text = 'async function f() { const x = await g() as any; return 42 }';
   const block = { start: text.indexOf('{'), end: text.length };
-  const r = risk.lexicalRisk(text, block);
+  const r = risk.lexicalRisk(text, block, 'typescript');
   const asyncWords = r.async.map((rr) => text.slice(rr.start, rr.end));
   const dangerWords = r.danger.map((rr) => text.slice(rr.start, rr.end));
   const nums = r.numberEngaged.map((rr) => text.slice(rr.start, rr.end));
@@ -772,6 +536,15 @@ test('lexicalRisk: `0xE+1` hex literal stops before + (hex-E exponent fix)', () 
   assert.ok(!nums.some((n) => n.includes('+')), 'trailing + after hex E must not be consumed');
 });
 
+/** Every word occurrence of `names` as the classifier's occurrence map would hold it. */
+function occurrencesOf(text, names) {
+  const m = new Map();
+  for (const n of names) {
+    m.set(n, [...text.matchAll(new RegExp(`\\b${n}\\b`, 'g'))].map((x) => ({ start: x.index, end: x.index + n.length })));
+  }
+  return m;
+}
+
 test('escapeRisk: write to out-of-block binding marked, block-local write ignored', () => {
   // total is fn/out (escapes); local is block-local (bookkeeping, ignored).
   const text = '{ total += 1; local = 2; total++; }';
@@ -781,6 +554,7 @@ test('escapeRisk: write to out-of-block binding marked, block-local write ignore
       ['total', nameInfo('out')],
       ['local', nameInfo('block')],
     ]),
+    occurrences: occurrencesOf(text, ['total', 'local']),
   };
   const esc = risk.escapeRisk(text, block, classification);
   const names = esc.map((r) => text.slice(r.start, r.end));

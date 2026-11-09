@@ -1,0 +1,28 @@
+corpus,files,measure,server,before,after
+npm,1124,characters in the wrong region (TypeScript 6.0.3 parser),-,0,0
+node_modules,998,characters in the wrong region (TypeScript 6.0.3 parser),-,0,0
+lib.d.ts,108,characters in the wrong region (TypeScript 6.0.3 parser),-,0,0
+fixture edges.js,1,characters in the wrong region (TypeScript 6.0.3 parser),-,4,4
+npm,1124,non-space characters compared,-,4210538,4210538
+node_modules,998,non-space characters compared,-,6552840,6552840
+lib.d.ts,108,non-space characters compared,-,3128560,3128560
+npm sample,220,tints on non-data names,tsserver,187,38
+node_modules sample,200,tints on non-data names,tsserver,258,138
+npm sample,220,tints on non-data names,none,1916,2
+node_modules sample,200,tints on non-data names,none,1221,52
+npm sample,220,tints that change when the server answers,both,3799,1255
+node_modules sample,200,tints that change when the server answers,both,3689,2340
+npm sample,220,escape marks,tsserver,1166,1072
+node_modules sample,200,escape marks,tsserver,1257,1185
+npm,1124,identifiers clicked (not after a dot),-,283761,283761
+node_modules,998,identifiers clicked (not after a dot),-,448522,448522
+npm,1124,clicks that focus a pattern brace,-,5831,0
+node_modules,998,clicks that focus a pattern brace,-,4506,0
+npm + node_modules,2123,self identifiers painted keyword grey,-,508,0
+npm + node_modules,2123,files with a self identifier,-,50,50
+npm + node_modules,2123,this.x writes in a capitalised function tsserver types class,-,534,534
+npm + node_modules,2123,files with such writes,-,64,64
+npm + node_modules,2123,namespace-import uses restored,-,0,124
+npm + node_modules,2123,files with restored namespace uses,-,0,21
+lib.d.ts sample,13,tints in declaration files,tsserver,192,0
+lib.d.ts sample,13,tints in declaration files,none,223,0

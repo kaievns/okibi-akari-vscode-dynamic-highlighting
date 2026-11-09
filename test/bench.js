@@ -1,38 +1,55 @@
-const focus=require('../out/focus'), classify=require('../out/classify'), sc=require('../out/scopecolor'), fs=require('fs');
-const text=fs.readFileSync(__dirname+'/../samples/sample.go','utf8');
-const tokens=require('./fixtures/sample.go.tokens.json');
-const N=200;
-const t=(label,fn)=>{const s=process.hrtime.bigint(); for(let i=0;i<N;i++) fn(); const e=process.hrtime.bigint(); console.log(label.padEnd(38), (Number(e-s)/1e6/N).toFixed(3)+' ms/op');};
+'use strict';
+// Per-operation cost on one real sample (samples/sample.go, real gopls tokens).
+// The per-version steps run once per edit; the per-block steps run on every
+// focus change. Large files: test/bench-scale.js.
+const focus = require('../out/focus');
+const classify = require('../out/classify');
+const sc = require('../out/scopecolor');
+const { lex } = require('../out/lex');
+const fs = require('fs');
 
-t('scanBraceBlocks (whole file)', ()=>focus.scanBraceBlocks(text));
-const allBlocks=focus.scanBraceBlocks(text);
-t('lexIdentifiers (whole file)', ()=>focus.lexIdentifiers(text));
-const fnRanges=[]; let i=-1; while((i=text.indexOf('func ',i+1))!==-1){const o=text.indexOf('{',i);const b=allBlocks.find(bl=>bl.openOffset===o);if(b)fnRanges.push({start:i,end:b.closeOffset+1});}
-const b=allBlocks.find(x=>x.openOffset===text.indexOf('{',text.indexOf('func summarize')));
-const lexR=focus.lexRegionFor(text,b), declR=focus.declRegionFor(text,b);
-const subs=allBlocks.filter(x=>x.openOffset>b.openOffset&&x.closeOffset<b.closeOffset).map(x=>focus.lexRegionFor(text,x));
-t('classifyFromSemantic (1 block)', ()=>classify.classifyFromSemantic(text,lexR,classify.enclosingFnOf(fnRanges,b.openOffset),fnRanges,tokens,1,'k',classify.outermostFnOf(fnRanges,b.openOffset),declR,subs));
+const L = 'go';
+const text = fs.readFileSync(`${__dirname}/../samples/sample.go`, 'utf8');
+const tokens = require('./fixtures/sample.go.tokens.json');
+const N = 200;
+const t = (label, fn) => {
+  const s = process.hrtime.bigint();
+  for (let i = 0; i < N; i++) fn();
+  console.log(label.padEnd(42), `${(Number(process.hrtime.bigint() - s) / 1e6 / N).toFixed(3)} ms/op`);
+};
 
-// full scope pass (what classifyScope does): classify every block in a scope
-const scopeFn=fnRanges.find(r=>text.slice(r.start,r.start+26).includes('summarize'));
-const sb=allBlocks.filter(x=>x.openOffset>=scopeFn.start&&x.closeOffset<scopeFn.end);
-t(`classify SCOPE (${sb.length} blocks)`, ()=>{
-  const per=sb.map(bl=>{
-    const L=focus.lexRegionFor(text,bl), D=focus.declRegionFor(text,bl);
-    const S=allBlocks.filter(x=>x.openOffset>bl.openOffset&&x.closeOffset<bl.closeOffset).map(x=>focus.lexRegionFor(text,x));
-    const c=classify.classifyFromSemantic(text,L,classify.enclosingFnOf(fnRanges,bl.openOffset),fnRanges,tokens,1,focus.focusKeyOf(bl),classify.outermostFnOf(fnRanges,bl.openOffset),D,S);
-    return {focusKey:c.focusKey,byName:c.byName};
-  });
-  sc.colorScope(per,5);
+const blocks = focus.scanBlocks(text, L);
+const fnRanges = blocks.map((b) => focus.functionScopeOf(text, b, L)).filter(Boolean);
+const sorted = [...blocks].sort((a, b) => a.openOffset - b.openOffset);
+
+console.log('per version');
+t('  lex (unmemoised)', () => lex(text, L));
+t('  scanBlocks (lex memoised)', () => focus.scanBlocks(text, L));
+t('  buildFileIndex', () => classify.buildFileIndex(text, tokens, fnRanges.slice(), L));
+
+const index = classify.buildFileIndex(text, tokens, fnRanges, L);
+const classifyBlock = (bl, scope) => classify.classifyFromSemantic(
+  text, focus.lexRegionFor(text, bl, L), classify.enclosingFnOf(fnRanges, bl.openOffset), fnRanges, tokens, 1,
+  focus.focusKeyOf(bl), scope, focus.declRegionFor(text, bl, L),
+  sorted.filter((x) => x.openOffset > bl.openOffset && x.closeOffset < bl.closeOffset).map((x) => focus.scopeRegionFor(text, x, L)),
+  index,
+);
+const b = blocks.find((x) => x.openOffset === text.indexOf('{', text.indexOf('func summarize')));
+const scopeFn = classify.outermostFnOf(fnRanges, b.openOffset);
+const scopeBlocks = blocks.filter((x) => x.openOffset >= scopeFn.start && x.closeOffset < scopeFn.end);
+
+console.log('per focus change (cached index)');
+t('  classifyFromSemantic (1 block)', () => classifyBlock(b, scopeFn));
+t(`  classify + colour one scope (${scopeBlocks.length} blocks)`, () => {
+  sc.colorScope(scopeBlocks.map((bl) => {
+    const c = classifyBlock(bl, scopeFn);
+    return { focusKey: c.focusKey, byName: c.byName };
+  }), 5);
 });
-// worst case: whole-file scope (every block)
-t(`classify ALL blocks (${allBlocks.length})`, ()=>{
-  const per=allBlocks.map(bl=>{
-    const L=focus.lexRegionFor(text,bl), D=focus.declRegionFor(text,bl);
-    const S=allBlocks.filter(x=>x.openOffset>bl.openOffset&&x.closeOffset<bl.closeOffset).map(x=>focus.lexRegionFor(text,x));
-    const c=classify.classifyFromSemantic(text,L,classify.enclosingFnOf(fnRanges,bl.openOffset),fnRanges,tokens,1,focus.focusKeyOf(bl),classify.outermostFnOf(fnRanges,bl.openOffset),D,S);
-    return {focusKey:c.focusKey,byName:c.byName};
-  });
-  sc.colorScope(per,5);
-});
-console.log('\nfile:', text.length, 'chars |', allBlocks.length, 'blocks |', tokens.length, 'tokens');
+const top = focus.topLevelBlock(text);
+const excludes = focus.topLevelExcludes(text, blocks, L);
+t('  classify the module top level', () => classify.classifyFromSemantic(
+  text, focus.lexRegionFor(text, top, L), undefined, fnRanges, tokens, 1, 'top', undefined,
+  focus.declRegionFor(text, top, L), sorted.map((x) => focus.scopeRegionFor(text, x, L)), index, excludes,
+));
+console.log(`\nfile: ${text.length} chars | ${blocks.length} blocks | ${tokens.length} tokens`);

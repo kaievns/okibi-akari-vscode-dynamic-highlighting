@@ -99,7 +99,7 @@ test('PhaseMachine: reset() drops to Survey — opening a file must not enter Fo
   assert.equal(m.current, phases.Phase.Focus);
 });
 
-// ── The engagement gate ──────────────────────────────────────────────────────
+// ── The engagement check ─────────────────────────────────────────────────────
 //
 // Opening a tab produces this sequence, captured from the extension's own debug
 // channel after three failed fixes:
@@ -143,7 +143,7 @@ function engagementHarness() {
   };
 }
 
-test('engagement gate: the captured tab-open sequence stays in Survey', () => {
+test('engagement check: the captured tab-open sequence stays in Survey', () => {
   // Verbatim from the debug trace that finally identified this.
   const h = engagementHarness();
   h.refresh(100); // refresh     at=0:0
@@ -152,7 +152,7 @@ test('engagement gate: the captured tab-open sequence stays in Survey', () => {
   assert.equal(h.phase, phases.Phase.Survey);
 });
 
-test('engagement gate: a kindless caret MOVE is still not engagement', () => {
+test('engagement check: a kindless caret MOVE is still not engagement', () => {
   // This is the exact case the position-based attempt got wrong: the caret really
   // does move, so "moved" cannot mean "the user did it".
   const h = engagementHarness();
@@ -162,7 +162,7 @@ test('engagement gate: a kindless caret MOVE is still not engagement', () => {
   assert.equal(h.phase, phases.Phase.Survey);
 });
 
-test('engagement gate: every attributed input kind engages', () => {
+test('engagement check: every attributed input kind engages', () => {
   for (const [kind, label] of [[1, 'Keyboard'], [2, 'Mouse'], [3, 'Command']]) {
     const h = engagementHarness();
     h.refresh(100);
@@ -173,9 +173,10 @@ test('engagement gate: every attributed input kind engages', () => {
   }
 });
 
-test('engagement gate: a same-position click still engages (kind is enough)', () => {
-  // Regression guard for the "stuck until I arrow-key" bug: a click that does not
-  // move the caret must still work, so engagement must not require movement.
+test('engagement check: a same-position click still engages (kind is enough)', () => {
+  // A click that collapses a selection at the caret reports Mouse with the caret
+  // unchanged, so engagement must not require movement. A click that changes no
+  // cursor state reports nothing (docs/classification-rules.md § The restored-caret event).
   const h = engagementHarness();
   h.refresh(100);
   h.sel('a.go', undefined, 101);
@@ -183,7 +184,7 @@ test('engagement gate: a same-position click still engages (kind is enough)', ()
   assert.equal(h.phase, phases.Phase.Focus);
 });
 
-test('engagement gate: typing engages a never-clicked document', () => {
+test('engagement check: typing engages a never-clicked document', () => {
   const h = engagementHarness();
   h.refresh(100);
   h.sel('a.go', undefined, 101);
@@ -191,7 +192,7 @@ test('engagement gate: typing engages a never-clicked document', () => {
   assert.equal(h.phase, phases.Phase.Edit);
 });
 
-test('engagement gate: switching to a fresh tab drops to Survey; back to an engaged one restores', () => {
+test('engagement check: switching to a fresh tab drops to Survey; back to an engaged one restores', () => {
   const h = engagementHarness();
   h.refresh(100);
   h.sel('a.ts', 1, 101); // real keystroke → engaged
@@ -206,11 +207,11 @@ test('engagement gate: switching to a fresh tab drops to Survey; back to an enga
   assert.equal(h.phase, phases.Phase.Focus, 'a document you worked in stays engaged');
 });
 
-test('clay numbers ride FOCUS, not Edit — they share band 2\'s gate', () => {
+test('clay numbers ride FOCUS, not Edit — they share band 2\'s phase check', () => {
   // The spec pairs --syn-number ("literal numbers REST receded") with
   // --syn-number-engaged ("clay — focused scope, engaged phases only"). BOTH are
   // band-1 `--syn-*` tokens, not `--risk-*`, and a scope becomes *engaged* at
-  // Focus. Gating clay on Edit alone left numbers slate for the whole of Focus.
+  // Focus. Holding clay to Edit alone left numbers slate for the whole of Focus.
   const showClay = (engaged, phase, block) =>
     engaged && block !== null && (phase === phases.Phase.Focus || phase === phases.Phase.Edit);
   const showRisk = (engaged, phase, block) =>
@@ -229,8 +230,8 @@ test('clay numbers ride FOCUS, not Edit — they share band 2\'s gate', () => {
   assert.equal(showClay(true, phases.Phase.Focus, null), false, 'no block, no clay');
 });
 
-test('engagement gate: an unengaged document paints NOTHING even if the phase is Focus', () => {
-  // The final gate in render(). Three fixes tried to keep the PHASE correct on a
+test('engagement check: an unengaged document paints NOTHING even if the phase is Focus', () => {
+  // The final check in render(). Three fixes tried to keep the PHASE correct on a
   // tab switch and a newly shown file still lit up, so the invariant is enforced
   // where decorations are actually applied: paint requires engagement. Any path
   // that leaves the phase wrong is then harmless.
@@ -826,4 +827,355 @@ test('degenerate: risk scanners on empty/odd input', () => {
   assert.deepEqual(risk.lexicalRisk('', { start: 0, end: 0 }), { async: [], danger: [], numberEngaged: [] });
   const esc = risk.escapeRisk('{ }', { start: 0, end: 3 }, { byName: new Map() });
   assert.deepEqual(esc, []);
+});
+
+// ── wrapped and typed signatures, type-shaped names, the heuristic fallback ───
+
+test('a TS signature wrapped over several lines keeps its parameters', () => {
+  const src = 'function f(\n  alpha: number,\n  beta: string,\n): void {\n  use(alpha, beta);\n}\n';
+  const b = focus.scanBlocks(src, 'typescript')[0];
+  assert.equal(focus.isFunctionHeader(src, b, 'typescript'), true);
+  assert.equal(focus.lexRegionFor(src, b, 'typescript').start, src.indexOf('('));
+  assert.equal(focus.declRegionFor(src, b, 'typescript').start, b.openOffset, 'parameters stay fn-scoped');
+  // The same for a wrapped `if` condition: control flow, not a function.
+  const cond = 'if (ready &&\n    count > 0) {\n  go();\n}\n';
+  const c = focus.scanBlocks(cond, 'typescript')[0];
+  assert.equal(focus.functionScopeOf(cond, c, 'typescript'), null);
+  assert.equal(focus.declRegionFor(cond, c, 'typescript').start, 0, 'the whole condition is the header');
+});
+
+test('a typed concise arrow starts at its parameters, not its return type', () => {
+  const src = 'export function report(items: number[], scale: number) {\n  const fmt = (n: number): string => (n * scale).toFixed(2);\n  return items.map(fmt).join(", ");\n}\n';
+  const arrow = focus.scanBlocks(src, 'typescript').find((b) => b.depth === 1);
+  assert.equal(src.slice(arrow.openOffset, arrow.closeOffset + 1), '(n: number): string => (n * scale).toFixed(2)');
+  // An object key before an arrow is not a return type.
+  const obj = 'const o = { key: (a) => a + 1 };\n';
+  const a = focus.scanBlocks(obj, 'typescript').find((b) => b.headerStart === b.openOffset);
+  assert.equal(obj.slice(a.openOffset, a.closeOffset + 1).trim(), '(a) => a + 1');
+});
+
+test('a JS variable named `type` is not a type declaration', () => {
+  const src = 'function f(opts) {\n  type = pick(opts,\n    fallback, opts);\n  return type;\n}\n';
+  const toks = focus.lexIdentifiers(src, 0, src.length, 'javascript')
+    .filter((i) => ['type', 'opts', 'fallback'].includes(i.name))
+    .map((i) => ({ ...i, type: 'variable', modifiers: [] }));
+  const idx = classify.buildFileIndex(src, toks, [], 'javascript');
+  assert.deepEqual(['type', 'opts', 'fallback'].map((n) => idx.occurrences.get(n)?.length), [2, 3, 1]);
+  // Real declarations are still excluded whole.
+  for (const decl of ['type Reducer<T> = (acc: T) => T;\n', 'export interface Job { (acc: number): void }\n', 'pub type Fold = fn(acc: u32) -> u32;\n']) {
+    const acc = { name: 'acc', offset: decl.indexOf('acc'), length: 3, type: 'parameter', modifiers: ['declaration'] };
+    assert.equal(classify.buildFileIndex(decl, [acc], [], 'typescript').occurrences.size, 0, decl);
+  }
+});
+
+test('member position: a spread or range operand is a read, not a member', () => {
+  const src = 'function f(...args) {\n  g(...args);\n  for (const x of xs.slice(0, args.length)) use(x);\n}\n';
+  const toks = focus.lexIdentifiers(src, 0, src.length, 'javascript')
+    .filter((i) => i.name === 'args')
+    .map((i) => ({ ...i, type: 'parameter', modifiers: i.offset < 15 ? ['declaration'] : [] }));
+  assert.equal(classify.buildFileIndex(src, toks, [], 'javascript').occurrences.get('args').length, 3);
+  const rs = 'fn f(n: u32) {\n    for i in 0..n { use(i); }\n}\n';
+  const n = focus.lexIdentifiers(rs, 0, rs.length, 'rust').filter((i) => i.name === 'n')
+    .map((i) => ({ ...i, type: 'parameter', modifiers: [] }));
+  assert.equal(classify.buildFileIndex(rs, n, [], 'rust').occurrences.get('n').length, 2, '`0..n` reads n');
+});
+
+/** The heuristic classification of the block at `needle` (no semantic tokens), as painted-name sets. */
+function heuristicNames(src, lang, needle) {
+  const blocks = focus.scanBlocks(src, lang);
+  const at = src.indexOf(needle);
+  const block = focus.innermostBlock(blocks, src.slice(0, at).split('\n').length - 1, at, src);
+  const fnRanges = blocks.map((b) => focus.functionScopeOf(src, b, lang)).filter(Boolean);
+  const range = focus.lexRegionFor(src, block, lang);
+  const excludes = focus.isTopLevelBlock(block) ? focus.topLevelExcludes(src, blocks, lang) : [];
+  const subs = blocks.filter((b) => b.openOffset > block.openOffset && b.closeOffset < block.closeOffset)
+    .map((b) => focus.scopeRegionFor(src, b, lang));
+  const c = classify.classifyFromHeuristic(src, range, classify.enclosingFnOf(fnRanges, block.openOffset), fnRanges,
+    1, 'k', classify.outermostFnOf(fnRanges, block.openOffset), focus.declRegionFor(src, block, lang), subs,
+    lang, excludes, blocks);
+  return sc.visibleInBlock(c.byName, 5, focus.isTopLevelBlock(block));
+}
+
+/** The heuristic byName of the block at `needle`, as `name:cls:proximity`. */
+function heuristicInfo(src, lang, needle) {
+  const blocks = focus.scanBlocks(src, lang);
+  const at = src.indexOf(needle);
+  const block = focus.innermostBlock(blocks, src.slice(0, at).split('\n').length - 1, at, src);
+  const fnRanges = blocks.map((b) => focus.functionScopeOf(src, b, lang)).filter(Boolean);
+  const c = classify.classifyFromHeuristic(src, focus.lexRegionFor(src, block, lang), classify.enclosingFnOf(fnRanges, block.openOffset),
+    fnRanges, 1, 'k', classify.outermostFnOf(fnRanges, block.openOffset), focus.declRegionFor(src, block, lang), [], lang, [], blocks);
+  return [...c.byName].map(([n, i]) => `${n}:${i.cls}:${i.proximity}`).sort();
+}
+
+test('the top level never sees function parameters or members', () => {
+  const src = [
+    'const LIMIT = 10;',
+    '',
+    'function a(items) {',
+    '  let count = 0;',
+    '  for (const item of items) { count += item.size; }',
+    '  return count;',
+    '}',
+    '',
+    'function b(items) {',
+    '  let count = items.length;',
+    '  return count * LIMIT;',
+    '}',
+    '',
+  ].join('\n');
+  assert.deepEqual(heuristicNames(src, 'javascript', 'LIMIT = 10'), ['LIMIT']);
+  assert.deepEqual(heuristicNames(src, 'javascript', 'let count = 0').sort(), ['count', 'items']);
+});
+
+test('string contents, callees and undeclared names are not data', () => {
+  const src = [
+    'function render(kind) {',
+    "  const label = 'the label for kind';",
+    "  if (kind === 'error') { return label; }",
+    "  return format('unknown kind', kind);",
+    '}',
+    '',
+  ].join('\n');
+  assert.deepEqual(heuristicNames(src, 'javascript', 'const label').sort(), ['kind', 'label']);
+  const go = 'package main\n\nfunc run(cfg Config) int {\n\tn := len(cfg.Items)\n\treturn n + helper(cfg)\n}\n';
+  assert.deepEqual(heuristicNames(go, 'go', 'n := len').sort(), ['cfg', 'n'], 'no Config, Items, helper or len');
+});
+
+test('a `{` inside a parameter list is a pattern, not the function body', () => {
+  const src = 'function describe({ name, retries = 1, tags = {} }) {\n  return name + retries;\n}\n';
+  const blocks = focus.scanBlocks(src, 'javascript');
+  const body = blocks.find((b) => src[b.openOffset - 2] === ')');
+  for (const b of blocks) {
+    const expected = b === body;
+    assert.equal(focus.isFunctionHeader(src, b, 'javascript'), expected, JSON.stringify(src.slice(b.openOffset, b.closeOffset + 1)));
+    assert.equal(focus.functionScopeOf(src, b, 'javascript') !== null, expected);
+  }
+  assert.equal(focus.lexRegionFor(src, body, 'javascript').start, src.indexOf('('));
+});
+
+// ── concise arrows without semicolons, function types, same-line blocks ──────
+
+const NOSEMI = require('fs').readFileSync(require('path').join(__dirname, 'fixtures/classify/nosemi.ts'), 'utf8');
+const NOSEMI_TOKENS = require('./fixtures/classify/nosemi.ts.tokens.json');
+const arrowTexts = (src, lang) => focus.scanBlocks(src, lang)
+  .filter((b) => b.headerStart === b.openOffset)
+  .map((b) => src.slice(b.openOffset, b.closeOffset + 1).trimEnd());
+
+test('a concise arrow without a semicolon ends at its line; an operator line continues it', () => {
+  assert.deepEqual(arrowTexts(NOSEMI, 'typescript'), [
+    '(x: number) => x * 2',
+    '() => console.log(name)',
+    '(ys: number[]) =>\n  ys\n    .map((y) => y + 1)\n    .filter((y) => y > hits)',
+    '(y) => y + 1',
+    '(y) => y > hits',
+  ]);
+  const js = 'const f = (a) => a\n  + 1\nconst g = (b) => b\n\n  + 2\nlet h = (c) => c\nh = 3\n';
+  assert.deepEqual(arrowTexts(js, 'javascript'), ['(a) => a\n  + 1', '(b) => b', '(c) => c']);
+});
+
+test('an arrow in type position is a function type, not a scope', () => {
+  const types = [
+    'type Handler = (e: Event) => void\n',
+    'type Curried = (a: number) => (b: number) => number;\n',
+    'type U = string | ((x: number) => void);\n',
+    'let cb: (x: number) => void = noop;\n',
+    'function on(name: string): () => void {\n  return noop;\n}\n',
+    'function g(cb?: (x: number) => void) {}\n',
+    'class A {\n  handler: (e: Event) => void = noop;\n}\n',
+    'interface I {\n  cb: (x: number) => void\n}\n',
+    'const p = make as (x: number) => void;\n',
+    'const m: Map<string, (x: number) => void> = new Map();\n',
+  ];
+  for (const src of types) {
+    assert.deepEqual(arrowTexts(src, 'typescript'), [], src);
+  }
+  const values = [
+    ['const o = { key: (a) => a + 1 };\n', '(a) => a + 1'],
+    ['const f = ok ? g : (x) => x;\n', '(x) => x'],
+    ['const fmt = (n: number): string => n.toFixed(2);\n', '(n: number): string => n.toFixed(2)'],
+    ['run((x: number) => x * 2);\n', '(x: number) => x * 2'],
+  ];
+  for (const [src, arrow] of values) {
+    assert.deepEqual(arrowTexts(src, 'typescript'), [arrow], src);
+  }
+  // A braced function type's object literal type is no function either.
+  const literal = 'type F = () => { a: number };\n';
+  assert.equal(focus.functionScopeOf(literal, focus.scanBlocks(literal, 'typescript')[0], 'typescript'), null);
+  const value = 'const g = () => { return 1 };\n';
+  assert.notEqual(focus.functionScopeOf(value, focus.scanBlocks(value, 'typescript')[0], 'typescript'), null);
+});
+
+test('parameter names inside a function type are not data', () => {
+  const idx = classify.buildFileIndex(NOSEMI, NOSEMI_TOKENS, [], 'typescript');
+  const iDecl = NOSEMI.indexOf('(i: number) => number') + 1;
+  assert.ok(!idx.occurrences.get('i').some((r) => r.start === iDecl), 'commaRun: (i: number) => number');
+  assert.ok(!idx.occurrences.has('e'), 'type Handler = (e: Event) => void');
+  assert.equal(idx.declOffsets.get('i').length, 1, 'only the loop declares i');
+});
+
+test('no function range runs past its function: a no-semicolon global stays global', async () => {
+  const stub = require('./vscode-stub');
+  const vs = stub.install();
+  const { Classifier } = require('../out/classify-lsp');
+  const { legend, data } = stub.encodeTokens(NOSEMI, NOSEMI_TOKENS);
+  stub.clearLspResponses();
+  stub.setLspResponses({
+    'vscode.provideDocumentSemanticTokensLegend': legend,
+    'vscode.provideDocumentSemanticTokens': { data },
+    'vscode.executeDocumentSymbolProvider': [],
+  });
+  const doc = new stub.TextDocument(NOSEMI, 'typescript', `file:///nosemi-${Math.random()}.ts`);
+  const blocks = focus.scanBlocks(NOSEMI, 'typescript');
+  const body = blocks.find((b) => NOSEMI.slice(b.openOffset, b.openOffset + 12) === '{\n  hits += ');
+  const r = await new Classifier().classifyScope(doc, body, 5, { isCancellationRequested: false }, { text: NOSEMI, blocks });
+  const hits = r.focused.byName.get('hits');
+  assert.deepEqual([hits.cls, hits.isCapture], ['out', false], 'a module global, painted bold');
+  assert.equal(r.focused.colorScopeFn.end, body.closeOffset + 1, 'the colour scope is f itself');
+  void vs;
+});
+
+test('a function-typed return annotation does not make the rest of the file one scope', () => {
+  const fns = Array.from({ length: 400 }, (_, k) => `export function f${k}(a: number) {\n  const b = a + ${k}\n  return b\n}\n`);
+  const src = `export function on(name: string): () => void {\n  return () => console.log(name)\n}\n\n${fns.join('\n')}`;
+  const blocks = focus.scanBlocks(src, 'typescript');
+  const fnRanges = blocks.map((b) => focus.functionScopeOf(src, b, 'typescript')).filter(Boolean);
+  const last = blocks[blocks.length - 1];
+  const scope = classify.outermostFnOf(fnRanges, last.openOffset);
+  assert.ok(scope.start > src.lastIndexOf('export function'), 'the last function is its own colour scope');
+  assert.ok(fnRanges.every((r) => r.end - r.start < 200), 'no range spans other functions');
+});
+
+test('blocks that open on one line at one depth get distinct focus keys', () => {
+  const src = 'export function pick(items: number[], limit: number): number[] {\n  return items.map((x) => x * 2 + x).filter((y) => y > limit && y < 99);\n}\n';
+  const keys = focus.scanBlocks(src, 'typescript').map((b) => focus.focusKeyOf(b));
+  assert.deepEqual(keys, ['0#0', '1#1', '1#1#1']);
+  // Typing on the header line keeps the key: the slot counts blocks, not columns.
+  const typed = src.replace('return items', 'return  items');
+  assert.deepEqual(focus.scanBlocks(typed, 'typescript').map((b) => focus.focusKeyOf(b)), keys);
+  const py = 'def f(xs):\n    return sorted(xs, key=lambda a: a.x) + sorted(xs, key=lambda b: b.y)\n';
+  const pyKeys = focus.scanBlocks(py, 'python').map((b) => focus.focusKeyOf(b));
+  assert.equal(new Set(pyKeys).size, pyKeys.length, pyKeys.join(' '));
+});
+
+// ── heuristic declaration shapes ─────────────────────────────────────────────
+
+test('heuristic: destructuring, patterns, declarator lists and lambda parameters declare their names', () => {
+  const cases = [
+    ['typescript', 'function f(o: O) {\n  const { a, b: c } = o;\n  return a + c + a + c;\n}\n', 'return a', ['a', 'c', 'o']],
+    ['typescript', 'function f(o: O) {\n  const [a, b] = o;\n  return a + b + a + b;\n}\n', 'return a', ['a', 'b', 'o']],
+    ['javascript', 'function f() {\n  try { g(); } catch (err) {\n    log(err); log(err);\n  }\n}\n', 'log(err)', ['err']],
+    ['rust', 'fn f(o: (i32, i32)) -> i32 {\n    let (a, b) = o;\n    a + b + a + b\n}\n', 'a + b', ['a', 'b', 'o']],
+    ['rust', 'fn f(o: Option<i32>) -> i32 {\n    if let Some(v) = o {\n        return v + v;\n    }\n    0\n}\n', 'return v', ['o', 'v']],
+    ['rust', 'fn f(o: Option<i32>) -> i32 {\n    match o {\n        Some(v) => { v + v }\n        None => 0,\n    }\n}\n', 'v + v', ['v']],
+    ['rust', 'fn f(p: P) -> i32 {\n    let P { x, y } = p;\n    x + y + x + y\n}\n', 'x + y', ['p', 'x', 'y']],
+    ['c', 'int f(int n) {\n    int a, b = 0;\n    a = n;\n    return a + b + a + b;\n}\n', 'return a', ['a', 'b', 'n']],
+    ['c', 'int f(int n) {\n    int *p = &n;\n    char buf[4];\n    return *p + buf[0] + *p;\n}\n', 'return *p', ['buf', 'n', 'p']],
+    ['java', 'class A {\n  int f(int n) {\n    int a = 1, b = 2;\n    return a + b + a + b;\n  }\n}\n', 'return a', ['a', 'b', 'n']],
+    ['java', 'class A {\n  int f(int n) {\n    List<String> xs = new ArrayList<>();\n    Map<String, Integer> m = null;\n    return xs.size() + m.size() + xs.size();\n  }\n}\n', 'return xs', ['m', 'n', 'xs']],
+    ['kotlin', 'fun f(xs: List<Int>): Int {\n    var t = 0\n    xs.forEach { y -> t += y; t += y }\n    return t\n}\n', 't += y', ['t', 'xs', 'y']],
+    ['kotlin', 'fun f(p: Pair<Int, Int>): Int {\n    val (a, b) = p\n    return a + b + a + b\n}\n', 'return a', ['a', 'b', 'p']],
+    ['swift', 'func f(xs: [Int]) -> Int {\n    return xs.map { [weak self] v in v + v }.count\n}\n', 'v + v', ['v', 'xs']],
+    ['go', 'func f(n int) int {\n    var (\n        a = 1\n        b = 2\n    )\n    return a + b + a + b\n}\n', 'return a', ['a', 'b', 'n']],
+    ['python', 'def f(o):\n    (a, b) = o\n    return a + b + a + b\n', 'return a', ['a', 'b', 'o']],
+    ['python', 'def f(o):\n    a, *rest = o\n    return a + len(rest) + a + len(rest)\n', 'return a', ['a', 'o', 'rest']],
+    ['python', 'def f(m):\n    for i, (k, v) in enumerate(m):\n        use(i, k, v, i, k, v)\n', 'use(', ['i', 'k', 'm', 'v']],
+    ['php', '<?php\nfunction f($n) {\n    $a = 1;\n    return $a + $n + $a;\n}\n', 'return $a', ['$a', '$n']],
+  ];
+  for (const [lang, src, needle, want] of cases) {
+    assert.deepEqual(heuristicNames(src, lang, needle).sort(), want, `${lang}: ${src.split('\n')[1].trim()}`);
+  }
+});
+
+test('heuristic: keys, types, variants, defaults and expressions are not declarations', () => {
+  const cases = [
+    ['typescript', 'function f(o: O) {\n  const { key: v = fallback } = o;\n  return v + v + fallback + fallback;\n}\n', 'return v', ['o', 'v']],
+    ['rust', 'fn f(s: S) -> u8 {\n    match s {\n        Status::Ready | Status::Done => 1,\n        Other(n) if n > LIMIT => { n + n }\n        _ => 0,\n    }\n}\n', 'n + n', ['n']],
+    ['c', 'int f(int x, int y) {\n    x = x * y;\n    y = x > y;\n    return x + y;\n}\n', 'return x', ['x', 'y']],
+    ['kotlin', 'fun f(x: Int): String {\n    return when (x) {\n        a -> "a"\n        else -> "b"\n    }\n}\n', '"a"', ['x']],
+    ['python', 'def f(d):\n    d[k], d[j] = 1, 2\n    return d[k] + d[j] + d[k]\n', 'return', ['d']],
+  ];
+  for (const [lang, src, needle, want] of cases) {
+    assert.deepEqual(heuristicNames(src, lang, needle).sort(), want, `${lang}: ${src.split('\n')[1].trim()}`);
+  }
+});
+
+test('heuristic: comparisons, comments, defaults, `with … as` and array declarators', () => {
+  const cases = [
+    ['python', 'def f(o):\n    x == o\n    return o + x + x\n', 'return o', ['o'], 'a comparison declares nothing'],
+    ['python', 'def f(o):\n    with open(o) as fh:\n        return fh.read() + fh.name\n', 'return fh', ['fh', 'o']],
+    ['python', 'def f(o):\n    obj.method(x=1)\n    return o + o\ndef g(x=1):\n    return x + x\n', 'return o', ['o'], 'a keyword argument is a label'],
+    ['python', 'def f(o):\n    obj.method(x=1)\n    return o + o\ndef g(x=1):\n    return x + x\n', 'return x', ['x'], 'a default is a parameter'],
+    ['kotlin', 'fun f(xs: List<Int>): Int {\n    return xs.map { /* c -> */ v -> v + v }.size\n}\n', 'v + v', ['v', 'xs'], 'an arrow in a comment is not the lambda arrow'],
+    ['rust', 'fn f(o: u32) -> u32 {\n    total * total + o // total => o\n}\n', 'total * total', ['o'], 'an arrow in a comment is not a match arm'],
+    ['rust', 'fn f(o: Option<u32>) -> u32 {\n    total += 1;\n    total += 2;\n    match o { Some(v) => v + v, None => 0 }\n}\n', 'total += 1', ['o'], 'an arm pattern starts after its `{`'],
+    ['rust', 'fn f(o: Option<u32>) -> u32 {\n    total += 1;\n    match o { Some(v) => v + v, None => 0 }\n}\n', 'v + v', ['o', 'v']],
+    ['c', 'int f(int n) {\n    int a[3], b = 1;\n    x == 1;\n    return a[0] + b + a[0] + b + n;\n}\n', 'return a', ['a', 'b', 'n'], 'an array first in a declarator list'],
+    ['typescript', 'function f(o) {\n  if (o) {\n    let t = 1;\n    use(t, t);\n  }\n  return o;\n}\n', 'return o', ['o'], 'a nested block\'s local stays there'],
+  ];
+  for (const [lang, src, needle, want, why] of cases) {
+    assert.deepEqual(heuristicNames(src, lang, needle).sort(), want, `${lang}: ${why ?? src.split('\n')[1].trim()}`);
+  }
+});
+
+test('heuristic: a function\'s own parameters are proximity 0 in its body, borrowed in a nested block', () => {
+  const src = 'function f(o, p) {\n  const t = o + p;\n  if (t) {\n    use(o, t, t);\n  }\n  return t;\n}\n';
+  assert.deepEqual(heuristicInfo(src, 'javascript', 'const t'), ['o:fn:0', 'p:fn:0', 't:block:0']);
+  assert.deepEqual(heuristicInfo(src, 'javascript', 'use(o'), ['o:fn:1', 't:fn:1']);
+});
+
+test('isArgLabel: a def parameter list is not a call; class keywords and calls are labels', () => {
+  const { lex } = require('../out/lex');
+  const label = (src, needle) => classify.isArgLabel(lex(src, 'python'), src.indexOf(needle), needle.length);
+  assert.equal(label('def f(x=1): pass', 'x'), false);
+  assert.equal(label('async def f(a, x = 1): pass', 'x'), false);
+  assert.equal(label('undef(x=1)', 'x'), true, 'a callee whose name ends in def');
+  assert.equal(label('f(x=1)', 'x'), true);
+  assert.equal(label('class A(metaclass=M): pass', 'metaclass'), true);
+});
+
+test('heuristic: a loop variable another function also declares stays the block\'s own', () => {
+  const src = 'function a(xs) {\n  for (let i = 0; i < xs.length; i++) { use(xs[i]); }\n}\n\nfunction b(ys) {\n  let s = 0;\n  for (let i = 0; i < ys.length; i++) { s += ys[i]; }\n  return s;\n}\n';
+  const blocks = focus.scanBlocks(src, 'javascript');
+  const at = src.indexOf('let s');
+  const block = focus.innermostBlock(blocks, src.slice(0, at).split('\n').length - 1, at, src);
+  const fnRanges = blocks.map((b) => focus.functionScopeOf(src, b, 'javascript')).filter(Boolean);
+  const subs = blocks.filter((b) => b.openOffset > block.openOffset && b.closeOffset < block.closeOffset)
+    .map((b) => focus.scopeRegionFor(src, b, 'javascript'));
+  const c = classify.classifyFromHeuristic(src, focus.lexRegionFor(src, block, 'javascript'),
+    classify.enclosingFnOf(fnRanges, block.openOffset), fnRanges, 1, 'k', classify.outermostFnOf(fnRanges, block.openOffset),
+    focus.declRegionFor(src, block, 'javascript'), subs, 'javascript', [], blocks);
+  const i = c.byName.get('i');
+  assert.deepEqual([i?.cls, i?.proximity], ['block', 2]);
+});
+
+test('a destructuring or match-pattern brace is not a scope: its names belong to the enclosing block', () => {
+  const pattern = (src, lang, needle) => {
+    const at = src.indexOf(needle);
+    const b = focus.scanBlocks(src, lang).find((x) => x.openOffset === at);
+    return focus.isPatternBrace(src, b, lang);
+  };
+  assert.equal(pattern('const { a, b } = o;\n', 'typescript', '{ a'), true);
+  assert.equal(pattern('for (const { a } of xs) use(a);\n', 'typescript', '{ a'), true);
+  assert.equal(pattern('fn f(p: P) {\n    let P { x, y } = p;\n}\n', 'rust', '{ x'), true);
+  assert.equal(pattern('fn f(p: P) {\n    match p {\n        P { x, .. } => x,\n    }\n}\n', 'rust', '{ x'), true);
+  assert.equal(pattern('const o = { a: 1 };\n', 'typescript', '{ a'), false);
+  assert.equal(pattern('if (ok) { run(); }\n', 'typescript', '{ run'), false);
+
+  const src = 'const { a, b } = load();\n\nfunction f(o: O) {\n  const { c, d } = o;\n  return c + d + c + d + a + b;\n}\n';
+  const blocks = focus.scanBlocks(src, 'typescript');
+  assert.ok(!focus.topLevelExcludes(src, blocks, 'typescript').some((r) => r.start <= src.indexOf('a,') && src.indexOf('a,') < r.end),
+    'top-level destructured names stay top level');
+  const inner = blocks.find((b) => src.slice(b.openOffset, b.openOffset + 3) === '{ c');
+  const region = focus.scopeRegionFor(src, inner, 'typescript');
+  assert.equal(region.end - region.start, 0);
+  const seen = new Set();
+  const toks = focus.lexIdentifiers(src, 0, src.length, 'typescript')
+    .filter((i) => ['a', 'b', 'c', 'd', 'o'].includes(i.name))
+    .map((i) => ({ ...i, type: i.name === 'o' ? 'parameter' : 'variable', modifiers: seen.has(i.name) ? [] : (seen.add(i.name), ['declaration']) }));
+  const body = blocks.find((b) => src[b.openOffset - 2] === ')');
+  const fn = { start: src.indexOf('(o'), end: body.closeOffset + 1 };
+  const subs = blocks.filter((b) => b.openOffset > body.openOffset && b.closeOffset < body.closeOffset).map((b) => focus.scopeRegionFor(src, b, 'typescript'));
+  const c = classify.classifyFromSemantic(src, focus.lexRegionFor(src, body, 'typescript'), fn, [fn], toks, 1, 'k', fn,
+    focus.declRegionFor(src, body, 'typescript'), subs);
+  assert.deepEqual(['c', 'd'].map((n) => [c.byName.get(n).cls, c.byName.get(n).proximity]), [['block', 0], ['block', 0]]);
 });

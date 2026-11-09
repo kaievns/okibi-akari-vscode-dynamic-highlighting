@@ -7,3 +7,4 @@ samples/**
 tsconfig.json
 .gitignore
 *.vsix
+scripts/**

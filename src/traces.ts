@@ -42,8 +42,11 @@ function clip(ranges: OffsetRange[], bound: OffsetRange): OffsetRange[] {
  * would invite the very bug class it should expose.
  *
  * `own` is the scope of the identity actually being traced (its declaring
- * function, or undefined for a true global). Any occurrence inside a DIFFERENT
- * declaring scope is a different variable, so it is removed.
+ * function, or undefined for a true global). An occurrence belongs to the
+ * innermost declaring scope around it, so it is removed when that scope is not
+ * `own`: a closure parameter `c` keeps its own uses even though the enclosing
+ * function also declares a `c`, and loses the uses inside a nested closure that
+ * redeclares it.
  */
 function dropShadowed(
   ranges: OffsetRange[],
@@ -53,11 +56,38 @@ function dropShadowed(
   if (!shadowScopes || shadowScopes.length === 0) {
     return ranges;
   }
-  const foreign = shadowScopes.filter((s) => !(own && s.start === own.start && s.end === own.end));
+  const same = (a: OffsetRange, b: OffsetRange | undefined): boolean => b !== undefined && a.start === b.start && a.end === b.end;
+  const foreign = shadowScopes.filter((s) => !same(s, own));
   if (foreign.length === 0) {
     return ranges;
   }
-  return ranges.filter((r) => !foreign.some((s) => r.start >= s.start && r.end <= s.end));
+  // An occurrence inside `own` is lost only to a foreign scope tighter than `own`;
+  // one outside it, to any foreign scope around it.
+  const any = containmentTest(foreign);
+  const tighter = own ? containmentTest(foreign.filter((s) => s.end - s.start < own.end - own.start)) : any;
+  return ranges.filter((r) => {
+    const inOwn = own !== undefined && r.start >= own.start && r.end <= own.end;
+    return !(inOwn ? tighter(r) : any(r));
+  });
+}
+
+/** Whether some range in `scopes` contains `r`: the widest end among scopes starting at or before r.start reaches r.end. */
+function containmentTest(scopes: OffsetRange[]): (r: OffsetRange) => boolean {
+  const sorted = [...scopes].sort((a, b) => a.start - b.start);
+  const reach: number[] = [];
+  for (const s of sorted) {
+    reach.push(Math.max(reach.length > 0 ? reach[reach.length - 1] : -Infinity, s.end));
+  }
+  return (r) => {
+    let lo = 0;
+    let hi = sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid].start <= r.start) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo > 0 && reach[lo - 1] >= r.end;
+  };
 }
 
 function scopeFor(info: NameInfo, block: OffsetRange, enclosingFn: OffsetRange | undefined): OffsetRange | 'file' {

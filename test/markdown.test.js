@@ -197,7 +197,7 @@ test('mergeSpans: does not mutate its input', () => {
 
 // ── regressions found by running the scanners over samples/sample.md ─────────
 // The unit tests above all passed while both of these were broken, which is why
-// the sample sweep is part of the gate now.
+// the sample sweep is part of the suite.
 
 test('linkSpans: a footnote definition is not a link', () => {
   // `[^1]: prose…` has the same shape as `[ref]: url`, so the refdef branch
@@ -273,8 +273,8 @@ test('markdown has NO focusable block, so bands 2-3 cannot paint', () => {
   );
 
   // And the regression itself: with the whole file as the scope, English articles
-  // were the top-ranked "data identities". This asserts the shape of the bug so it
-  // cannot come back through a different route.
+  // were the top-ranked "data identities". The heuristic now paints declared names
+  // only, so even without the guard above a prose word cannot become one.
   const whole = focus.topLevelBlock(text);
   const cls = classify.classifyFromHeuristic(
     text, focus.scopeRegionFor(text, whole), undefined, [], 1,
@@ -283,9 +283,9 @@ test('markdown has NO focusable block, so bands 2-3 cannot paint', () => {
   const wouldTint = scopecolor.colorScope(
     [{ focusKey: focus.focusKeyOf(whole), byName: cls.byName }], 7,
   ).visible.get(focus.focusKeyOf(whole)) ?? [];
-  assert.ok(
-    wouldTint.some((n) => ['the', 'a', 'The', 'A'].includes(n)),
-    'if this stops being true the guard above is no longer load-bearing — re-check why',
+  assert.deepEqual(
+    wouldTint.filter((n) => ['the', 'a', 'The', 'A'].includes(n)), [],
+    'English articles are not data identities',
   );
 });
 
@@ -307,7 +307,29 @@ test('code languages still resolve blocks normally', () => {
     const src = fs.readFileSync(path.join(__dirname, '../samples', file), 'utf8');
     assert.ok(
       focus.scanBlocks(src, lang).length > 10,
-      `${lang} must still have blocks — the prose guard is language-gated`,
+      `${lang} must still have blocks — the prose guard is per language`,
     );
   }
+});
+
+test('a fence indented inside a list item is code', () => {
+  const text = '- item\n\n    ```js\n    if (a ==b== c) {}\n    ```\n\n==after==\n';
+  assert.deepEqual(md.highlightSpans(text).map((s) => text.slice(s.start, s.end)), ['after']);
+  // Outside a list, four spaces after a paragraph is a lazy continuation, not a fence.
+  const lazy = 'text\n    ```\n==z==\n';
+  assert.deepEqual(md.highlightSpans(lazy).map((s) => lazy.slice(s.start, s.end)), ['z']);
+});
+
+test('`==` inside a link target is not a mark; a mark around a link is', () => {
+  const text = 'see [x](http://e.com/?a==b==c) and ==see [y](http://e.com)== ok';
+  assert.deepEqual(md.highlightSpans(text).map((s) => text.slice(s.start, s.end)), ['see [y](http://e.com)']);
+});
+
+test('no ==highlight== wash inside an HTML comment', () => {
+  const text = '==real highlight==\n\n<!-- TODO: ==not a highlight== -->\n\n<!--\n==draft note==\n-->\n\n`<!--` ==kept==\n';
+  assert.deepEqual(md.highlightSpans(text).map((s) => text.slice(s.start, s.end)), ['real highlight', 'kept']);
+  // The underline cancel is `text-decoration: none`, invisible where nothing is
+  // underlined, so it still covers a URL in a comment.
+  const link = '<!-- https://example.com/hidden -->\n';
+  assert.equal(md.linkSpans(link).length, 1);
 });

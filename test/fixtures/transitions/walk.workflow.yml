@@ -1,0 +1,27 @@
+# A workflow: this runs self-hosted, async jobs
+name: ci
+on:
+  push:
+    branches: [main]
+env:
+  RETRIES: 3
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'push' && !contains(github.ref, 'skip') }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: test
+        run: |
+          cargo test -- --test-threads=${{ env.RETRIES }}
+          echo "self ${{ github.sha }} this"
+        env:
+          JSON: ${{ toJSON(fromJSON('{"a": 1, "b": [2, 3]}')) }}
+      - name: async
+        if: ${{ success() && steps.test.outcome == 'success' }}
+        run: echo done

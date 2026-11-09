@@ -83,7 +83,7 @@ function loadConfigAsync(name) {
   });
 }
 
-// ── class: `this` is the gold self-slot; methods are band-1 ──────────────────
+// ── class: `this` is the keyword colour; methods are band-1 ──────────────────
 
 class Worker {
   constructor(id) {

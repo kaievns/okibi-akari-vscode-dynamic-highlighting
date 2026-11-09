@@ -1,0 +1,9 @@
+# ignore: self and this
+node_modules/
+/target
+*.log
+!keep.log
+build/**/this
+self
+async/{a,b}
+v1.2.3/

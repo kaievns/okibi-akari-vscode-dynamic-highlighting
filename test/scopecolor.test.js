@@ -147,18 +147,18 @@ test('topLevelBlock: module top level is a focusable scope, not Survey', () => {
   assert.ok(!focus.isTopLevelBlock(inFn), 'real blocks still win');
 });
 
-test('visibleInBlock: top-level own declarations are exempt from the >=2-use gate', () => {
+test('visibleInBlock: top-level own declarations are exempt from the >=2-use floor', () => {
   // A module-level const is declared once at the top and used further down
   // INSIDE functions, so counting only its top-level uses would hide it.
   const byName = new Map([
     ['ONCE', info('block', { freq: 1, proximity: 0 })],
     ['nested', info('block', { freq: 5, proximity: 2 })],
   ]);
-  assert.ok(!sc.visibleInBlock(byName, 5, false).includes('ONCE'), 'gate applies in a normal block');
+  assert.ok(!sc.visibleInBlock(byName, 5, false).includes('ONCE'), 'floor applies in a normal block');
   assert.ok(sc.visibleInBlock(byName, 5, true).includes('ONCE'), 'exempt at top level');
-  // the exemption is scoped to proximity 0 — nested names keep the gate
+  // the exemption is scoped to proximity 0 — nested names keep the floor
   const nestedOnce = new Map([['x', info('block', { freq: 1, proximity: 2 })]]);
-  assert.ok(!sc.visibleInBlock(nestedOnce, 5, true).includes('x'), 'nested once-used still gated');
+  assert.ok(!sc.visibleInBlock(nestedOnce, 5, true).includes('x'), 'nested once-used still held back');
 });
 
 test('colorScope: top-level flag flows through BlockNames', () => {
@@ -184,4 +184,65 @@ test('colorScope: over-constrained vertex goes neutral, never recycles a visible
   for (const n of names.filter((x) => !vis.includes(x))) {
     assert.equal(hue.get(n), undefined, `${n} is neutral (outside the budget)`);
   }
+});
+
+// ── tie-breaks: each step of both orderings decides a visible outcome ────────
+
+test('visibleInBlock: frequency, then block offset, then name decide the last slot', () => {
+  const byFreq = new Map([6, 5, 4, 3, 2, 2].map((f, i) => [`n${i}`, info('block', { freq: f, block: i * 10 })]));
+  assert.deepEqual(sc.visibleInBlock(byFreq, 5), ['n0', 'n1', 'n2', 'n3', 'n4'], 'the later of the two freq-2 names drops');
+  const byOffset = new Map([['b', info('block', { block: 0 })], ['a', info('block', { block: 5 })]]);
+  assert.deepEqual(sc.visibleInBlock(byOffset, 1), ['b'], 'the earlier block offset wins over name order');
+  const byNameOnly = new Map([['b', info('block')], ['a', info('block')]]);
+  assert.deepEqual(sc.visibleInBlock(byNameOnly, 1), ['a'], 'name order decides a full tie, not insertion order');
+});
+
+test('visibleInBlock: at top level only own declarations skip the use floor', () => {
+  const byName = new Map([
+    ['own', info('block', { freq: 1, proximity: 0 })],
+    ['borrowed', info('block', { freq: 1, proximity: 1 })],
+  ]);
+  assert.deepEqual(sc.visibleInBlock(byName, 5, true), ['own']);
+});
+
+test('colorScope: degree, then file offset, then name order the greedy pass', () => {
+  // y sits in two blocks (degree 2) and colours first even though x appears earlier.
+  const chain = sc.colorScope([
+    blk('b1', [['x', info('fn', { file: 0 })], ['y', info('fn', { file: 10 })]]),
+    blk('b2', [['y', info('fn', { file: 10 })], ['z', info('fn', { file: 20 })]]),
+  ], 5);
+  assert.deepEqual(Object.fromEntries(chain.hue), { y: 0, x: 1, z: 1 });
+  // Equal degree: the earlier file offset takes hue 0, whatever the names say.
+  const byOffset = sc.colorScope([blk('b', [['b', info('fn', { file: 0 })], ['a', info('fn', { file: 10 })]])], 5);
+  assert.deepEqual(Object.fromEntries(byOffset.hue), { b: 0, a: 1 });
+  // Equal degree and offset: name order, not the order the vertices were first seen.
+  const byName = sc.colorScope([
+    blk('first', [['b', info('fn')]]),
+    blk('both', [['a', info('fn')], ['b', info('fn')]]),
+  ], 5);
+  assert.deepEqual(Object.fromEntries(byName.hue), { a: 0, b: 1 });
+});
+
+test('colorScope: a name seen in several blocks orders by its earliest file offset', () => {
+  const { hue } = sc.colorScope([
+    blk('late', [['a', info('fn', { file: 50 })], ['b', info('fn', { file: 30 })]]),
+    blk('early', [['a', info('fn', { file: 5 })]]),
+  ], 5);
+  // a has degree 1 like b; its minimum offset (5) puts it before b (30).
+  assert.deepEqual(Object.fromEntries(hue), { a: 0, b: 1 });
+});
+
+test('colorScope: a vertex whose neighbours hold every hue goes neutral, never index K', () => {
+  const { hue } = sc.colorScope([
+    blk('ab', [['a', info('fn', { file: 0 })], ['b', info('fn', { file: 1 })]]),
+    blk('bc', [['b', info('fn', { file: 1 })], ['c', info('fn', { file: 2 })]]),
+    blk('ac', [['a', info('fn', { file: 0 })], ['c', info('fn', { file: 2 })]]),
+  ], 2);
+  assert.deepEqual(Object.fromEntries(hue), { a: 0, b: 1 });
+});
+
+test('colorScope: a full block gets every hue, and only its own names are vertices', () => {
+  const { hue } = sc.colorScope([blk('one', [['a', info('fn', { file: 0 })], ['b', info('fn', { file: 1 })]])], 2);
+  assert.deepEqual([...hue.keys()].sort(), ['a', 'b']);
+  assert.deepEqual([...hue.values()].sort(), [0, 1]);
 });

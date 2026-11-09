@@ -1,0 +1,7 @@
+{
+  "name": "this",
+  "self": true,
+  "nested": { "a": 1, "b": [1.5, -2e3, null, false], "c": { "d": "async {x}" } },
+  "items": [{ "id": 1 }, { "id": 2, "tags": ["self", "this"] }],
+  "scripts": { "test": "node --test", "async": "await self" }
+}

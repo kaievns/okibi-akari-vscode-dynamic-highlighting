@@ -1,0 +1,20 @@
+# compose: a self-contained async stack
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: this
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      retries: 5
+  app:
+    build:
+      context: .
+      args:
+        VERSION: 1.2.3
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "await self; exec app --port ${PORT:-8080}"]

@@ -7,7 +7,10 @@
  * Hybrid strategy (user decision 1): try the semantic-tokens provider first;
  * if it is absent or returns nothing, fall back to the pure heuristic scan. A
  * single file-wide fetch feeds every block visited in that version — navigating
- * an unedited file costs zero extra LSP calls.
+ * an unedited file costs zero extra LSP calls, and concurrent classifies of one
+ * version share one request. A fetch answered after the document moved on is
+ * never cached, and its result carries the version its text belongs to, so the
+ * decorator discards it. Lifecycle details: docs/runtime.md.
  */
 
 import * as vscode from 'vscode';
@@ -16,12 +19,13 @@ import {
   OffsetRange,
   DecodedToken,
   decodeSemanticTokens,
-  lineStartOffsets,
+  tokensFitLegend,
   enclosingFnOf,
   outermostFnOf,
   classifyFromSemantic,
   classifyFromHeuristic,
   buildFileIndex,
+  declScopesFor,
   FileIndex,
 } from './classify';
 import {
@@ -32,12 +36,27 @@ import {
   scopeRegionFor,
   scanBlocks,
   isTopLevelBlock,
+  topLevelExcludes,
+  functionScopeOf,
 } from './focus';
 import { BlockNames, ScopeColoring, colorScope } from './scopecolor';
+import { LexResult, lexFor } from './lex';
+import { importUseNames, importUseSpans } from './imports';
+
+/**
+ * What the semantic-token provider gave for a version: `ok` (tokens), `empty`
+ * (a provider answered with a legend but no usable tokens — a server still
+ * loading) or `none` (no provider registered, so no legend).
+ */
+export type SemanticState = 'ok' | 'empty' | 'none';
 
 interface LspBundle {
   version: number;
-  tokens: DecodedToken[] | null; // null = no semantic provider
+  /** Null once `fileIndex` is built: classification reads only the index. */
+  tokens: DecodedToken[] | null;
+  semantic: SemanticState;
+  /** Rust: how this answer typed `Self` / `crate` / `super`. */
+  paths?: PathKeywords;
   fnRanges: OffsetRange[];
   /** File-wide analysis, built once per version and shared by every block. */
   fileIndex?: FileIndex;
@@ -45,12 +64,114 @@ interface LspBundle {
 }
 
 /**
- * Does this block header declare a function (so its parameter list is not
- * top-level code)? A `const X = { … }` object literal is also a depth-0 block,
- * but its "header" holds the declaration name we DO want at top level.
+ * What rust-analyzer's last answer typed `Self`, `crate` and `super` as: `keyword`
+ * (`selfTypeKeyword` / `keyword`, a cargo workspace that has loaded) or `degraded`
+ * (`struct` / `namespace`: a detached file, or a workspace still loading). See
+ * docs/runtime.md#rust-path-keywords.
  */
-function isFunctionHeaderText(header: string): boolean {
-  return /\b(func|function)\b|=>\s*$|\)\s*(:[^)]*)?\s*$/.test(header);
+export type PathKeywords = 'keyword' | 'degraded';
+
+export const RUST_PATH_KEYWORDS: ReadonlySet<string> = new Set(['Self', 'crate', 'super']);
+const KEYWORD_TYPES = new Set(['keyword', 'selfKeyword', 'selfTypeKeyword']);
+
+/** The PathKeywords an answer shows, or undefined when it types none of the three. */
+export function rustPathKeywords(tokens: readonly DecodedToken[]): PathKeywords | undefined {
+  let seen: PathKeywords | undefined;
+  for (const t of tokens) {
+    if (RUST_PATH_KEYWORDS.has(t.name)) {
+      if (!KEYWORD_TYPES.has(t.type)) return 'degraded';
+      seen = 'keyword';
+    }
+  }
+  return seen;
+}
+
+/**
+ * Does an answer type a string literal, with a `string` token and no modifier?
+ * lua-language-server 3.19.2 sends one over each literal only under
+ * `Lua.semantic.keyword`; its LuaCATS strings carry `static`, `abstract` or
+ * `defaultLibrary`.
+ */
+export function typesStringLiterals(data: ArrayLike<number>, tokenTypes: readonly string[]): boolean {
+  const string = tokenTypes.indexOf('string');
+  if (string < 0) {
+    return false;
+  }
+  for (let i = 0; i + 4 < data.length; i += 5) {
+    if (data[i + 3] === string && data[i + 4] === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * What decoding `data` would tell about an answer without building the tokens:
+ * whether any token lands on a line (`ok` vs `empty`), and with `rust`, its
+ * `rustPathKeywords`.
+ */
+export function answerStateOf(
+  data: ArrayLike<number>,
+  tokenTypes: readonly string[],
+  lineStarts: readonly number[],
+  text: string,
+  rust: boolean,
+): { any: boolean; paths: PathKeywords | undefined } {
+  let any = false;
+  let paths: PathKeywords | undefined;
+  let line = 0;
+  let char = 0;
+  for (let i = 0; i + 4 < data.length; i += 5) {
+    if (data[i] > 0) {
+      line += data[i];
+      char = data[i + 1];
+    } else {
+      char += data[i + 1];
+    }
+    const lineStart = lineStarts[line];
+    if (lineStart === undefined) {
+      continue;
+    }
+    any = true;
+    if (!rust) {
+      break;
+    }
+    const offset = lineStart + char;
+    // The decoded name is the text the token covers, cut short at the end of the text.
+    const length = Math.min(offset + data[i + 2], text.length) - offset;
+    if (length !== 4 && length !== 5) {
+      continue;
+    }
+    if (RUST_PATH_KEYWORDS.has(text.slice(offset, offset + length))) {
+      if (!KEYWORD_TYPES.has(tokenTypes[data[i + 3]] ?? '')) {
+        paths = 'degraded';
+        break;
+      }
+      paths = 'keyword';
+    }
+  }
+  return { any, paths };
+}
+
+const yieldToEvents = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** The `import * as` names with a token at any of their restore spans, sorted and joined by `,`. */
+export function typedNamespaceKey(lx: LexResult, tokens: readonly DecodedToken[]): string {
+  const spans = importUseSpans(lx);
+  if (spans.length === 0) return '';
+  const names = importUseNames(lx);
+  const typed = new Set<string>();
+  let t = 0;
+  spans.forEach((s, i) => {
+    while (t < tokens.length && tokens[t].offset < s.start) t++;
+    if (t < tokens.length && tokens[t].offset === s.start) typed.add(names[i]);
+  });
+  return [...typed].sort().join(',');
+}
+
+/** The backoff for re-asking a server that answered nothing, in ms; null once spent. */
+export function coldRetryDelay(attempts: number, schedule: readonly number[]): number | null {
+  return attempts < schedule.length ? schedule[attempts] : null;
 }
 
 const FUNCTION_SYMBOL_KINDS = new Set<vscode.SymbolKind>([
@@ -59,10 +180,65 @@ const FUNCTION_SYMBOL_KINDS = new Set<vscode.SymbolKind>([
   vscode.SymbolKind.Constructor,
 ]);
 
+const sortedBlocks = new WeakMap<BraceBlock[], { count: number; sorted: BraceBlock[] }>();
+
+function blocksByOpen(blocks: BraceBlock[]): BraceBlock[] {
+  const hit = sortedBlocks.get(blocks);
+  if (hit && hit.count === blocks.length) {
+    return hit.sorted;
+  }
+  const sorted = [...blocks].sort((a, b) => a.openOffset - b.openOffset);
+  sortedBlocks.set(blocks, { count: blocks.length, sorted });
+  return sorted;
+}
+
 export class Classifier implements vscode.Disposable {
   private cache = new WeakMap<vscode.TextDocument, LspBundle>();
-  /** Versions for which a cold-empty retry has already been scheduled (avoid loops). */
-  private retriedVersions = new WeakMap<vscode.TextDocument, number>();
+  /** The one fetch per document version that every concurrent classify awaits. */
+  private inflight = new WeakMap<vscode.TextDocument, { version: number; promise: Promise<LspBundle> }>();
+  /** Retries spent per document, reset by the first answer with tokens that is not degraded. */
+  private coldAttempts = new WeakMap<vscode.TextDocument, number>();
+  /** Retry delays after an empty or degraded answer: about 30 s in all, then that answer is final. */
+  retrySchedule: readonly number[] = [1000, 2000, 4000, 8000, 15000];
+  /**
+   * Languages where a document spent the whole schedule with no provider
+   * registered. Their later documents are not retried; any answer with a legend
+   * takes the language off the list.
+   */
+  private providerless = new Set<string>();
+  /**
+   * Documents a provider has answered with tokens. Edits and later empty answers
+   * keep the entry (the provider is still registered); an answer with no provider
+   * at all drops it.
+   */
+  private answered = new WeakSet<vscode.TextDocument>();
+  private pathKeywords = new WeakMap<vscode.TextDocument, PathKeywords>();
+  /** Lua documents whose last answer with tokens typed string literals (`typesStringLiterals`). */
+  private stringLiterals = new WeakSet<vscode.TextDocument>();
+  /** JS / TS: the namespace-import names whose uses the last answer with tokens typed, sorted and joined. */
+  private typedNamespaces = new WeakMap<vscode.TextDocument, string>();
+  /** The newest version whose answer set `answered`, `pathKeywords` and `stringLiterals`: a slower answer for older text does not. */
+  private answeredVersion = new WeakMap<vscode.TextDocument, number>();
+
+  /** Does a semantic provider colour this document? Band-1 restores defer to it. */
+  semanticOk(doc: vscode.TextDocument): boolean {
+    return this.answered.has(doc);
+  }
+
+  /** How the last Rust answer typed `Self` / `crate` / `super`; undefined before one has. */
+  pathKeywordsOf(doc: vscode.TextDocument): PathKeywords | undefined {
+    return this.pathKeywords.get(doc);
+  }
+
+  /** JS / TS: the `import * as` names the last answer typed at a use; the import restore leaves those to it. */
+  typedNamespacesOf(doc: vscode.TextDocument): string {
+    return this.typedNamespaces.get(doc) ?? '';
+  }
+
+  /** Did the last Lua answer with tokens cover its string literals with `string` tokens? */
+  typesStrings(doc: vscode.TextDocument): boolean {
+    return this.stringLiterals.has(doc);
+  }
 
   /**
    * Classify the focused block AND colour its whole scope in one pass.
@@ -82,18 +258,27 @@ export class Classifier implements vscode.Disposable {
      * Text + blocks the caller already has for this document version. Both are
      * expensive to recompute (`getText()` rebuilds the whole string; the block scan
      * is a full lex), and the decorator caches them per version — so recomputing
-     * here doubled the cost of every classify for nothing.
+     * here doubled the cost of every classify for nothing. `version` is the
+     * version `text` belongs to; without it the version is read before any await.
      */
-    cached?: { text: string; blocks: BraceBlock[] },
-  ): Promise<{ focused: Classification; coloring: ScopeColoring } | null> {
+    cached?: { text: string; blocks: BraceBlock[]; version?: number },
+  ): Promise<{ focused: Classification; coloring: ScopeColoring; semantic: SemanticState } | null> {
+    const version = cached?.version ?? doc.version;
     const text = cached?.text ?? doc.getText();
-    const bundle = await this.bundleFor(doc, text, token);
-    if (token.isCancellationRequested) {
+    const allBlocks = cached?.blocks ?? scanBlocks(text, doc.languageId);
+    const bundle = await this.bundleFor(doc, text, version, allBlocks);
+    if (token.isCancellationRequested || doc.version !== version) {
       return null;
+    }
+    if (!bundle.fileIndex) {
+      // The heuristic builds a whole-file base next; a queued keystroke would outdate it.
+      await yieldToEvents();
+      if (token.isCancellationRequested || doc.version !== version) {
+        return null;
+      }
     }
 
     const colorScopeFn = outermostFnOf(bundle.fnRanges, block.openOffset);
-    const allBlocks = cached?.blocks ?? scanBlocks(text, doc.languageId);
 
     // Every block whose focus would share this colour scope. At module top level
     // (no enclosing fn) the scope is just the focused block itself.
@@ -107,13 +292,13 @@ export class Classifier implements vscode.Disposable {
     const perBlock: BlockNames[] = [];
     let focused: Classification | undefined;
 
-    // Sort once by open offset so each block's nested sub-blocks are a
-    // contiguous forward run — avoids an O(blocks) filter per block (O(n²) per
-    // scope) inside classifyBlock.
-    const sorted = [...allBlocks].sort((a, b) => a.openOffset - b.openOffset);
+    // Sorted by open offset so each block's nested sub-blocks are a contiguous
+    // forward run — avoids an O(blocks) filter per block (O(n²) per scope) inside
+    // classifyBlock. Once per block list, not per classify.
+    const sorted = blocksByOpen(allBlocks);
 
     for (const b of scopeBlocks) {
-      const c = this.classifyBlock(text, b, sorted, bundle, doc.version, true);
+      const c = this.classifyBlock(text, b, sorted, bundle, version, doc.languageId, true, allBlocks);
       perBlock.push({ focusKey: c.focusKey, byName: c.byName, isTopLevel: isTopLevelBlock(b) });
       if (c.focusKey === focusKey) {
         focused = c;
@@ -122,7 +307,7 @@ export class Classifier implements vscode.Disposable {
     if (!focused) {
       // The focused block wasn't in the scope set (top-level edge case) — classify
       // it directly so the caller always gets its classification.
-      focused = this.classifyBlock(text, block, allBlocks, bundle, doc.version);
+      focused = this.classifyBlock(text, block, allBlocks, bundle, version, doc.languageId);
       perBlock.push({
         focusKey: focused.focusKey,
         byName: focused.byName,
@@ -131,24 +316,7 @@ export class Classifier implements vscode.Disposable {
     }
 
     const coloring = colorScope(perBlock, paletteSize);
-    return { focused, coloring };
-  }
-
-  /**
-   * Classify the focused block. Returns null only if cancelled. Falls back to
-   * the heuristic scan when no semantic provider is available.
-   */
-  async classify(
-    doc: vscode.TextDocument,
-    block: BraceBlock,
-    token: vscode.CancellationToken,
-  ): Promise<Classification | null> {
-    const text = doc.getText();
-    const bundle = await this.bundleFor(doc, text, token);
-    if (token.isCancellationRequested) {
-      return null;
-    }
-    return this.classifyBlock(text, block, scanBlocks(text, doc.languageId), bundle, doc.version);
+    return { focused, coloring, semantic: bundle.semantic };
   }
 
   /**
@@ -168,8 +336,11 @@ export class Classifier implements vscode.Disposable {
     allBlocks: BraceBlock[],
     bundle: LspBundle,
     docVersion: number,
+    languageId: string,
     /** True when allBlocks is pre-sorted by openOffset (lets sub-block collection early-exit). */
     sortedByOpen = false,
+    /** The document's block list as scanned; the top-level excludes are cached per list. */
+    scanned: BraceBlock[] = allBlocks,
   ): Classification {
     // Two ranges, two jobs:
     //   blockRange (lexing/visibility/traces) — always header-inclusive, so a
@@ -177,8 +348,8 @@ export class Classifier implements vscode.Disposable {
     //     inside their own scope.
     //   declRegion (classification) — header-inclusive only for control flow, so
     //     function params stay fn-local instead of block-local.
-    const blockRange: OffsetRange = lexRegionFor(text, block);
-    const declRegion: OffsetRange = declRegionFor(text, block);
+    const blockRange: OffsetRange = lexRegionFor(text, block, languageId);
+    const declRegion: OffsetRange = declRegionFor(text, block, languageId);
     const focusKey = focusKeyOf(block);
 
     // Brace-blocks nested strictly inside this block — a local declared in one of
@@ -201,13 +372,13 @@ export class Classifier implements vscode.Disposable {
       }
       for (; i < allBlocks.length && allBlocks[i].openOffset < block.closeOffset; i++) {
         if (allBlocks[i].closeOffset < block.closeOffset) {
-          subBlocks.push(scopeRegionFor(text, allBlocks[i]));
+          subBlocks.push(scopeRegionFor(text, allBlocks[i], languageId));
         }
       }
     } else {
       for (const b of allBlocks) {
         if (b.openOffset > block.openOffset && b.closeOffset < block.closeOffset) {
-          subBlocks.push(scopeRegionFor(text, b));
+          subBlocks.push(scopeRegionFor(text, b, languageId));
         }
       }
     }
@@ -217,22 +388,7 @@ export class Classifier implements vscode.Disposable {
     // every local in every function counts as used at top level and leaks into
     // the view — and a top-level `const X = { ... }` reads as nested because its
     // own initialiser braces enclose the declaration.
-    const excludeRanges: OffsetRange[] = isTopLevelBlock(block)
-      ? [
-          // depth-0 block bodies (function/type bodies)
-          ...allBlocks
-            .filter((b) => b.depth === 0)
-            .map((b) => ({ start: b.openOffset, end: b.closeOffset + 1 })),
-          // and FUNCTION signatures, which sit OUTSIDE the braces — otherwise a
-          // parameter list reads as top-level code. Restricted to headers that
-          // actually declare a function: a `const X = {` object literal is also a
-          // depth-0 block, and excluding its "signature" would hide the very
-          // declaration we want (X itself).
-          ...allBlocks
-            .filter((b) => b.depth === 0 && isFunctionHeaderText(text.slice(b.headerStart, b.openOffset)))
-            .map((b) => ({ start: b.headerStart, end: b.openOffset })),
-        ]
-      : [];
+    const excludeRanges: OffsetRange[] = isTopLevelBlock(block) ? topLevelExcludes(text, scanned, languageId) : [];
 
     const caretOffset = block.openOffset;
     const enclosingFn = enclosingFnOf(bundle.fnRanges, caretOffset);
@@ -240,13 +396,13 @@ export class Classifier implements vscode.Disposable {
     // stable across a top-level function and all its nested closures.
     const colorScopeFn = outermostFnOf(bundle.fnRanges, caretOffset);
 
-    if (bundle.tokens && bundle.tokens.length > 0) {
+    if (bundle.fileIndex || (bundle.tokens && bundle.tokens.length > 0)) {
       return classifyFromSemantic(
         text,
         blockRange,
         enclosingFn,
         bundle.fnRanges,
-        bundle.tokens,
+        bundle.tokens ?? [],
         docVersion,
         focusKey,
         colorScopeFn,
@@ -254,11 +410,12 @@ export class Classifier implements vscode.Disposable {
         subBlocks,
         bundle.fileIndex,
         excludeRanges,
+        declScopesFor(text, scanned, bundle.fnRanges, languageId),
       );
     }
 
-    // No semantic tokens → heuristic. (Cold-server empty result is handled by the
-    // caller's one-shot retry; a genuinely brace-only language just uses this.)
+    // No semantic tokens → heuristic. A cold server is re-asked on the decorator's
+    // retry schedule; a language with no provider just uses this.
     return classifyFromHeuristic(
       text,
       blockRange,
@@ -269,23 +426,40 @@ export class Classifier implements vscode.Disposable {
       colorScopeFn,
       declRegion,
       subBlocks,
+      languageId,
+      excludeRanges,
+      allBlocks,
     );
   }
 
-  /** True if the last semantic fetch for this doc/version returned nothing (cold-server candidate). */
-  wasEmptySemantic(doc: vscode.TextDocument): boolean {
+  /**
+   * How long to wait before re-asking the server about `doc`, or null when its
+   * last answer had tokens, the retries are spent, or its language is known to
+   * have no provider. A Rust answer with degraded path keywords is not final
+   * either: a cargo workspace still loading sends it (docs/runtime.md#cold-servers).
+   * Counted per document, not per version, so a language with no provider, or a
+   * detached Rust file, stops costing a second fetch per edit once the schedule
+   * runs out.
+   */
+  coldRetryDelay(doc: vscode.TextDocument): number | null {
     const b = this.cache.get(doc);
-    return !!b && b.version === doc.version && (b.tokens === null || b.tokens.length === 0);
+    const settled = b?.semantic === 'ok' && b.paths !== 'degraded';
+    if (b && (settled || (b.semantic === 'none' && this.providerless.has(doc.languageId)))) {
+      return null;
+    }
+    return coldRetryDelay(this.coldAttempts.get(doc) ?? 0, this.retrySchedule);
   }
 
-  /** Record that a cold-empty retry has been fired for this version. */
-  markRetried(doc: vscode.TextDocument): void {
-    this.retriedVersions.set(doc, doc.version);
+  /** The cached answer is Rust's degraded one and retries remain to ask again. */
+  awaitsLoad(doc: vscode.TextDocument): boolean {
+    const b = this.cache.get(doc);
+    return b?.semantic === 'ok' && b.paths === 'degraded' && this.coldRetryDelay(doc) !== null;
   }
 
-  /** Whether a cold-empty retry is still allowed for the current version. */
-  canRetry(doc: vscode.TextDocument): boolean {
-    return this.retriedVersions.get(doc) !== doc.version;
+  /** Spend one retry and drop the cached answer, so the next classify asks again. */
+  noteColdRetry(doc: vscode.TextDocument): void {
+    this.coldAttempts.set(doc, (this.coldAttempts.get(doc) ?? 0) + 1);
+    this.invalidate(doc);
   }
 
   /** Invalidate the cache for a document (forces a fresh fetch next classify). */
@@ -293,24 +467,80 @@ export class Classifier implements vscode.Disposable {
     this.cache.delete(doc);
   }
 
-  private async bundleFor(
+  /**
+   * The bundle for `version`. Fetched at most once per version: callers that
+   * arrive while a fetch is in flight share it, and a caller's cancellation never
+   * discards it. When the document has moved past `version` by the time the
+   * server answers, the bundle is returned uncached, still stamped `version`.
+   */
+  private bundleFor(
     doc: vscode.TextDocument,
     text: string,
-    token: vscode.CancellationToken,
+    version: number,
+    blocks: BraceBlock[],
   ): Promise<LspBundle> {
     const cached = this.cache.get(doc);
-    if (cached && cached.version === doc.version) {
-      return cached;
+    if (cached && cached.version === version) {
+      return Promise.resolve(cached);
     }
+    const pending = this.inflight.get(doc);
+    if (pending && pending.version === version) {
+      return pending.promise;
+    }
+    const promise = this.fetchBundle(doc, text, version, blocks);
+    this.inflight.set(doc, { version, promise });
+    const clear = (): void => {
+      if (this.inflight.get(doc)?.promise === promise) {
+        this.inflight.delete(doc);
+      }
+    };
+    promise.then(clear, clear);
+    return promise;
+  }
 
-    const lineStarts = lineStartOffsets(text);
-    const [symbols, tokens] = await Promise.all([
+  private async fetchBundle(
+    doc: vscode.TextDocument,
+    text: string,
+    version: number,
+    blocks: BraceBlock[],
+  ): Promise<LspBundle> {
+    const lineStarts = lexFor(text, doc.languageId).lineStarts;
+    const [symbols, fetched] = await Promise.all([
       this.fetchSymbols(doc.uri),
-      this.fetchSemanticTokens(doc, lineStarts, text),
+      this.fetchSemanticTokens(doc, lineStarts, text, version),
     ]);
-    if (token.isCancellationRequested) {
-      // Return an uncached transient bundle; caller discards on the cancel check.
-      return { version: doc.version, tokens, fnRanges: [], lineStarts };
+    const { tokens, semantic, paths, strings } = fetched;
+    if (version >= (this.answeredVersion.get(doc) ?? 0)) {
+      this.answeredVersion.set(doc, version);
+      if (semantic === 'ok') {
+        this.answered.add(doc);
+        const lx = lexFor(text, doc.languageId);
+        if (lx.syntax.family === 'js') this.typedNamespaces.set(doc, typedNamespaceKey(lx, tokens ?? []));
+        if (strings) {
+          this.stringLiterals.add(doc);
+        } else {
+          this.stringLiterals.delete(doc);
+        }
+      } else if (semantic === 'none' && doc.version === version) {
+        this.answered.delete(doc);
+        this.typedNamespaces.delete(doc);
+        this.pathKeywords.delete(doc);
+        this.stringLiterals.delete(doc);
+      }
+      if (paths) {
+        this.pathKeywords.set(doc, paths);
+      }
+    }
+    if (semantic !== 'none') {
+      this.providerless.delete(doc.languageId);
+    } else if ((this.coldAttempts.get(doc) ?? 0) >= this.retrySchedule.length) {
+      this.providerless.add(doc.languageId);
+    }
+    // Let a keystroke queued behind the answer in before the whole-file work it would outdate.
+    await yieldToEvents();
+    if (doc.version !== version) {
+      // Symbol ranges resolve through the live document, so they would be wrong too.
+      return { version, tokens, semantic, paths, fnRanges: [], lineStarts };
     }
 
     // Defensive: an unexpected symbol shape must degrade to empty fnRanges (→
@@ -321,18 +551,16 @@ export class Classifier implements vscode.Disposable {
     } catch {
       fnRanges = [];
     }
-    // A LAMBDA IS NOT A SYMBOL. `executeDocumentSymbolProvider` reports functions,
-    // methods and constructors — a lambda has no name, so no server reports one, and
-    // `fnRanges` had a hole exactly where a lambda's parameters live.
-    // `enclosingFnOf` then resolved a caret inside the lambda to the SURROUNDING
-    // function, so `acc`/`item` were classified against the wrong scope and traced
-    // across the whole enclosing body. The block scanner already located every
-    // lambda, so the ranges come from there rather than from a second scanner.
-    for (const b of scanBlocks(text, doc.languageId)) {
-      const isLambda = b.headerStart === b.openOffset
-        && /^\s*lambda\b/.test(text.slice(b.openOffset, b.openOffset + 12));
-      if (isLambda) {
-        fnRanges.push({ start: b.openOffset, end: b.closeOffset + 1 });
+    // Document symbols cover named functions only. Anonymous ones (Go func
+    // literals, Rust closures, JS callbacks, Python lambdas) come from the block
+    // scan; a named function also gets a tighter range from its parameters.
+    // docs/classification-rules.md#function-ranges.
+    const seen = new Set(fnRanges.map((r) => `${r.start}:${r.end}`));
+    for (const b of blocks) {
+      const r = functionScopeOf(text, b, doc.languageId);
+      if (r && !seen.has(`${r.start}:${r.end}`)) {
+        seen.add(`${r.start}:${r.end}`);
+        fnRanges.push(r);
       }
     }
     // `enclosingFnOf`/`outermostFnOf` search for the tightest and widest containing
@@ -341,9 +569,12 @@ export class Classifier implements vscode.Disposable {
     fnRanges.sort((a, b) => a.start - b.start || b.end - a.end);
     // Build the file-wide index once per version, so classifying an N-block
     // scope costs one file pass + N block passes (not N file passes).
-    const fileIndex = tokens && tokens.length > 0 ? buildFileIndex(text, tokens, fnRanges) : undefined;
-    const bundle: LspBundle = { version: doc.version, tokens, fnRanges, lineStarts, fileIndex };
+    const fileIndex = tokens && tokens.length > 0 ? buildFileIndex(text, tokens, fnRanges, doc.languageId) : undefined;
+    const bundle: LspBundle = { version, tokens: fileIndex ? null : tokens, semantic, paths, fnRanges, lineStarts, fileIndex };
     this.cache.set(doc, bundle);
+    if (semantic === 'ok' && paths !== 'degraded') {
+      this.coldAttempts.delete(doc);
+    }
     return bundle;
   }
 
@@ -364,23 +595,34 @@ export class Classifier implements vscode.Disposable {
     doc: vscode.TextDocument,
     lineStarts: number[],
     text: string,
-  ): Promise<DecodedToken[] | null> {
-    try {
-      const legend = await vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>(
-        'vscode.provideDocumentSemanticTokensLegend',
-        doc.uri,
-      );
-      const tokens = await vscode.commands.executeCommand<vscode.SemanticTokens | undefined>(
-        'vscode.provideDocumentSemanticTokens',
-        doc.uri,
-      );
-      if (!legend || !tokens) {
-        return null;
+    version: number,
+  ): Promise<{ tokens: DecodedToken[] | null; semantic: SemanticState; paths?: PathKeywords; strings?: boolean }> {
+    const ask = async <T>(cmd: string): Promise<T | undefined> => {
+      try {
+        return await vscode.commands.executeCommand<T>(cmd, doc.uri);
+      } catch {
+        return undefined;
       }
-      return decodeSemanticTokens(tokens.data, legend.tokenTypes, legend.tokenModifiers, lineStarts, text);
-    } catch {
-      return null;
+    };
+    const [legend, tokens] = await Promise.all([
+      ask<vscode.SemanticTokensLegend>('vscode.provideDocumentSemanticTokensLegend'),
+      ask<vscode.SemanticTokens>('vscode.provideDocumentSemanticTokens'),
+    ]);
+    if (!legend) {
+      return { tokens: null, semantic: 'none' };
     }
+    if (!tokens || !tokensFitLegend(tokens.data, legend.tokenTypes.length, legend.tokenModifiers.length)) {
+      return { tokens: null, semantic: 'empty' };
+    }
+    const rust = doc.languageId === 'rust';
+    const strings = doc.languageId === 'lua' && typesStringLiterals(tokens.data, legend.tokenTypes);
+    if (doc.version !== version) {
+      // Tokens for old text are never classified; only the answer's state is read.
+      const { any, paths } = answerStateOf(tokens.data, legend.tokenTypes, lineStarts, text, rust);
+      return { tokens: null, semantic: any ? 'ok' : 'empty', paths, strings };
+    }
+    const decoded = decodeSemanticTokens(tokens.data, legend.tokenTypes, legend.tokenModifiers, lineStarts, text);
+    return { tokens: decoded, semantic: decoded.length > 0 ? 'ok' : 'empty', paths: rust ? rustPathKeywords(decoded) : undefined, strings };
   }
 
   private collectFunctionRanges(

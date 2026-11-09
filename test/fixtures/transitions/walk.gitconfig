@@ -1,0 +1,10 @@
+[user]
+	name = self
+	email = this@example.com
+[core]
+	editor = code --wait
+	pager = delta --line-numbers 3
+[alias]
+	async = "!f() { git fetch && git rebase; }; f"
+[include]
+	path = ~/.config/git/this

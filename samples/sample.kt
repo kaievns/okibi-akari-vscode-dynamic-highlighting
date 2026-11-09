@@ -68,13 +68,13 @@ fun <T> fold(cfgs: List<Config>, seed: T, reducer: (T, Config) -> T): T {
     return acc
 }
 
-// extension function — receiver `this` is the gold self-slot
+// extension function — receiver `this` is the keyword colour
 fun Config.describe(): String {
     val envs = this.tags.keys.joinToString(",")
     return "${this.name} retries=${this.retries} envs=[$envs]"
 }
 
-// class: `this` is the gold self-slot; methods are band-1
+// class: `this` is the keyword colour; methods are band-1
 class Worker(private val id: String) {
     private var seen = 0
     private val history = mutableListOf<String>()

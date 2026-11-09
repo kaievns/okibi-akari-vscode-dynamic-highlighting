@@ -4,8 +4,9 @@
  * active editor, and paints the result.
  *
  * Two clocks, physically separated, are the whole performance story:
- *   - EXPENSIVE (classification / LSP): DEBOUNCED. Typing coalesces at 140ms;
- *     discrete navigation at 60ms. Runs at most once per document version.
+ *   - EXPENSIVE (classification / LSP): DEBOUNCED. Typing coalesces at 140ms
+ *     (up to 400ms past 10k lines); discrete navigation at 60ms. Runs at most once
+ *     per document version.
  *   - CHEAP (render): COALESCED to a microtask so a burst of events collapses to
  *     one applyDecorations pass.
  *
@@ -23,17 +24,39 @@
  */
 
 import * as vscode from 'vscode';
-import { scanBlocks, innermostBlock, focusKeyOf, lexRegionFor, lexIdentifiers, isNonFlowLanguage, BraceBlock } from './focus';
-import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL } from './phases';
-import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool } from './tokens';
-import { Classifier } from './classify-lsp';
+import {
+  scanBlocks,
+  innermostBlock,
+  functionScopeOf,
+  isParamPattern,
+  isPatternBrace,
+  focusKeyOf,
+  lexRegionFor,
+  isNonFlowLanguage,
+  effectiveLanguageId,
+  band1LanguageId,
+  isTopLevelBlock,
+  topLevelExcludes,
+  topLevelLines,
+  inSortedRanges,
+  BraceBlock,
+} from './focus';
+import { LexResult, forgetLex, lexFor, relex, rememberLex, syntaxFor } from './lex';
+import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL, isTypingEdit } from './phases';
+import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool, decorationType, rangeBehaviorOf } from './tokens';
+import { mayForceMove, rangesMovedBy } from './tracking';
+import { Classifier, RUST_PATH_KEYWORDS, SemanticState } from './classify-lsp';
 import { Classification, OffsetRange } from './classify';
 import { ColorPlan, planFromColoring } from './colors';
 import { ScopeColoring } from './scopecolor';
 import { computeTraceRanges } from './traces';
 import { lexicalRisk, escapeRisk } from './risk';
 import { highlightSpans, linkSpans } from './markdown';
-import { rustPlaceholderSpans } from './placeholders';
+import { Span, jsPlaceholderSpans, luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans, rustStringBracketSpans } from './placeholders';
+import { commentBracketSpans, goDocLinkSpans } from './doclinks';
+import { importUseNames, importUseSpans, shadowUseSpans } from './imports';
+import { luaRestoreSpans } from './lua';
+import { rubyKeywordSelf, rubyShadowSpans } from './ruby';
 
 interface Config {
   enabled: boolean;
@@ -57,11 +80,88 @@ function readConfig(): Config {
 /** Debounce windows tuned to the character of each event source. */
 const DEBOUNCE_EDIT_MS = 140; // typing: bursty, coalesce harder
 const DEBOUNCE_FOCUS_MS = 60; // discrete nav: snappier
-const RETRY_COLD_MS = 500; // one-shot cold-server semantic retry
+
+/** The typing debounce: longer past 10k lines, where one reclassify outlasts a gap between keys. */
+export function editDebounceMs(lineCount: number): number {
+  return lineCount <= 10_000 ? DEBOUNCE_EDIT_MS : Math.min(400, Math.round(DEBOUNCE_EDIT_MS + (lineCount - 10_000) / 150));
+}
+// Save participants (format on save, organise imports) run between onWillSave and
+// onDidSave. A failed save never fires onDidSave, so the window also expires.
+const SAVE_WINDOW_MS = 5000;
+
+/**
+ * URI schemes of documents the layer paints. Everything else is an editor that
+ * is not a source file: output and debug channels, the SCM commit box, comment
+ * inputs, search editors. The Output channel is the dangerous one: it reports
+ * every debug line as an edit, so painting it would feed itself.
+ */
+const DECORATABLE_SCHEMES = new Set(['file', 'untitled', 'vscode-remote', 'vscode-vfs', 'vscode-notebook-cell']);
+
+export function isDecoratable(doc: { uri: { scheme: string } }): boolean {
+  return DECORATABLE_SCHEMES.has(doc.uri.scheme);
+}
+
+const langOf = (doc: vscode.TextDocument): string => effectiveLanguageId(doc.languageId, doc.fileName);
+/** Band 1 reads a TypeScript declaration file as TypeScript; only bands 2–3 treat it as static. */
+const band1LangOf = (doc: vscode.TextDocument): string => band1LanguageId(langOf(doc));
+/** The `import * as` restore (docs/import-restore.md#javascript-and-typescript); the React ids wait for their JSX tag positions. */
+const NAMESPACE_RESTORE_LANGUAGES = new Set(['javascript', 'typescript']);
+
+/** The document URIs a tab shows: a text tab's, or both sides of a diff. */
+function tabUris(tab: { input: unknown }): string[] {
+  const input = tab.input as { uri?: vscode.Uri; original?: vscode.Uri; modified?: vscode.Uri } | undefined;
+  return [input?.uri, input?.original, input?.modified]
+    .filter((u): u is vscode.Uri => u !== undefined)
+    .map((u) => u.toString());
+}
+
+const PLACEHOLDER_SCANS: Record<string, ((text: string) => Span[]) | undefined> = {
+  rust: rustPlaceholderSpans,
+  python: pythonPlaceholderSpans,
+  lua: luaPlaceholderSpans,
+  ruby: rubyPlaceholderSpans,
+  javascript: jsPlaceholderSpans,
+};
+
+const COMMENT_RESTORE_SCANS: Record<string, ((text: string, lex: LexResult) => Span[]) | undefined> = {
+  go: (text, lex) => goDocLinkSpans(text, lex),
+  rust: (text, lex) => commentBracketSpans(text, lex),
+  javascript: (text, lex) => commentBracketSpans(text, lex, true),
+  typescript: (text, lex) => commentBracketSpans(text, lex, true),
+};
 
 interface CacheEntry {
   classification: Classification;
   plan: ColorPlan;
+  semantic: SemanticState;
+  /**
+   * A heuristic plan built while a registered provider answered nothing. Band 2
+   * does not paint it and keeps only semantic tints already on screen: the
+   * provider's answer replaces it within the retry schedule. False once the
+   * schedule is spent.
+   */
+  hold: boolean;
+}
+
+interface DocState {
+  version: number;
+  text: string;
+  lex: LexResult;
+  blocks?: BraceBlock[];
+  topLevel?: { excludes: OffsetRange[]; gutter: vscode.Range[] };
+}
+
+interface AppliedRanges {
+  ranges: vscode.Range[];
+  key: string;
+  moved?: boolean;
+}
+
+/** Band-3 lexical marks and clay numbers for one block, as editor ranges. */
+interface RiskRanges {
+  async: vscode.Range[];
+  danger: vscode.Range[];
+  numbers: vscode.Range[];
 }
 
 export class Decorator implements vscode.Disposable {
@@ -77,12 +177,15 @@ export class Decorator implements vscode.Disposable {
   // No colour ledgers: hues come from the per-scope co-visibility colouring
   // (scopecolor.ts), which is a pure function of the document — so there is no
   // navigation-history state that could make colours order-dependent.
-  // Text + blocks per document version. Caching the TEXT matters as much as the
-  // blocks: doc.getText() rebuilds the whole document string, and it was being
+  // Text + lex + blocks per document version. Caching the TEXT matters as much as
+  // the blocks: doc.getText() rebuilds the whole document string, and it was being
   // called several times per caret move.
-  private blockCache = new WeakMap<
+  private blockCache = new WeakMap<vscode.TextDocument, DocState>();
+  // The previous version's lex and the one change that replaced it, for a document a
+  // visible editor shows: the render that follows re-lexes only around the change.
+  private relexFrom = new WeakMap<
     vscode.TextDocument,
-    { version: number; text: string; blocks: BraceBlock[] }
+    { version: number; lex: LexResult; start: number; oldEnd: number; newEnd: number }
   >();
   // Markdown band-1 mark ranges per document version. Both scanners walk the
   // whole document, and renderMarkdownMarks runs on every render (every caret
@@ -91,22 +194,62 @@ export class Decorator implements vscode.Disposable {
     vscode.TextDocument,
     { version: number; highlight: vscode.Range[]; link: vscode.Range[] }
   >();
-  // Rust format-placeholder ranges per document version. Same reasoning as mdCache:
-  // the scan walks the whole document and render runs on every caret move.
+  // Rust, Python and Lua format-placeholder ranges per document version. Same reasoning as
+  // mdCache: the scan walks the whole document and render runs on every caret move.
   private placeholderCache = new WeakMap<
     vscode.TextDocument,
     { version: number; ranges: vscode.Range[] }
   >();
-  // Bounded LRU keyed `${docVersion}::${focusKey}`.
+  // `self` / `this` ranges per document version, for the same reason, and whether they
+  // include the Rust path keywords.
+  private selfCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; paths: boolean; ranges: vscode.Range[] }
+  >();
+  // Comment-restore ranges (Go doc links, brackets in Rust comments) per document version, for the same reason.
+  private commentRestoreCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; ranges: vscode.Range[] }
+  >();
+  // Brackets in Rust strings per document version and semantic state, for the same reason.
+  private stringRestoreCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; semantic: boolean; ranges: vscode.Range[] }
+  >();
+  // Import- and shadow-restore ranges per document version. Unlike the other band-1
+  // marks they are recomputed after the typing debounce, not per keystroke: see renderImports.
+  private importCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; typed: string; ranges: vscode.Range[]; shadows: vscode.Range[] }
+  >();
+  private importTimers = new Map<vscode.TextDocument, ReturnType<typeof setTimeout>>();
+  // Bounded LRU keyed by cacheKey().
   private classCache = new Map<string, CacheEntry>();
+  // Band-2 editor ranges per plan: an entry belongs to one version and block, and
+  // band 2 repaints on every render.
+  private band2Ranges = new WeakMap<
+    CacheEntry,
+    { region: OffsetRange; id: vscode.Range[][]; idg: vscode.Range[][] }
+  >();
   private static CACHE_LIMIT = 16;
+  // A number per TextDocument object. VS Code builds a new object at version 1 when
+  // a file is reopened or its language changes, so uri + version alone can name two
+  // different texts.
+  private instanceIds = new WeakMap<vscode.TextDocument, number>();
+  private nextInstanceId = 1;
 
-  // Which range list is currently applied to each type, for dirty-checking.
-  // Decorations are per-editor, so the dirty-check is only valid for the editor
-  // it was recorded against; `lastAppliedEditor` tracks that, and the state is
-  // reset when the active editor changes (see render()).
-  private lastApplied = new Map<vscode.TextEditorDecorationType, string>();
-  private lastAppliedEditor: vscode.TextEditor | undefined;
+  // Which range list each editor currently shows per type, for dirty-checking.
+  // Decorations are per-editor, and band 1 paints every visible editor. The array
+  // is kept too: the per-version caches hand back the same array, which skips
+  // building the key. `moved`: an edit has since moved these ranges on screen.
+  private applied = new WeakMap<
+    vscode.TextEditor,
+    Map<vscode.TextEditorDecorationType, AppliedRanges>
+  >();
+  // The editor band 2/3 were last rendered for; a change resets the stale-holds.
+  private lastActiveEditor: vscode.TextEditor | undefined;
+  // Documents inside a save, with the time onWillSave fired (see SAVE_WINDOW_MS).
+  private saving = new WeakMap<vscode.TextDocument, number>();
   // Documents the user has intentionally engaged: a selection change carrying an
   // input `kind`, or an edit. Only an engaged document may enter Focus or paint
   // bands, so activating a tab can never do it.
@@ -126,11 +269,31 @@ export class Decorator implements vscode.Disposable {
   // distinguish "same block, awaiting reclassify" (hold) from "moved to a new
   // block" (clear then cut).
   private renderedBand2Key: string | null = null;
+  // Whether those tints came from semantic tokens. A provider-silent hold keeps
+  // only these: heuristic tints painted before the provider registered are not
+  // its answer.
+  private renderedBand2Semantic = false;
+  // The focusKey whose escape underlines are on screen; same stale-hold rule as band 2.
+  private renderedEscapeKey: string | null = null;
+  // The block the last render painted the gutter and bands for. A render between an
+  // edit and its caret update reads the old caret against the new text, so it can
+  // paint a block the caret is not in; undefined when nothing was painted.
+  private renderedBlockKey: string | null | undefined;
+  // Band-3 and clay ranges for the focused block at one document version. A render
+  // runs on every caret move and keystroke; the ranges only change with the text,
+  // the block or the classification.
+  private riskCache: {
+    key: string;
+    lexical: { async: vscode.Range[]; danger: vscode.Range[]; numbers: vscode.Range[] };
+    escapeFor?: CacheEntry;
+    escape?: vscode.Range[];
+  } | undefined;
   private classifyToken: vscode.CancellationTokenSource | undefined;
 
   private relaxTimer: ReturnType<typeof setTimeout> | undefined;
   private classifyTimer: ReturnType<typeof setTimeout> | undefined;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryDoc: vscode.TextDocument | undefined;
   private renderQueued = false;
 
   private disposables: vscode.Disposable[] = [];
@@ -177,20 +340,21 @@ export class Decorator implements vscode.Disposable {
       vscode.window.onDidChangeTextEditorSelection((e) => this.onSelection(e)),
       vscode.workspace.onDidChangeTextDocument((e) => this.onEdit(e)),
       vscode.window.onDidChangeActiveTextEditor(() => this.refresh()),
-      // A new editor becoming visible (split, tab restore after reload) must not
-      // inherit stale decorations from whatever was painted before.
-      vscode.window.onDidChangeVisibleTextEditors(() => {
-        const active = vscode.window.activeTextEditor;
-        if (active) {
-          this.clearOtherEditors(active);
-        }
-        this.scheduleRender();
-      }),
+      // A newly visible editor (split, tab restore after reload) gets band 1, and
+      // never inherits band 2/3: render() clears them off every non-active editor.
+      vscode.window.onDidChangeVisibleTextEditors(() => this.scheduleRender()),
       // Closing a document forgets its engagement, so reopening it starts in Survey
       // like any freshly opened file — and the maps do not grow unbounded.
       vscode.workspace.onDidCloseTextDocument((doc) => {
         this.engaged.delete(doc.uri.toString());
+        this.saving.delete(doc);
       }),
+      // The close event waits for the model to be disposed, which a reference held
+      // by any extension's openTextDocument delays by up to 3 minutes. The last tab
+      // closing is when the user closed the file.
+      vscode.window.tabGroups.onDidChangeTabs((e) => this.onTabsClosed(e.closed)),
+      vscode.workspace.onWillSaveTextDocument((e) => this.onWillSave(e.document)),
+      vscode.workspace.onDidSaveTextDocument((doc) => this.onDidSave(doc)),
       vscode.window.onDidChangeActiveColorTheme(() => this.onThemeChanged()),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('okibiDynamic')) {
@@ -200,7 +364,8 @@ export class Decorator implements vscode.Disposable {
           // in the constructor meant flipping the setting appeared to do nothing —
           // the channel was not even listed in the Output dropdown.
           this.syncDebugChannel();
-          this.buildDecorations();
+          // No setting changes a colour, so the pool is kept: a rebuild strips band
+          // 1 from every editor until each one is repainted.
           this.refresh();
         }
       }),
@@ -217,15 +382,16 @@ export class Decorator implements vscode.Disposable {
   private buildDecorations(): void {
     this.gutterDecoration?.dispose();
     this.pool?.all().forEach((t) => t.dispose());
-    this.lastApplied.clear();
-    this.lastAppliedEditor = undefined;
+    this.applied = new WeakMap();
+    this.lastActiveEditor = undefined;
     this.renderedBand2Key = null;
+    this.renderedEscapeKey = null;
 
     const ember = pick(TOKENS.ember, this.isDark);
     // The focus indicator: a thin 2px ember stripe at 50% opacity, left-aligned
     // in the glyph-margin slot (the only public way to paint the gutter).
     const stripe = gutterStripeUri(ember, 0.5, 4);
-    this.gutterDecoration = vscode.window.createTextEditorDecorationType({
+    this.gutterDecoration = decorationType({
       gutterIconPath: vscode.Uri.parse(stripe),
       gutterIconSize: 'cover',
       rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
@@ -253,20 +419,76 @@ export class Decorator implements vscode.Disposable {
    * once for the top-level fallback) and again in every render, which is what made
    * navigation feel laggy on large files. One cache serves all of them.
    */
-  private docStateFor(doc: vscode.TextDocument): { text: string; blocks: BraceBlock[] } {
+  private docStateFor(doc: vscode.TextDocument): DocState & { blocks: BraceBlock[] } {
+    const state = this.textStateFor(doc);
+    if (!state.blocks) {
+      state.blocks = scanBlocks(state.text, langOf(doc));
+    }
+    return state as DocState & { blocks: BraceBlock[] };
+  }
+
+  /**
+   * Text + lex for the current version, without the block scan. Band 1 paints
+   * every visible editor and needs no blocks.
+   */
+  private textStateFor(doc: vscode.TextDocument): DocState {
     const cached = this.blockCache.get(doc);
     if (cached && cached.version === doc.version) {
       return cached;
     }
+    if (cached) {
+      forgetLex(cached.text);
+    }
     const text = doc.getText();
-    const state = { version: doc.version, text, blocks: scanBlocks(text, doc.languageId) };
+    const from = this.relexFrom.get(doc);
+    this.relexFrom.delete(doc);
+    const lx = from && from.version === doc.version && from.lex.syntax === syntaxFor(langOf(doc))
+      ? relex(from.lex, text, from.start, from.oldEnd, from.newEnd)
+      : null;
+    if (lx) {
+      rememberLex(text, lx);
+    }
+    const state: DocState = { version: doc.version, text, lex: lx ?? lexFor(text, langOf(doc)) };
     this.blockCache.set(doc, state);
     return state;
   }
 
   /** Cached document text for the current version (see docStateFor). */
   private textFor(doc: vscode.TextDocument): string {
-    return this.docStateFor(doc).text;
+    return this.textStateFor(doc).text;
+  }
+
+  /** What the top-level scope excludes, and the gutter over the lines it owns, per version. */
+  private topLevelFor(doc: vscode.TextDocument): { excludes: OffsetRange[]; gutter: vscode.Range[] } {
+    const state = this.docStateFor(doc);
+    if (!state.topLevel) {
+      const excludes = topLevelExcludes(state.text, state.blocks, langOf(doc));
+      const gutter = this.gutterRanges(doc, topLevelLines(state.text, state.lex.lineStarts, excludes));
+      state.topLevel = { excludes, gutter };
+    }
+    return state.topLevel;
+  }
+
+  /**
+   * One range per run of consecutive lines (ascending input). VS Code draws a
+   * gutter icon on every line a decoration's range covers, wrapped rows included,
+   * so a run ends at its last line's end. See docs/runtime.md#gutter-stripe.
+   */
+  private gutterRanges(doc: vscode.TextDocument, lines: number[]): vscode.Range[] {
+    const out: vscode.Range[] = [];
+    for (let i = 0; i < lines.length; ) {
+      let j = i;
+      while (j + 1 < lines.length && lines[j + 1] === lines[j] + 1) j++;
+      out.push(new vscode.Range(lines[i], 0, lines[j], doc.lineAt(lines[j]).range.end.character));
+      i = j + 1;
+    }
+    return out;
+  }
+
+  /** The active editor when it shows a document the layer paints. */
+  private activeEditor(): vscode.TextEditor | undefined {
+    const editor = vscode.window.activeTextEditor;
+    return editor && isDecoratable(editor.document) ? editor : undefined;
   }
 
 
@@ -282,27 +504,86 @@ export class Decorator implements vscode.Disposable {
   private focusedBlock(editor: vscode.TextEditor): BraceBlock | null {
     const caret = editor.selection.active;
     const doc = editor.document;
-    const { text, blocks } = this.docStateFor(doc);
+    const state = this.docStateFor(doc);
+    const { text, blocks } = state;
+    const lang = langOf(doc);
     // `text` is what enables the synthetic MODULE TOP LEVEL scope, so a caret among
     // top-level declarations still focuses something. Prose must NOT get it: that
     // fallback spans the whole document, which in a markdown file made every English
     // word a candidate data identity — the layer tinted `the`, `a` and `The`.
     // Withholding it returns null, so the phase stays Survey and bands 2-3 never
     // paint. See `isProseLanguage`.
-    const fallback = isNonFlowLanguage(doc.languageId) ? undefined : text;
-    return innermostBlock(blocks, caret.line, doc.offsetAt(caret), fallback);
+    const fallback = isNonFlowLanguage(lang) ? undefined : text;
+    const offset = doc.offsetAt(caret);
+    if (state.lex.syntax.family !== 'js') {
+      return innermostBlock(blocks, caret.line, offset, fallback);
+    }
+    // JS / TS: a one-line function holds a caret in its parameters, and a destructuring
+    // pattern focuses the scope that owns its names (docs/javascript.md#blocks-and-focus).
+    const starts = new Map<BraceBlock, number>();
+    for (const b of blocks) {
+      if (b.openLine !== caret.line || b.closeLine !== caret.line || offset > b.openOffset) continue;
+      const scope = functionScopeOf(text, b, lang);
+      if (scope && scope.start < b.openOffset && scope.start >= b.headerStart) starts.set(b, scope.start);
+    }
+    let pool = blocks;
+    for (;;) {
+      const b = innermostBlock(pool, caret.line, offset, fallback, starts);
+      if (!b || b.depth < 0 || !(isPatternBrace(text, b, lang) || isParamPattern(text, b, lang))) return b;
+      pool = pool.filter((x) => x !== b);
+    }
   }
 
   /**
-   * The classification cache key. MUST include the document URI: `focusKey` is
-   * only `openLine#depth`, and a freshly-reloaded window has every document at
-   * version 1 — so `sample.js` and `sample.go` both keyed to `1::0#-1` and the
-   * second file rendered the FIRST file's occurrence offsets against its own
-   * text. That was the "garbled highlighting on files not focused at reload":
-   * ranges landing mid-word and inside comments.
+   * The classification cache key. It names the TextDocument OBJECT, not just the
+   * URI: a reopened document restarts at version 1 and its blocks get the same
+   * focus keys, so the key must tell the two texts apart. See
+   * docs/classification-rules.md.
    */
   private cacheKey(doc: vscode.TextDocument, focusKey: string): string {
-    return `${doc.uri.toString()}::${doc.version}::${focusKey}`;
+    return `${this.docPrefix(doc)}${doc.version}::${focusKey}`;
+  }
+
+  private docPrefix(doc: vscode.TextDocument): string {
+    let id = this.instanceIds.get(doc);
+    if (id === undefined) {
+      id = this.nextInstanceId++;
+      this.instanceIds.set(doc, id);
+    }
+    return `${doc.uri.toString()}#${id}::`;
+  }
+
+  /** Drop every cached plan for the document's current version. */
+  private dropPlansFor(doc: vscode.TextDocument): void {
+    const prefix = `${this.docPrefix(doc)}${doc.version}::`;
+    for (const key of [...this.classCache.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.classCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Drop what belongs to the document's earlier versions: the text and lex, their
+   * plans (keys carry the version, so none can match again) and the band-3 ranges.
+   */
+  private dropSupersededFor(doc: vscode.TextDocument): void {
+    const state = this.blockCache.get(doc);
+    this.relexFrom.delete(doc);
+    if (state && state.version !== doc.version) {
+      forgetLex(state.text);
+      this.blockCache.delete(doc);
+    }
+    const prefix = this.docPrefix(doc);
+    const current = `${prefix}${doc.version}::`;
+    for (const key of [...this.classCache.keys()]) {
+      if (key.startsWith(prefix) && !key.startsWith(current)) {
+        this.classCache.delete(key);
+      }
+    }
+    if (this.riskCache?.key.startsWith(prefix) && !this.riskCache.key.startsWith(current)) {
+      this.riskCache = undefined;
+    }
   }
 
   private putCache(key: string, entry: CacheEntry): void {
@@ -327,7 +608,7 @@ export class Decorator implements vscode.Disposable {
       return;
     }
     const editor = e.textEditor;
-    if (editor !== vscode.window.activeTextEditor) {
+    if (editor !== vscode.window.activeTextEditor || !isDecoratable(editor.document)) {
       return;
     }
     // Most selection-change events are a discrete, intentional caret placement —
@@ -336,9 +617,8 @@ export class Decorator implements vscode.Disposable {
     // "changes only on discrete intentional input, never scroll/hover/time").
     // A mouse click MUST advance Survey→Focus and refresh the activity clock the
     // same as a keystroke — onCaret only ever upgrades one-way, so there is no
-    // strobe to guard against. (Earlier we gated this on Keyboard/Command kind,
-    // which left clicks unable to enter Focus — that was the "stuck until I
-    // arrow-key" bug.)
+    // strobe to guard against. Limiting it to Keyboard/Command kind leaves clicks
+    // unable to enter Focus.
     //
     // The exception is a TAB SWITCH: activating an editor makes VS Code re-report
     // that editor's restored caret as a selection change, landing just after
@@ -398,27 +678,126 @@ export class Decorator implements vscode.Disposable {
     if (focusChanged || phaseChanged) {
       this.scheduleRender();
       this.scheduleRelax();
+    } else if (newKey !== this.renderedBlockKey) {
+      this.scheduleRender();
     }
   }
 
   private onEdit(e: vscode.TextDocumentChangeEvent): void {
-    if (!this.config.enabled || e.contentChanges.length === 0) {
+    this.markMoved(e);
+    if (!this.config.enabled || e.contentChanges.length === 0 || !isDecoratable(e.document)) {
       return;
+    }
+    // Version bumped: the bundle and plans of the old text are dead in any editor.
+    this.classifier.invalidate(e.document);
+    const prev = this.blockCache.get(e.document);
+    this.dropSupersededFor(e.document);
+    const c = e.contentChanges.length === 1 ? e.contentChanges[0] : undefined;
+    const shown = vscode.window.activeTextEditor?.document === e.document ||
+      vscode.window.visibleTextEditors.some((ed) => ed.document === e.document);
+    if (c && prev && prev.version === e.document.version - 1 && shown) {
+      this.relexFrom.set(e.document, {
+        version: e.document.version, lex: prev.lex, start: c.rangeOffset, oldEnd: c.rangeOffset + c.rangeLength, newEnd: c.rangeOffset + c.text.length,
+      });
     }
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.document !== e.document) {
+      // A rename, formatter or reload in a split that is not active: its band-1 marks follow the text.
+      if (shown) {
+        this.scheduleRender();
+      }
       return;
     }
     const now = Date.now();
     // Typing is unambiguous engagement — it also covers the case where an edit
-    // repositions the caret without a separate selection event.
-    this.engaged.add(e.document.uri.toString());
-    this.machine.onType(now);
-    // Version bumped → block scan + classification are stale.
-    this.classifier.invalidate(e.document);
-    this.scheduleClassify(e.document, DEBOUNCE_EDIT_MS);
+    // repositions the caret without a separate selection event. An edit the user
+    // did not type (format on save, rename, an auto-import) still reclassifies but
+    // neither engages nor enters Edit.
+    if (this.isTypingEdit(editor, e, now)) {
+      this.engaged.add(e.document.uri.toString());
+      this.machine.onType(now);
+    }
+    // A classify still in flight belongs to the old text.
+    this.classifyToken?.cancel();
+    this.scheduleClassify(e.document, editDebounceMs(e.document.lineCount));
+    if (this.importCache.has(e.document) && !this.classifier.semanticOk(e.document)) {
+      this.scheduleImports(e.document);
+    }
     this.scheduleRender(); // renders lexical band-3 now, holds stale band-2
     this.scheduleRelax();
+  }
+
+  /**
+   * VS Code has already moved every decoration in the document's editors with
+   * the edit. A record whose ranges moved no longer says what the editor shows,
+   * so the next apply of that type cannot be skipped as unchanged.
+   */
+  private markMoved(e: vscode.TextDocumentChangeEvent): void {
+    const editors = new Set(vscode.window.visibleTextEditors);
+    if (vscode.window.activeTextEditor) {
+      editors.add(vscode.window.activeTextEditor);
+    }
+    let forced: boolean[] | undefined;
+    for (const ed of editors) {
+      const records = ed.document === e.document ? this.applied.get(ed) : undefined;
+      if (!records) {
+        continue;
+      }
+      const f = (forced ??= this.forcedChanges(e));
+      for (const [type, rec] of records) {
+        if (!rec.moved && rec.ranges.length > 0 &&
+          e.contentChanges.some((c, i) => rangesMovedBy(c, rec.ranges, rangeBehaviorOf(type), f[i]))) {
+          rec.moved = true;
+        }
+      }
+    }
+  }
+
+  /** Per change, whether VS Code may have applied it with forceMoveMarkers. */
+  private forcedChanges(e: vscode.TextDocumentChangeEvent): boolean[] {
+    // Undo and redo, the only change reasons, apply without it.
+    if (e.reason !== undefined) {
+      return e.contentChanges.map(() => false);
+    }
+    const ed = vscode.window.activeTextEditor;
+    const carets = ed && ed.document === e.document && !this.inSave(e.document, Date.now()) ? ed.selections : [];
+    return e.contentChanges.map((c) => mayForceMove(c, carets));
+  }
+
+  private inSave(doc: vscode.TextDocument, now: number): boolean {
+    const saveStarted = this.saving.get(doc);
+    return saveStarted !== undefined && now - saveStarted < SAVE_WINDOW_MS;
+  }
+
+  private isTypingEdit(editor: vscode.TextEditor, e: vscode.TextDocumentChangeEvent, now: number): boolean {
+    if (this.inSave(e.document, now)) {
+      return false;
+    }
+    return isTypingEdit(
+      e.contentChanges.map((c) => ({ start: c.range.start, end: c.range.end, text: c.text })),
+      editor.selections,
+    );
+  }
+
+  /** Forget the engagement of every closed tab's document that no other tab shows. */
+  private onTabsClosed(closed: readonly vscode.Tab[]): void {
+    if (closed.length === 0) {
+      return;
+    }
+    const shown = new Set(vscode.window.tabGroups.all.flatMap((g) => g.tabs.flatMap(tabUris)));
+    for (const uri of closed.flatMap(tabUris)) {
+      if (!shown.has(uri)) {
+        this.engaged.delete(uri);
+      }
+    }
+  }
+
+  private onWillSave(doc: vscode.TextDocument): void {
+    this.saving.set(doc, Date.now());
+  }
+
+  private onDidSave(doc: vscode.TextDocument): void {
+    this.saving.delete(doc);
   }
 
   // ── Scheduling ───────────────────────────────────────────────────────────────
@@ -472,7 +851,7 @@ export class Decorator implements vscode.Disposable {
   // ── Classification (expensive clock) ─────────────────────────────────────────
 
   private async runClassify(doc: vscode.TextDocument): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.activeEditor();
     if (!editor || editor.document !== doc) {
       return;
     }
@@ -481,10 +860,16 @@ export class Decorator implements vscode.Disposable {
       return; // Survey — nothing to classify
     }
     const focusKey = focusKeyOf(block);
+    // An edit can change the caret's block with no selection change; the epoch guard compares against this.
+    this.currentFocusKey = focusKey;
     const key = this.cacheKey(doc, focusKey);
-    if (this.classCache.has(key)) {
+    const hit = this.classCache.get(key);
+    if (hit) {
       // Fresh plan already cached for this version+block; just (re)render.
       this.scheduleRender();
+      if (hit.semantic !== 'ok' || this.classifier.awaitsLoad(doc)) {
+        this.scheduleColdRetry(doc);
+      }
       return;
     }
 
@@ -492,17 +877,29 @@ export class Decorator implements vscode.Disposable {
     this.classifyToken = new vscode.CancellationTokenSource();
     const token = this.classifyToken.token;
 
-    let scoped: { focused: Classification; coloring: ScopeColoring } | null;
+    const pathsBefore = this.classifier.pathKeywordsOf(doc);
+    const okBefore = this.classifier.semanticOk(doc);
+    const stringsBefore = this.classifier.typesStrings(doc);
+    const typedBefore = this.classifier.typedNamespacesOf(doc);
+    let scoped: { focused: Classification; coloring: ScopeColoring; semantic: SemanticState } | null;
     try {
       scoped = await this.classifier.classifyScope(
         doc,
         block,
         TOKENS.id.length,
         token,
-        this.docStateFor(doc), // reuse the cached text + block scan
+        this.docStateFor(doc), // the cached text + block scan, and the version they belong to
       );
     } catch {
-      return;
+      scoped = null;
+    }
+    if (
+      this.classifier.pathKeywordsOf(doc) !== pathsBefore ||
+      this.classifier.semanticOk(doc) !== okBefore ||
+      this.classifier.typesStrings(doc) !== stringsBefore ||
+      this.classifier.typedNamespacesOf(doc) !== typedBefore
+    ) {
+      this.scheduleRender(); // band 1 follows the answer even when band 2 discards it
     }
     if (!scoped || token.isCancellationRequested) {
       return;
@@ -517,32 +914,58 @@ export class Decorator implements vscode.Disposable {
       return;
     }
     this.dbg(
-      `classify OK key=${focusKey} byName=[${[...classification.byName].map(([n, i]) => n + ':' + i.cls).join(',')}]`,
+      `classify OK key=${focusKey} semantic=${scoped.semantic} paths=${this.classifier.pathKeywordsOf(doc) ?? '-'} ` +
+        `byName=[${[...classification.byName].map(([n, i]) => n + ':' + i.cls).join(',')}]`,
     );
 
     // Build the render plan from the SCOPE colouring: a name's hue comes from the
     // co-visibility graph (deterministic, navigation-independent), and only the
     // names in this block's visible set are painted at all.
     const plan = planFromColoring(classification, scoped.coloring);
-    this.putCache(key, { classification, plan });
+    const semantic = scoped.semantic;
+    const hold = semantic === 'empty' && this.classifier.coldRetryDelay(doc) !== null;
+    this.putCache(key, { classification, plan, semantic, hold });
     this.scheduleRender();
-
-    // Cold-server empty semantic recovery: one retry for this version only. The
-    // just-cached plan is a lexical-fallback (empty semantic result), so the
-    // retry must evict BOTH the classifier's LSP bundle cache and this decorator
-    // cache entry — otherwise runClassify short-circuits on the stale plan and
-    // never re-queries the now-warm server.
-    if (this.classifier.wasEmptySemantic(doc) && this.classifier.canRetry(doc)) {
-      this.classifier.markRetried(doc);
-      if (this.retryTimer) {
-        clearTimeout(this.retryTimer);
-      }
-      this.retryTimer = setTimeout(() => {
-        this.classifier.invalidate(doc);
-        this.classCache.delete(key);
-        void this.runClassify(doc);
-      }, RETRY_COLD_MS);
+    if (semantic !== 'ok' || this.classifier.awaitsLoad(doc)) {
+      this.scheduleColdRetry(doc);
     }
+  }
+
+  /**
+   * Re-ask a server that answered nothing, or rust-analyzer when its answer was
+   * degraded, on the classifier's backoff schedule, with no edit needed: a server
+   * is cold for seconds after a window reload, and a cargo workspace still loading
+   * answers like a detached file. The retry evicts both the LSP bundle and this
+   * version's plans, or runClassify would short-circuit on them. One chain at a
+   * time, for the active document; it stops at the first answer with tokens that
+   * is not degraded, or when the schedule is spent.
+   */
+  private scheduleColdRetry(doc: vscode.TextDocument): void {
+    if (this.retryTimer) {
+      if (this.retryDoc === doc) {
+        return;
+      }
+      clearTimeout(this.retryTimer);
+    }
+    const delay = this.classifier.coldRetryDelay(doc);
+    if (delay === null) {
+      this.retryTimer = undefined;
+      this.retryDoc = undefined;
+      return;
+    }
+    this.retryDoc = doc;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      this.retryDoc = undefined;
+      const editor = this.activeEditor();
+      if (!editor || editor.document !== doc) {
+        return; // resumes on this document's next classify
+      }
+      this.dbg(`retry: re-ask the server about ${doc.fileName.split('/').pop()} after ${delay} ms`);
+      this.classifier.noteColdRetry(doc);
+      this.dropPlansFor(doc);
+      void this.runClassify(doc);
+    }, delay);
   }
 
   // ── Render (cheap clock) ─────────────────────────────────────────────────────
@@ -562,16 +985,6 @@ export class Decorator implements vscode.Disposable {
   }
 
   private renderInner(): void {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      // No active text editor — focus is in a webview, panel or another split.
-      // The bands must still come off the editors that are STILL VISIBLE: a Focus
-      // → Survey relaxation firing while the caret is elsewhere used to leave the
-      // tints painted forever, because clearAll(undefined) only reset bookkeeping.
-      this.clearAllVisible();
-      this.updateStatus();
-      return;
-    }
     if (!this.config.enabled) {
       // Disabled means disabled: band 1 marks come off too.
       this.clearAllVisible(true);
@@ -579,34 +992,45 @@ export class Decorator implements vscode.Disposable {
       return;
     }
 
-    // The dirty-check tracks ranges per decoration TYPE, but decorations are
-    // per-EDITOR. When the active editor changes, the recorded state describes a
-    // different editor and must be dropped, or an identical range set would be
-    // skipped and the newly-focused editor left unpainted.
-    if (this.lastAppliedEditor !== editor) {
-      this.lastApplied.clear();
-      this.lastAppliedEditor = editor;
-      this.renderedBand2Key = null;
-      // Band 2/3 belong to the FOCUSED block, so only the active editor may show
-      // them. Other visible editors (split view, or restored-but-unfocused tabs
-      // after a window reload) must be cleared: their decorations came from a
-      // different document's classification and read as garbled highlighting on
-      // random text. Decorations are per-editor, so this has to be explicit.
-      this.clearOtherEditors(editor);
+    // BAND 1 on every visible editor: phase-independent, so an inactive split shows
+    // the same marks as the active one, and a pool rebuild repaints all of them.
+    const shown = new Set(vscode.window.visibleTextEditors);
+    if (vscode.window.activeTextEditor) {
+      shown.add(vscode.window.activeTextEditor);
+    }
+    for (const ed of shown) {
+      if (isDecoratable(ed.document)) {
+        this.renderBand1(ed);
+      }
     }
 
+    const editor = this.activeEditor();
+    if (!editor) {
+      // No active source editor — focus is in a webview, panel, the Output channel
+      // or a settings UI. The bands must still come off the editors that are STILL
+      // VISIBLE, or they stay painted until some later event repaints.
+      this.clearAllVisible();
+      this.updateStatus();
+      return;
+    }
+
+    if (this.lastActiveEditor !== editor) {
+      this.lastActiveEditor = editor;
+      this.renderedBand2Key = null;
+      this.renderedEscapeKey = null;
+    }
+    // Band 2/3 belong to the FOCUSED block, so only the active editor may show
+    // them. Other visible editors (split view, or restored-but-unfocused tabs
+    // after a window reload) must be cleared: their decorations came from a
+    // different document's classification and read as garbled highlighting on
+    // random text. The per-editor dirty-check makes this free once they are clear.
+    this.clearOtherEditors(editor);
+
     const doc = editor.document;
-
-    // 0. Markdown band-1 marks. Painted BEFORE the phase gate and independent of
-    //    it: these are part of the resting register, and they live in this
-    //    extension only because `tokenColors` physically cannot express them (see
-    //    src/markdown.ts). Gating them on Focus would make the highlight wash
-    //    appear and disappear as attention moved, which is the opposite of band 1.
-    this.renderMarkdownMarks(editor, doc);
-
     const block = this.focusedBlock(editor);
+    this.renderedBlockKey = block ? focusKeyOf(block) : null;
     const phase = this.machine.current;
-    // FINAL GATE, enforced at the only place decorations are ever applied.
+    // THE PAINT CHECK, enforced at the only place decorations are ever applied.
     //
     // Bands 2 and 3 may not paint in a document the user has not engaged — no
     // matter how the phase got where it is. Three earlier fixes tried to keep the
@@ -629,13 +1053,13 @@ export class Decorator implements vscode.Disposable {
       );
     }
 
-    // 1. Gutter stripe — Focus + Edit, focused block's lines.
-    if (showBand2 && block) {
-      const ranges: vscode.Range[] = [];
-      for (let line = block.openLine; line <= block.closeLine; line++) {
-        ranges.push(new vscode.Range(line, 0, line, 0));
-      }
-      this.applyGutter(editor, ranges);
+    // 1. Gutter stripe — Focus + Edit, focused block's lines. The top-level scope
+    //    covers only the lines outside the function and type bodies it excludes.
+    if (showBand2 && block && isTopLevelBlock(block)) {
+      this.applyGutter(editor, this.topLevelFor(doc).gutter);
+    } else if (showBand2 && block) {
+      const end = doc.lineAt(block.closeLine).range.end.character;
+      this.applyGutter(editor, [new vscode.Range(block.openLine, 0, block.closeLine, end)]);
     } else {
       this.applyGutter(editor, []);
     }
@@ -647,9 +1071,12 @@ export class Decorator implements vscode.Disposable {
       this.clearBand2(editor);
     }
 
+    // One lexical-risk pass per version and block, shared by band 3 and the clay numbers.
+    const lexRisk = showBand2 && block ? this.lexicalRiskFor(doc, block) : undefined;
+
     // 3. Band 3 — risk marks, Edit only, focused block.
-    if (showBand3 && block) {
-      this.renderBand3(editor, doc, block);
+    if (showBand3 && block && lexRisk) {
+      this.renderBand3(editor, doc, block, lexRisk);
     } else {
       this.clearBand3(editor);
     }
@@ -660,73 +1087,182 @@ export class Decorator implements vscode.Disposable {
     // `--risk-*`, and the token comments read "literal numbers REST receded" /
     // "clay — focused scope, engaged phases only". A scope becomes *engaged* at
     // Focus (band 2's word for it), so clay arrives with Focus and persists through
-    // Edit — it was previously gated on Edit alone, so numbers stayed slate for the
-    // whole of Focus.
-    if (showBand2 && block) {
-      this.renderEngagedNumbers(editor, doc, block);
+    // Edit.
+    if (showBand2 && block && lexRisk) {
+      this.renderEngagedNumbers(editor, lexRisk);
     } else {
       this.applyType(editor, this.pool.numberEngaged, []);
     }
-
-    // 5. BAND 1 — `self` / `this`, file-wide and phase-independent.
-    //
-    // Not gated on the phase or on there being a focused block, because it is not a
-    // phase mark: --id-self equals band 1's resting keyword colour, so this paint is
-    // a no-op wherever band 1 already rendered correctly. It exists to correct the
-    // one case band 1 cannot: on a `.rs` file outside a cargo workspace,
-    // rust-analyzer types a `self` USE as `const`, and a semantic token outranks the
-    // grammar — so `self.retries` renders at editor.foreground, plain white.
-    //
-    // It was previously painted inside renderBand2, clipped to the focused block and
-    // cleared by clearBand2. That produced exactly the reported artefact: correct on
-    // first paint, white as soon as the phase relaxed to Survey, slate again on
-    // Focus. A correction for a phase-independent defect has to be phase-independent
-    // too.
-    this.renderSelf(editor, doc);
-
-    // 6. BAND 1 — Rust format placeholders. Also phase-independent, and also a
-    // correction for a semantic token the theme cannot outrank: rust-analyzer emits
-    // ONE `string` token spanning a whole literal, so the grammar's
-    // `meta.interpolation.rust` — which the theme does select — is annihilated and
-    // the holes render string green. Go, Python and TS need nothing here; their
-    // grammars scope placeholders separately and the theme reaches them. See
-    // src/placeholders.ts.
-    this.renderPlaceholders(editor, doc);
 
     this.updateStatus();
   }
 
   /**
-   * Paint `self` / `this` file-wide, at band 1's keyword colour.
+   * The band-1 marks for one editor: markdown washes, `self` / `this`, Rust, Python, Lua,
+   * Ruby and JavaScript format placeholders, the comment restores and the import and shadow restores. Each corrects something the
+   * theme cannot reach, so none is phase-bound and each is cached per document version.
+   *
+   * `self` stays out of renderBand2: band 2 is cleared when the phase relaxes to
+   * Survey, and a correction for a phase-independent defect has to be
+   * phase-independent too.
+   */
+  private renderBand1(editor: vscode.TextEditor): void {
+    const doc = editor.document;
+    this.renderMarkdownMarks(editor, doc);
+    this.renderSelf(editor, doc);
+    this.renderPlaceholders(editor, doc);
+    this.renderCommentRestore(editor, doc);
+    this.renderStringRestore(editor, doc);
+    this.renderImports(editor, doc);
+  }
+
+  /**
+   * Paint the uses of imported modules and types at the theme's type slate, and the
+   * non-call uses of a shadowed builtin at the page colour, in Python, Go, Lua, Ruby,
+   * JavaScript and TypeScript while `restoresImports` holds. The grammars cannot see
+   * the import list or a binding, so with `python.languageServer: None`, gopls off or
+   * a server still starting, `heapq.heapify` and `fmt.Println` read as plain locals
+   * and a parameter named `id` reads as the builtin; tsserver sends no token for a
+   * project file's `import * as util`, so `util.read` reads as a local. See
+   * src/imports.ts and src/lua.ts.
+   */
+  private renderImports(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    if (!this.restoresImports(doc)) {
+      this.applyType(editor, this.pool.importRestore, []);
+      this.applyType(editor, this.pool.shadowRestore, []);
+      return;
+    }
+    const cached = this.importCache.get(doc);
+    if (cached && cached.version === doc.version && cached.typed === this.classifier.typedNamespacesOf(doc)) {
+      this.applyRestores(editor, cached);
+      return;
+    }
+    // At the same version only the answer's typed namespaces changed.
+    if (!cached || cached.version === doc.version || this.appliedFor(editor).get(this.pool.importRestore)?.ranges !== cached.ranges) {
+      this.applyRestores(editor, this.importRangesFor(doc));
+      return;
+    }
+    // An edit. The ranges on screen moved with the text, so they stay until typing
+    // pauses: the recompute is a whole-file pass (docs/import-restore.md#cost).
+    if (!this.importTimers.has(doc)) {
+      this.scheduleImports(doc);
+    }
+  }
+
+  /** (Re)start the import-restore recompute for `doc`; each edit pushes it back. */
+  private scheduleImports(doc: vscode.TextDocument): void {
+    const pending = this.importTimers.get(doc);
+    if (pending) {
+      clearTimeout(pending);
+    }
+    this.importTimers.set(doc, setTimeout(() => {
+      this.importTimers.delete(doc);
+      if (this.restoresImports(doc)) {
+        this.importRangesFor(doc);
+        this.scheduleRender();
+      }
+    }, editDebounceMs(doc.lineCount)));
+  }
+
+  /**
+   * Python and Go until a semantic provider answers. Lua always: lua-language-server
+   * types a module `variable` or `class`, never `namespace`, so the slate would go when it
+   * answers; the shadow restore agrees with its `variable` paint (docs/lua.md#band-1-restores).
+   * JavaScript and TypeScript always, per name: `importRangesFor` leaves out a namespace
+   * whose uses the last answer typed (docs/import-restore.md#javascript-and-typescript).
+   */
+  private restoresImports(doc: vscode.TextDocument): boolean {
+    const lang = langOf(doc);
+    return lang === 'lua' || lang === 'ruby' || NAMESPACE_RESTORE_LANGUAGES.has(lang)
+      || ((lang === 'python' || lang === 'go') && !this.classifier.semanticOk(doc));
+  }
+
+  private applyRestores(editor: vscode.TextEditor, r: { ranges: vscode.Range[]; shadows: vscode.Range[] }): void {
+    this.applyType(editor, this.pool.importRestore, r.ranges);
+    this.applyType(editor, this.pool.shadowRestore, r.shadows);
+  }
+
+  private importRangesFor(doc: vscode.TextDocument): { version: number; ranges: vscode.Range[]; shadows: vscode.Range[] } {
+    const lx = this.textStateFor(doc).lex;
+    const lua = lx.syntax.family === 'lua' ? luaRestoreSpans(lx) : undefined;
+    const ruby = lx.syntax.family === 'ruby';
+    const typed = this.classifier.typedNamespacesOf(doc);
+    let imports = lua ? lua.imports : ruby ? [] : importUseSpans(lx);
+    if (typed !== '') {
+      const skip = new Set(typed.split(','));
+      const names = importUseNames(lx);
+      imports = imports.filter((_, i) => !skip.has(names[i]));
+    }
+    const entry = {
+      version: doc.version,
+      typed,
+      ranges: imports.map((s) => this.toRange(doc, s)),
+      shadows: (lua ? lua.shadows : ruby ? rubyShadowSpans(lx) : shadowUseSpans(lx)).map((s) => this.toRange(doc, s)),
+    };
+    this.importCache.set(doc, entry);
+    return entry;
+  }
+
+  /**
+   * Paint `self` / `this` file-wide, at band 1's keyword colour, and in Rust `Self`,
+   * `crate` and `super` too until rust-analyzer types them as keywords.
+   *
+   * --id-self equals band 1's resting keyword colour, so this paint is a no-op
+   * wherever band 1 already rendered correctly. It exists for the case band 1
+   * cannot hold: on a `.rs` file outside a cargo workspace, rust-analyzer types a
+   * `self` USE as `const`, `Self` as `struct` and `crate` / `super` as `namespace`,
+   * and a semantic token outranks the grammar. A cargo workspace sends the same
+   * degraded answer while it loads. docs/runtime.md#rust-path-keywords.
    *
    * Deliberately a plain lex rather than a classification: it needs no scope
    * analysis (every `self` in a file is the same identity to band 1), it must work
    * in Survey where there is no classification at all, and it must not wait on the
-   * language server. `lexIdentifiers` already skips strings and comments, so a
-   * `self` inside a doc comment is not painted.
+   * language server. The lexer's identifiers are code only, so a `self` inside a
+   * comment, string or docstring is not painted, and a prose or data file paints
+   * none. Ruby has no `this`, and `x.self` / `self:` are a method and a hash key
+   * (docs/ruby.md#band-1-restores); JavaScript's `self` is an ordinary name
+   * (docs/javascript.md#band-1-restores). Cached per document version.
    */
   private renderSelf(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
-    const text = this.textFor(doc);
-    const ranges: vscode.Range[] = [];
-    for (const id of lexIdentifiers(text)) {
-      if (id.name === 'self' || id.name === 'this') {
-        ranges.push(this.toRange(doc, { start: id.offset, end: id.offset + id.length }));
+    if (isNonFlowLanguage(band1LangOf(doc))) {
+      this.applyType(editor, this.pool.self, []);
+      return;
+    }
+    const paths = langOf(doc) === 'rust' && this.classifier.pathKeywordsOf(doc) !== 'keyword';
+    const cached = this.selfCache.get(doc);
+    let ranges: vscode.Range[];
+    if (cached && cached.version === doc.version && cached.paths === paths) {
+      ranges = cached.ranges;
+    } else {
+      ranges = [];
+      const lx = this.textStateFor(doc).lex;
+      const ruby = lx.syntax.family === 'ruby';
+      const js = lx.syntax.family === 'js';
+      for (const id of lx.idents) {
+        if ((id.name === 'self' && !js && (!ruby || rubyKeywordSelf(lx, id))) || (id.name === 'this' && !ruby) || (paths && RUST_PATH_KEYWORDS.has(id.name))) {
+          ranges.push(this.toRange(doc, { start: id.offset, end: id.offset + id.length }));
+        }
       }
+      this.selfCache.set(doc, { version: doc.version, paths, ranges });
     }
     this.dbg(`  band1 self: ${ranges.length} ranges (phase-independent)`);
     this.applyType(editor, this.pool.self, ranges);
   }
 
   /**
-   * Paint Rust format placeholders at member steel, file-wide and phase-independent.
-   *
-   * Rust only: the other languages' grammars emit a distinct scope for a placeholder
-   * and the theme handles them, so painting here would be redundant work on every
-   * render. Cached per document version because the scan walks the whole file and
-   * render runs on every caret move.
+   * Paint format placeholders at member steel, file-wide and phase-independent, in
+   * Rust (rust-analyzer's one `string` token covers the holes), Python f-strings
+   * (bracket-pair colorization paints the field braces), Lua while
+   * lua-language-server types its string literals, Ruby interpolation and JavaScript
+   * template holes (bracket-pair colorization paints `#{` `}` and `${` `}`). Go and
+   * Python `%` formats and TypeScript template holes sit inside a scope bracket-pair
+   * colorization leaves alone, and the theme reaches them. Cached per
+   * document version because the scan walks the whole file and render runs on every
+   * caret move. See src/placeholders.ts.
    */
   private renderPlaceholders(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
-    if (doc.languageId !== 'rust') {
+    const scan = PLACEHOLDER_SCANS[band1LangOf(doc)];
+    if (!scan || (langOf(doc) === 'lua' && !this.classifier.typesStrings(doc))) {
       this.applyType(editor, this.pool.placeholder, []);
       return;
     }
@@ -735,33 +1271,96 @@ export class Decorator implements vscode.Disposable {
     if (cached && cached.version === doc.version) {
       ranges = cached.ranges;
     } else {
-      ranges = rustPlaceholderSpans(this.textFor(doc)).map((s) => this.toRange(doc, s));
+      ranges = scan(this.textFor(doc)).map((s) => this.toRange(doc, s));
       this.placeholderCache.set(doc, { version: doc.version, ranges });
     }
-    this.dbg(`  band1 placeholders: ${ranges.length} ranges (${doc.languageId})`);
+    this.dbg(`  band1 placeholders: ${ranges.length} ranges (${langOf(doc)})`);
     this.applyType(editor, this.pool.placeholder, ranges);
+  }
+
+  /**
+   * Paint Go doc links and the brackets in Rust comments and JavaScript and TypeScript
+   * JSDoc in comment colour, file-wide and phase-independent. See src/doclinks.ts.
+   */
+  private renderCommentRestore(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    const scan = COMMENT_RESTORE_SCANS[band1LangOf(doc)];
+    if (!scan) {
+      this.applyType(editor, this.pool.commentRestore, []);
+      return;
+    }
+    const cached = this.commentRestoreCache.get(doc);
+    let ranges: vscode.Range[];
+    if (cached && cached.version === doc.version) {
+      ranges = cached.ranges;
+    } else {
+      const { text, lex } = this.textStateFor(doc);
+      ranges = scan(text, lex).map((s) => this.toRange(doc, s));
+      this.commentRestoreCache.set(doc, { version: doc.version, ranges });
+    }
+    this.applyType(editor, this.pool.commentRestore, ranges);
+  }
+
+  /**
+   * Paint the brackets in Rust strings and char literals in string colour,
+   * file-wide and phase-independent. Which ones depends on whether a semantic
+   * provider has answered. See src/placeholders.ts rustStringBracketSpans.
+   */
+  private renderStringRestore(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    if (langOf(doc) !== 'rust') {
+      this.applyType(editor, this.pool.stringRestore, []);
+      return;
+    }
+    const semantic = this.classifier.semanticOk(doc);
+    const cached = this.stringRestoreCache.get(doc);
+    let ranges: vscode.Range[];
+    if (cached && cached.version === doc.version && cached.semantic === semantic) {
+      ranges = cached.ranges;
+    } else {
+      ranges = rustStringBracketSpans(this.textFor(doc), semantic).map((s) => this.toRange(doc, s));
+      this.stringRestoreCache.set(doc, { version: doc.version, semantic, ranges });
+    }
+    this.applyType(editor, this.pool.stringRestore, ranges);
   }
 
   private renderBand2(editor: vscode.TextEditor, doc: vscode.TextDocument, block: BraceBlock): void {
     const focusKey = focusKeyOf(block);
     const key = this.cacheKey(doc, focusKey);
     const entry = this.classCache.get(key);
-    if (!entry) {
-      // No fresh classification for this version+block yet.
-      if (this.renderedBand2Key === focusKey) {
+    if (!entry || entry.hold) {
+      // No paintable classification for this version+block yet.
+      if (this.renderedBand2Key === focusKey && (!entry || this.renderedBand2Semantic)) {
         // STALE-HOLD: same block, mid-typing — keep the existing tints on screen
         // so typing doesn't flicker to neutral. The pending classify repaints.
         return;
       }
-      // Different block (real navigation) with nothing cached yet: clear the old
-      // block's tints now, then the pending classify cuts in the new ones.
+      // A different block (real navigation), or heuristic tints under a provider
+      // hold: clear now, then the pending classify cuts in the new ones.
       this.clearBand2(editor);
       return;
     }
 
     // Header-inclusive for control-flow blocks, so header-line bindings tint too
     // (matches the range used at classify time). See focus.ts.
-    const blockRange: OffsetRange = lexRegionFor(this.textFor(doc), block);
+    const region: OffsetRange = lexRegionFor(this.textFor(doc), block, langOf(doc));
+    let ranges = this.band2Ranges.get(entry);
+    if (!ranges || ranges.region.start !== region.start || ranges.region.end !== region.end) {
+      ranges = { region, ...this.band2RangesFor(doc, block, entry, region) };
+      this.band2Ranges.set(entry, ranges);
+    }
+    const { id: idRanges, idg: idgRanges } = ranges;
+    this.pool.id.forEach((type, i) => this.applyType(editor, type, idRanges[i]));
+    this.pool.idg.forEach((type, i) => this.applyType(editor, type, idgRanges[i]));
+    this.renderedBand2Key = focusKey;
+    this.renderedBand2Semantic = entry.semantic === 'ok';
+  }
+
+  /** A plan's trace ranges as editor ranges, bucketed by decoration type. */
+  private band2RangesFor(
+    doc: vscode.TextDocument,
+    block: BraceBlock,
+    entry: CacheEntry,
+    blockRange: OffsetRange,
+  ): { id: vscode.Range[][]; idg: vscode.Range[][] } {
     const targets = computeTraceRanges(entry.classification, entry.plan, blockRange);
     if (this.debugChan) {
       this.dbg(
@@ -771,7 +1370,6 @@ export class Decorator implements vscode.Disposable {
       );
     }
 
-    // Bucket ranges by decoration type.
     const idRanges: vscode.Range[][] = TOKENS.id.map(() => []);
     const idgRanges: vscode.Range[][] = TOKENS.id.map(() => []);
 
@@ -794,10 +1392,7 @@ export class Decorator implements vscode.Disposable {
           break;
       }
     }
-
-    this.pool.id.forEach((type, i) => this.applyType(editor, type, idRanges[i]));
-    this.pool.idg.forEach((type, i) => this.applyType(editor, type, idgRanges[i]));
-    this.renderedBand2Key = focusKey;
+    return { id: idRanges, idg: idgRanges };
   }
 
   /**
@@ -808,18 +1403,8 @@ export class Decorator implements vscode.Disposable {
    * tokens, so this is a resting-register swap inside the focused scope rather
    * than a risk mark — which is why it rides Focus, not Edit.
    */
-  private renderEngagedNumbers(
-    editor: vscode.TextEditor,
-    doc: vscode.TextDocument,
-    block: BraceBlock,
-  ): void {
-    const text = this.textFor(doc);
-    const lex = lexicalRisk(text, lexRegionFor(text, block));
-    this.applyType(
-      editor,
-      this.pool.numberEngaged,
-      lex.numberEngaged.map((r) => this.toRange(doc, r)),
-    );
+  private renderEngagedNumbers(editor: vscode.TextEditor, lex: RiskRanges): void {
+    this.applyType(editor, this.pool.numberEngaged, lex.numbers);
   }
 
   /**
@@ -827,13 +1412,13 @@ export class Decorator implements vscode.Disposable {
    * and the cancellation of VS Code's link underline. See src/markdown.ts for why
    * each has to be a decoration.
    *
-   * Band 1, so no phase or engagement gate — but still cached per document
+   * Band 1, so no phase or engagement check — but still cached per document
    * version, because both scanners walk the whole document and this runs on every
    * render (i.e. every caret move). Non-markdown documents clear and return, so a
    * `.ts` file never carries a stale wash from a previously active `.md`.
    */
   private renderMarkdownMarks(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
-    if (doc.languageId !== 'markdown') {
+    if (langOf(doc) !== 'markdown') {
       this.applyType(editor, this.pool.mdHighlight, []);
       this.applyType(editor, this.pool.mdLinkPlain, []);
       return;
@@ -855,25 +1440,66 @@ export class Decorator implements vscode.Disposable {
     this.applyType(editor, this.pool.mdLinkPlain, marks.link);
   }
 
-  private renderBand3(editor: vscode.TextEditor, doc: vscode.TextDocument, block: BraceBlock): void {
+  /** Async/danger keywords and numeric literals in the focused block's lex region, cached per version and block. */
+  private lexicalRiskFor(doc: vscode.TextDocument, block: BraceBlock): RiskRanges {
+    const key = this.cacheKey(doc, focusKeyOf(block));
+    if (this.riskCache?.key === key) {
+      return this.riskCache.lexical;
+    }
     const text = this.textFor(doc);
-    const blockRange: OffsetRange = lexRegionFor(text, block);
-    const lex = lexicalRisk(text, blockRange);
+    const r = lexicalRisk(text, lexRegionFor(text, block, langOf(doc)), langOf(doc));
+    // The top-level scope owns no code inside the bodies it excludes.
+    const excludes = isTopLevelBlock(block) ? this.topLevelFor(doc).excludes : [];
+    const keep = (x: OffsetRange): boolean => !inSortedRanges(excludes, x.start);
+    const lexical = {
+      async: r.async.filter(keep).map((x) => this.toRange(doc, x)),
+      danger: r.danger.filter(keep).map((x) => this.toRange(doc, x)),
+      numbers: r.numberEngaged.filter(keep).map((x) => this.toRange(doc, x)),
+    };
+    this.riskCache = { key, lexical };
+    return lexical;
+  }
 
-    this.applyType(editor, this.pool.riskAsync, lex.async.map((r) => this.toRange(doc, r)));
-    this.applyType(editor, this.pool.riskDanger, lex.danger.map((r) => this.toRange(doc, r)));
+  private renderBand3(
+    editor: vscode.TextEditor,
+    doc: vscode.TextDocument,
+    block: BraceBlock,
+    lex: RiskRanges,
+  ): void {
+    this.applyType(editor, this.pool.riskAsync, lex.async);
+    this.applyType(editor, this.pool.riskDanger, lex.danger);
     // numberEngaged is NOT painted here — it belongs to Focus+Edit, not Edit alone.
     // See renderEngagedNumbers().
 
-    // Escape marks need the classification; use the cached one if present, else
-    // leave escape empty until classify resolves (it will trigger a re-render).
-    const entry = this.classCache.get(this.cacheKey(doc, focusKeyOf(block)));
-    if (entry) {
-      const esc = escapeRisk(text, blockRange, entry.classification);
-      this.applyType(editor, this.pool.riskEscape, esc.map((r) => this.toRange(doc, r)));
-    } else {
+    // Escape marks need the classification for this version.
+    const focusKey = focusKeyOf(block);
+    const entry = this.classCache.get(this.cacheKey(doc, focusKey));
+    if (!entry || entry.hold) {
+      if (this.renderedEscapeKey === focusKey) {
+        // STALE-HOLD, as band 2: same block mid-typing. The editor moves the
+        // painted ranges with the edit, and markMoved voids the record of any it
+        // moved, so the repaint sends whatever differs from what is on screen.
+        return;
+      }
       this.applyType(editor, this.pool.riskEscape, []);
+      this.renderedEscapeKey = null;
+      return;
     }
+    const cache = this.riskCache;
+    let ranges: vscode.Range[];
+    if (cache && cache.key === this.cacheKey(doc, focusKey) && cache.escapeFor === entry && cache.escape) {
+      ranges = cache.escape;
+    } else {
+      const text = this.textFor(doc);
+      ranges = escapeRisk(text, lexRegionFor(text, block, langOf(doc)), entry.classification, langOf(doc))
+        .map((r) => this.toRange(doc, r));
+      if (cache && cache.key === this.cacheKey(doc, focusKey)) {
+        cache.escapeFor = entry;
+        cache.escape = ranges;
+      }
+    }
+    this.applyType(editor, this.pool.riskEscape, ranges);
+    this.renderedEscapeKey = focusKey;
   }
 
   // ── Apply helpers with dirty-check ───────────────────────────────────────────
@@ -891,14 +1517,29 @@ export class Decorator implements vscode.Disposable {
       .join(';');
   }
 
-  /** setDecorations only if this type's target ranges actually changed. */
+  private appliedFor(editor: vscode.TextEditor): Map<vscode.TextEditorDecorationType, AppliedRanges> {
+    let m = this.applied.get(editor);
+    if (!m) {
+      m = new Map();
+      this.applied.set(editor, m);
+    }
+    return m;
+  }
+
+  /** setDecorations only if this editor's ranges for the type actually changed. */
   private applyType(editor: vscode.TextEditor, type: vscode.TextEditorDecorationType, ranges: vscode.Range[]): void {
+    const applied = this.appliedFor(editor);
+    const prev = applied.get(type)?.moved ? undefined : applied.get(type);
+    if (prev && prev.ranges === ranges) {
+      return;
+    }
     const key = this.rangeKey(ranges);
-    if (this.lastApplied.get(type) === key) {
+    if (prev && prev.key === key) {
+      prev.ranges = ranges;
       return;
     }
     editor.setDecorations(type, ranges);
-    this.lastApplied.set(type, key);
+    applied.set(type, { ranges, key });
   }
 
   private applyGutter(editor: vscode.TextEditor, ranges: vscode.Range[]): void {
@@ -924,6 +1565,7 @@ export class Decorator implements vscode.Disposable {
     this.applyType(editor, this.pool.riskAsync, []);
     this.applyType(editor, this.pool.riskDanger, []);
     this.applyType(editor, this.pool.riskEscape, []);
+    this.renderedEscapeKey = null;
     // numberEngaged is deliberately NOT cleared here: it rides Focus, and
     // clearBand3 runs on every Focus render (Edit → Focus relaxation included), so
     // clearing it would strip the clay the moment typing stopped. render() owns its
@@ -944,53 +1586,40 @@ export class Decorator implements vscode.Disposable {
       if (other === keep) {
         continue;
       }
-      // Bypass the dirty-check (it tracks only `keep`'s state) and clear directly.
-      // `banded()`, not `all()`: the markdown band-1 marks are correct in every
-      // visible editor showing that document and must survive — clearing them here
+      // `banded()`, not `all()`: the band-1 marks are correct in every visible
+      // editor showing that document and must survive — clearing them here
       // stripped the highlight wash from a split's second markdown pane.
-      other.setDecorations(this.gutterDecoration, []);
+      this.applyType(other, this.gutterDecoration, []);
       for (const type of this.pool.banded()) {
-        other.setDecorations(type, []);
+        this.applyType(other, type, []);
       }
     }
-  }
-
-  private clearAll(editor: vscode.TextEditor | undefined): void {
-    if (!editor) {
-      this.lastApplied.clear();
-      return;
-    }
-    this.applyGutter(editor, []);
-    this.clearBand2(editor);
-    this.clearBand3(editor);
   }
 
   /**
    * Strip the bands from EVERY visible editor.
    *
-   * Used when there is no active text editor (focus in a webview/panel/another
-   * split) or the layer is disabled. `clearAll(undefined)` cannot do this:
-   * decorations are per-editor, and with no active editor there is nothing to
-   * paint through — it only reset the dirty-check map, so a Focus → Survey
-   * relaxation that fired while the caret was elsewhere left the tints on screen
-   * indefinitely.
+   * Used when there is no active source editor (focus in a webview, panel or
+   * settings UI) or the layer is disabled. Decorations are per-editor, so with no
+   * active editor every visible one has to be cleared explicitly.
    */
   private clearAllVisible(includeBand1 = false): void {
     // `includeBand1` separates the two callers. Focus moving to a webview or panel
-    // must withdraw the phase bands but NOT the markdown band-1 marks — those are
+    // must withdraw the phase bands but NOT the band-1 marks — those are
     // resting register, and blinking the highlight wash off because the caret left
     // the editor would be exactly the flicker this layer exists to avoid. Turning
     // the extension off, by contrast, must leave no trace of it on screen.
     const types = includeBand1 ? this.pool.all() : this.pool.banded();
     for (const ed of vscode.window.visibleTextEditors) {
-      ed.setDecorations(this.gutterDecoration, []);
+      this.applyType(ed, this.gutterDecoration, []);
       for (const type of types) {
-        ed.setDecorations(type, []);
+        this.applyType(ed, type, []);
       }
     }
-    this.lastApplied.clear();
-    this.lastAppliedEditor = undefined;
+    this.lastActiveEditor = undefined;
     this.renderedBand2Key = null;
+    this.renderedEscapeKey = null;
+    this.renderedBlockKey = undefined;
   }
 
   /**
@@ -998,7 +1627,7 @@ export class Decorator implements vscode.Disposable {
    * engaged, since render() refuses to paint bands there.
    */
   private effectivePhase(): Phase {
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.activeEditor();
     if (!editor || !this.engaged.has(editor.document.uri.toString())) {
       return Phase.Survey;
     }
@@ -1011,7 +1640,7 @@ export class Decorator implements vscode.Disposable {
       return;
     }
     // Report the EFFECTIVE phase. An unengaged document cannot paint bands (see the
-    // final gate in render()), so showing 流/異 there would misreport the screen.
+    // paint check in render()), so showing 流/異 there would misreport the screen.
     const phase = this.effectivePhase();
     this.statusItem.text = `${PHASE_KANJI[phase]} ${phase}`;
     this.statusItem.tooltip = 'Okibi dynamic phase — click to toggle the layer';
@@ -1020,14 +1649,17 @@ export class Decorator implements vscode.Disposable {
 
   /** Recompute + repaint for the active editor from scratch. */
   refresh(): void {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      this.statusItem.hide();
-      return;
-    }
-    if (!this.config.enabled) {
-      this.clearAll(editor);
-      this.statusItem.hide();
+    const editor = this.activeEditor();
+    if (!editor || !this.config.enabled) {
+      // Focus left the source editors (webview, preview, settings, a panel), or the
+      // layer is off: render() withdraws the bands from every visible editor now,
+      // rather than whenever the next relaxation happens to repaint.
+      this.currentFocusKey = null;
+      if (this.relaxTimer) {
+        clearTimeout(this.relaxTimer);
+        this.relaxTimer = undefined;
+      }
+      this.scheduleRender();
       return;
     }
     const block = this.focusedBlock(editor);
@@ -1065,6 +1697,7 @@ export class Decorator implements vscode.Disposable {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
     }
+    this.importTimers.forEach((t) => clearTimeout(t));
     this.classifyToken?.cancel();
     this.gutterDecoration?.dispose();
     this.pool?.all().forEach((t) => t.dispose());

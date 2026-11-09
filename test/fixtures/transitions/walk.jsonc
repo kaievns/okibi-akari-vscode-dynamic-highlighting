@@ -1,0 +1,8 @@
+{
+  // settings with self and this
+  "editor.fontSize": 13,
+  /* block async */
+  "[yaml]": { "editor.tabSize": 2, "nested": { "async": true, "retries": 3 } },
+  "files.exclude": { "**/node_modules": true, },
+  "self": { "this": [1, 2, { "deep": 0x1F }] },
+}

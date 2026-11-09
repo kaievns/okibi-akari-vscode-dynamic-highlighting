@@ -1,9 +1,12 @@
 # Classification rules
 
-Why a given token does or does not get a band-2 identity tint. Every rule here
-was derived from **real language-server output**, not guesswork — TypeScript via
-`getEncodedSemanticClassifications`, Go via `gopls semtok`. Regenerate the
-captured fixtures with:
+Why a given token does or does not get a band-2 identity tint. The rules were
+derived from **real language-server output**, not guesswork — TypeScript via
+`getEncodedSemanticClassifications`, Go via `gopls semtok`, Rust via
+rust-analyzer. Python tokens are constructed to Pylance's legend, because Pylance
+does not run outside VS Code (README, "Python has no captured token fixture").
+Regenerate the captured fixtures with the commands in the README's Tests section,
+for example:
 
 ```bash
 node test/gen-ts-semtok.js samples/sample.js > test/fixtures/sample.js.tokens.json
@@ -29,6 +32,7 @@ Band 2 is about **data flow**, so only bindings you can trace get a hue.
 | `class`, `interface`, `struct`, `enum`, `type`, `typeParameter` | no | structure, not data |
 | `namespace` | no | module surface |
 | `keyword`, `string`, `number`, `comment`, `operator` | no | band-1 |
+| any type, starting inside a comment or doc comment | no | prose, not data: gopls types `[Name]` doc links as `variable`, rust-analyzer types doctest code inside `///` |
 
 ### Modifier exclusions
 
@@ -37,13 +41,58 @@ Band 2 is about **data flow**, so only bindings you can trace get a hue.
 | `defaultLibrary` | excluded | builtins (`console`, `Math`, `nil`, `true`) are library surface, not this file's data |
 | `signature` | excluded | gopls marks **func-typed values** (`h Handler`); calls through them are transformers, so they keep band-1 |
 | `definition` (on `property`) | excluded | a field/member **definition** (Go struct fields) is structure |
+| `classMember`, `dynamicAttribute` | excluded | Pylance's attribute marks (`self.seen`, `getattr`-style) |
+| `keywordArgument` | excluded | Pylance's kwarg label (`f(name=…)`) |
+| `injected`, `documentation`, `intraDocLink` | excluded | rust-analyzer's marks on doctest code, doc text and `[Foo]` links inside comments |
 
 ### Name exclusions
 
 | Name | Why |
 |---|---|
 | `_` | discard/blank identifier (Go, Python); also the lodash module facade in JS |
-| `this`, `self`, `@…` | painted by band 1 only (`--id-self` = `--syn-keyword`), so no weight flip on focus change |
+| `this`, `self`, `@…` | painted by band 1 only (`--id-self` = `--syn-keyword`), so no weight flip on focus change. In JavaScript and TypeScript only `this`: `self` is an ordinary name (`var self = this`) |
+| `module`, `exports`, `require`, `process`, `Buffer`, `global`, `__dirname`, `__filename` (JS / TS) | Node's module surface: tsserver types them plain `variable`, since `@types/node` is no default library. Data again when a token in the file declares the name ([javascript.md](javascript.md#data-identities)) |
+| an `import * as NS` name (JS / TS) | a module, whatever the server types it: Deno says `variable.readonly` |
+
+### Position exclusions
+
+`isMemberOrLabelPosition` drops a token in two positions, whatever its type:
+
+| Position | Rule |
+|---|---|
+| member | the previous char is `.` (`self.retries`, `cfg?.name`), but not the end of a spread or range: `...args` and `0..n` read `args` and `n` |
+| named argument label | `isArgLabel`: next char `=`, previous code char `(` or `,`, innermost open bracket a `(` after a callee that is not a `def` name, in a language with named arguments |
+
+Neither a `def` parameter list nor a token carrying `declaration` or
+`definition` is a label, so `def f(a, retries=5)` keeps its parameter on both
+paths, and `a, b = 1, 2` (no enclosing `(`) keeps its targets. Read as labels,
+those declarations vanished: the parameter classified `out`, shared a hue with a
+same-named global, and traced across another function. Without a server,
+`retries` was no declaration at all and never painted. In JavaScript, C, Java
+and Go `f(x = 1)` is an assignment, so the label rule does not apply there.
+
+A Lua token also needs a binding position from `luaFacts`: a method name after
+`:`, a table-constructor key and a label have none. A module, a local function
+and a namespace global are dropped whatever the server types them, and a
+`<const>` / `<close>` local counts as a declaration though lua-language-server
+leaves `declaration` off it ([lua.md](lua.md#data-identities)).
+
+A Ruby token needs a binding from `rubyFacts`: ruby-lsp types reads only, so
+`rubyTokens` keeps its `variable` and `parameter` tokens where a local or user
+global is bound, and adds the declarations (with `declaration`), the writes and
+the reads it left untyped. A method call, `@x`, `@@x`, a label and a symbol have
+no binding ([ruby.md](ruby.md#data-identities)).
+
+### Python rebinding
+
+Python has no block scope, so a later store to a name is a write to the
+function's one variable. `buildFileIndex` keeps only the first depth-0
+`declaration` per name per `def` / `class` suite; bindings inside brackets
+(parameters, comprehension targets, lambda parameters) always count, and a
+`global` / `nonlocal` name is never declared in its suite. Suites come from
+indentation (`pyScopeAt`), not from the symbol provider, so the rule holds with no
+symbols, and whether Pylance tags every store or only the first. Escape marks
+depend on it: [risk-marks.md](risk-marks.md#python-declarations).
 
 ---
 
@@ -92,10 +141,31 @@ caused closure params to tint only from the *parent* block.
 
 Header-inclusive **only for control flow**. A function's header holds its
 *parameters*, which are function-scoped (`fn`-local), not block-local; widening
-there would misclassify them as block-local and trip the ≥2-use gate.
+there would misclassify them as block-local and trip the ≥2-use floor.
 
 Control-flow keywords take precedence over paren-based function detection,
-because `for (...) {` and `if (...) {` have parens too.
+because `for (...) {` and `if (...) {` have parens too. A braced Rust match arm,
+`Ok(v) => {`, is control flow: `v` is the arm's own binding, so two matches that
+both bind `v` give two identities. Before, `=> {` read as a JS arrow header, `v`
+classified as a function local, and the trace painted the other match's `v`.
+
+### Wrapped headers
+
+The header is normally the `{` line up to the brace (`headerStart … openOffset`).
+When that line only finishes a statement begun earlier, the header is the whole
+statement (`headerOf` in focus.ts):
+
+| `{` line | Header starts at |
+|---|---|
+| closes a `(` opened on an earlier line (`): void {`, `    b) {`) | the line of that `(`, repeatedly |
+| empty, an Allman brace | the previous code line, then as above, unless it ends in `;`, `{`, `}`, `,`, `(`, `[`, `=` or `:` |
+| Rust: empty, or starts with `)`, `->` or `where` | the item start: back to a code `;`, `{` or `}` at depth 0, past attributes |
+
+The wider header is kept only when it reads as a function or control-flow header,
+so a brace in an expression never claims the statement before it. Without it, a
+signature wrapped over lines had no parameters in its own scope, and
+`fn fold<T>(…) -> T` with a `where` clause and the `{` alone on its line was not a
+function at all.
 
 ### The module top-level scope
 
@@ -108,22 +178,30 @@ Two consequences follow from "spans the whole file":
 
 **1. `excludeRanges` carves out the nested code.** Without it every local in
 every function is lexically inside the top-level region, so focusing line 1
-tints random locals throughout the file. The carve-out is:
+tints random locals throughout the file. The carve-out (`topLevelExcludes` in
+`focus.ts`) is:
 
 - every depth-0 block **body** (`openOffset … closeOffset`) — function and type
   bodies, and
 - every depth-0 **function signature** (`headerStart … openOffset`), which sits
   *outside* the braces and would otherwise read as top-level code.
 
-The signature exclusion is gated on `isFunctionHeaderText`, because a top-level
+The signature exclusion applies only when `isFunctionHeaderText` matches, because a top-level
 `const DEFAULTS = { … }` is *also* a depth-0 block, and its "header" holds the
 one name we most want at top level. Excluding it hid `DEFAULTS` entirely.
+
+The decorator applies the same carve-out to everything else it paints for the
+top-level scope. The gutter stripe covers only lines with code outside the
+excluded ranges, plus blank lines between them (`topLevelLines`), and clay
+numbers and the async and danger marks inside an excluded body are dropped.
+Before, a caret on a blank line between two functions striped the whole file and
+turned every number in every function clay.
 
 For the same reason the top-level block's `subBlocks` use `declRegionFor`, not
 `lexRegionFor`: the header-inclusive variant would put `DEFAULTS` inside its own
 initialiser's sub-block and demote it to proximity 2.
 
-**2. The ≥2-use gate is relaxed** for `proximity === 0` names (`isTopLevel` flag
+**2. The ≥2-use floor is relaxed** for `proximity === 0` names (`isTopLevel` flag
 on `BlockNames`). A module const is typically declared once at the top and read
 inside functions, so counting only its *top-level* uses would hide it. The
 exemption does not extend to nested names.
@@ -140,10 +218,36 @@ exemption does not extend to nested names.
 | `self` | `this` / `self` / `@…` | never painted by band 2 |
 
 A `block` local needs **≥2 uses** in the block to qualify; once-used ones stay
-neutral so dense blocks stay calm.
+neutral so dense blocks stay calm. A use is a lexer identifier or, with a
+provider, a Rust inline format arg: `label` in `write!(f, "{label}")` and `w` in
+`{x:>w$}` (`FileIndex.stringReads`). The lexer leaves format strings whole, so
+counting identifiers alone gave `let label = …; write!(f, "{label}")` one use and
+left `label` neutral, while `write!(f, "{}", label)` tinted it. The same count
+admits a name that a nested block reads only through such an arg.
+
+rust-analyzer 0.3.3105 types a capture `variable` only once it expands the macro.
+A file outside any cargo package, and a package whose workspace is still loading,
+get one `string` token over the literal instead, and no token for the macro's
+arguments. So in Rust `buildFileIndex` lexes both: the identifiers inside every
+`name!(…)` call (the macro-argument pass), and the captures (`rustInlineArgs`,
+`src/placeholders.ts`), in format strings only, skipping a name the same call
+passes as a named argument (`name = expr`) and the `#[error("…")]` attribute,
+whose names are fields. Both only extend a binding that a token already made a
+data identity, and a position the server typed counts once: a loaded workspace
+types macro arguments with modifier `macro` (`f` in `write!(f, …)` as `parameter
+[macro, mutable, reference]`). Before, the macro-argument pass added such a
+position a second time. Without any provider, the heuristic classifier does not
+read captures. Other languages get no macro-argument pass: a Ruby `name!(…)` is
+a method call, and the pass made the label in
+`system_command!("ditto", args: [path], verbose: true)` a use of a parameter
+`verbose` declared in another method.
 
 `out` non-captures render **bold** (weight = reaches beyond the local frame);
-captures render like locals.
+captures render like locals. A capture's home is the innermost function that
+declares the name **and encloses the block**. Taking the first declaring function
+instead traced a callback's `name` across an unrelated `loadConfig(name)` on
+`samples/sample.js`, and a top-level `cfgs` across `summarize(cfgs)`; a name whose
+declaring functions all lie elsewhere is a true global.
 
 ---
 
@@ -157,6 +261,23 @@ decides who wins a slot:
 | `0` | declared directly in the focused block, **or a parameter of the focused function** — its own data |
 | `1` | borrowed in (fn-local from an outer scope, capture, global) |
 | `2` | declared in a **nested** sub-block the caret sits above — **excluded, never painted** |
+
+A declaration inside a nested sub-block belongs to that sub-scope. When a name is
+also declared outside every sub-block, only those declarations classify it: a
+parameter `c` stays the function's own (`fn`, proximity 0) even when a closure inside
+redeclares `c`, and a module `const cfgs` stays top-level data even when a function
+takes a `cfgs` parameter. Before, any declaration in a sub-block demoted the name to
+proximity 2, so the outer binding vanished.
+
+Only declarations the block can see count (`visibleDecls`, `declScopesFor` in
+classify.ts): those inside the block, and those whose tightest scope contains the
+block. The scopes are the function ranges, every block's `scopeRegionFor`, and a
+braceless `for (let i …) stmt;`; Python has function scope only. A declaration in
+an unrelated function or a sibling block is a different binding. Counting it made
+`for (let i …)` in one function read as `out` whenever another function also
+declared `i`, so `i++` got the escape mark: 25 of the 87 marks on a snapshot of
+this repo's `src/classify.ts`. When no declaration is visible, all of them classify the name,
+as before.
 
 Ranking is proximity ascending, then frequency descending, then
 function-appearance order as a deterministic tiebreak.
@@ -175,8 +296,10 @@ they are proximity 0. `eligible()` in scopecolor.ts drops them.
 A parameter of the focused function classifies as `fn` (correctly — it traces
 across the whole function, including nested closures), but it is that function's
 own data, not something borrowed from an outer scope. Detection: its declaration
-sits inside `block` (header-inclusive) but outside `declRegion` (body-only for
-functions).
+sits inside `block` (from the parameter list, see below) but outside `declRegion`
+(body-only for functions). That holds for Go result lists, Rust `-> Result<(), E>`
+returns, `where` clauses, wrapped signatures and typed arrows, because
+`paramListStart` finds the parameter list itself rather than the last paren group.
 
 ### Three regions, three questions
 
@@ -206,18 +329,38 @@ hues — and the arrow could never be focused in its own right.
 
 A second pass (`scanArrowBlocks`) synthesises a block spanning **parameter list →
 end of expression**. Finding that end is the hard part: the body runs to the first
-`,`, `;` or closing bracket at nesting depth 0, skipping strings, comments and
-template interpolations. Without interpolation tracking the `}` in `${acc}` ended the
-body after four characters.
+code `,`, `;` or closing bracket at nesting depth 0, or to the end of the template
+hole it sits in. Hole delimiters are string, not code, so the `}` in `${acc}` cannot
+end the body after four characters.
 
 Depth counts brace-block *and* arrow ancestors, so curried arrows (`a => b => a + b`)
 nest properly — otherwise they tie and `innermostBlock` cannot tell which one holds
 the caret. The combined list is re-sorted by open offset, since sub-block collection
 assumes document order.
 
+Without semicolons the statement ends at a newline: a depth-0 newline ends the body
+unless the line before ends in an operator or the line after starts with one
+(`.map(…)`, `+ 1`, `?`, `as`, a closing bracket), and a blank line always ends it.
+Before, `export const double = (x: number) => x * 2` with no `;` ran to the end of
+the file: the arrow became the colour scope of every later function, a top-level
+`let hits` read as its capture, and a focus change on a 12k-line file cost 175 ms.
+
+An `=>` in **type position** writes a function type, not a function, and makes no
+block (`typeArrowsOf` in focus.ts): after `type X =`, after an annotation colon
+(`cb: (x) => void`, `(): () => void {`, `name?:`, a class or interface member), in
+a union, intersection or generic argument, after `as` / `satisfies` / `extends` /
+`new`, and the inner arrows of a curried type. A function type always parenthesizes
+its parameters, so `(n: number): string => n` stays a value arrow. A colon after a
+ternary `?` or an object-literal key is not an annotation.
+
 Braced arrows are left to the brace scanner (no double-counting), and an `=>` inside
-a string or comment invents nothing. Go is unaffected — no arrows, and `func` *types*
-are already excluded as type declarations.
+a string or comment invents nothing. The pass runs only for JavaScript and
+TypeScript. In Rust, C# and Scala `=>` also ends a match or switch arm: every
+`Status::Pending => "pending",` arm became a one-arm scope one level deeper than its
+match, focus collapsed onto it, and Go, Rust, C and Java paid a full extra pass. In
+TypeScript a return annotation sits between the parameters and the arrow
+(`(n: number): string => …`), so the block starts at the `(` before the `:`; a `:`
+after anything but `)` is an object key.
 
 ### A function header is not one region — the parameter list is
 
@@ -237,11 +380,20 @@ Taking the whole header from `headerStart` produced both halves of one bug:
   callback **painted** it — a name that never appears in that scope — and traced it
   back onto the outer declaration line.
 
-Both now start at `paramListStart()`: the matching `(` of the last balanced paren
-group before the `{`. Balanced scanning handles nested parens in defaults
-(`(a = h(1), b) => {`); a bare single-identifier arrow (`name => {`) falls back to
-walking back over the identifier. Control-flow blocks keep the full header, since
-`for idx, n := range names {` binds on the header itself.
+Both now start at `paramListStart()`:
+
+- after a function keyword (`fn`, `func`, `function`, `fun`, `def`, per language),
+  the first `(` outside generic angle brackets, so a Go method's receiver counts
+  and a Go result list `(int, error)`, a Rust `-> Result<(), E>` or a
+  `fn(i32) -> i32` parameter type does not;
+- a Rust closure's list starts at its opening `|` (`.map(|x| {`, `move |x| {`);
+- otherwise (arrows, methods) the matching `(` of the last balanced code paren
+  group before the `{`, so nested parens in defaults (`(a = h(1), b) => {`) do not
+  confuse it; a bare single-identifier arrow (`name => {`) falls back to walking
+  back over the identifier.
+
+Control-flow blocks keep the full header, since `for idx, n := range names {`
+binds on the header itself.
 
 ---
 
@@ -274,12 +426,28 @@ closures share their parent's palette.
 ## Performance
 
 File-wide analysis (`buildFileIndex`) runs **once per document version** and is
-shared by every block in the scope. Before that hoist, each per-block classify
-redid the whole-file token scan, so an *N*-block scope cost *N* file passes and
-time grew with total file size even when scope size was fixed.
+shared by every block in the scope, and the document is lexed once per version
+(`lexFor`, see [lexer.md](lexer.md)). A block's identifiers are a binary-searched
+slice of that lex, so the per-block pass costs the block, not its offset in the
+file.
 
-On a 100 KB file: **~0.6 ms per focus change** (was ~12 ms), with a ~5.6 ms index
-build once per edit, debounced 140 ms behind typing. Run `npm run bench`.
+No lookup on the classification path is linear in the file:
+
+| Lookup | How |
+|---|---|
+| innermost and outermost function at an offset, "declared in some function" | an interval index per `fnRanges` array (`src/intervals.ts`), built on first use; ties go to the first range in array order, as the linear scans did; 16 ranges or fewer still scan |
+| is an offset in the top-level scope's excluded bodies | the excludes merged once, then a binary search |
+| does a name occur, tintable, in the block | a binary search into the name's occurrence list, sorted by start |
+| the colour scope's first-use order (`fnLocalsInOrder`, `fnGlobals`) | once per colour scope and file index, not once per block |
+| the heuristic's file globals and shadow scopes | once per heuristic base and `fnRanges` array |
+| trace clipping against shadowing scopes | per name, a prefix maximum of scope ends over scopes sorted by start |
+
+Block headers are cached per lex and block, the top-level excludes and the
+open-sorted block list per block list, and the band-2 editor ranges per cached
+plan. `test/perf-golden.test.js` checks that this changes no output. Costs per
+input size: [runtime.md](runtime.md#cost-on-large-files). Classification stays
+debounced behind typing: 140 ms up to 10k lines, growing to 400 ms at 50k
+(`editDebounceMs`).
 
 ---
 
@@ -302,10 +470,118 @@ every unrelated `acc` in the file a global's bold hue.
 
 `typeDeclRanges` (classify.ts) excludes them in `buildFileIndex`, so they never
 enter the occurrence map at all. Detection is lexical — one linear scan, no
-parser: from a line-initial `type`/`interface` (optionally after
-`export`/`declare`) to the matching close of the first bracket opening on that
-line, else end of line. That covers `type X = …;`, `interface X { … }`,
-`type Config struct { … }` and Go's grouped `type ( … )`.
+parser: from a line-initial `type`/`interface` in declaration shape (optionally
+after `export`, `declare`, `pub`, `public` and similar) to the matching close of
+the first bracket opening on that line, else end of line. The shape is
+`type Name` followed by `=`, `<`, `[`, `(`, `*` or a type (`type Config struct`,
+`type ID int`), Go's grouped `type (` at the end of a line, or `interface Name`.
+That covers `type X = …;`, `interface X { … }`, `pub type F = fn(…);`,
+`type Config struct { … }` and Go's `type ( … )`. A variable named `type`
+(`type = event.get("type", fallback)`) is not one: read as a declaration, it
+dropped every token through the call's closing `)`, lines later.
+
+The parameter lists of inline function types (`commaRun: (i: number) => number`,
+`(): () => void`; see `typeArrowsOf` in focus.ts) are excluded the same way, on
+both the semantic and the heuristic path. Counted, the type's `i` read as a
+parameter of the function itself, and the loop's own `i` in its body classified
+against it.
+
+A whole TypeScript declaration file (`.d.ts`) is static content: no Focus
+scope, so nothing in it tints ([javascript.md](javascript.md#declaration-files)).
+
+---
+
+## Function ranges
+
+`fnRanges` decide which function a name belongs to (`enclosingFnOf`) and which
+palette it shares (`outermostFnOf`). They are the document symbols of kind
+Function, Method and Constructor, plus `functionScopeOf` for every block
+(parameter list → closing brace): Go func literals, Rust closures, JS callbacks,
+Python lambdas and defs, methods. A `catch`, `when` or `using` header is a statement
+block, and a match arm is control flow, so neither is a function.
+
+Servers report named functions only, so before the block ranges two
+`sort.Slice(x, func(i, j int) bool { … })` calls in one function shared one `i`:
+it classified against the outer function and traced across both closures. A named
+function gets a second range starting at its parameters; `enclosingFnOf` picks
+that tighter one and `outermostFnOf` the symbol, so classification and colour
+scope are unchanged.
+
+---
+
+## The heuristic fallback
+
+With no semantic tokens (a cold server, or a language with no provider),
+`classifyFromHeuristic` reads declarations from the lexer and **paints less**
+rather than guess. A name is a data identity only when a declaration for it is
+found:
+
+| Declaration | Languages |
+|---|---|
+| `let` / `const` / `var` / `val` + name (`let mut x`; Go `var x int`) | `var` only in C and Java, where `const` qualifies a type |
+| targets of `:=` (`a, b := f()`, Python's walrus) | all |
+| `for x in`, `for k, v in` | Python, Rust, Swift |
+| statement-start `name =`, `a, b =`, `name: T =`; `with … as x`, `except … as e` | Python (and `#`-comment languages, without annotations) |
+| `Type name =` / `Type name;` / `Type[] name` | C, C++, Java, C#, and the default syntax |
+| the rest of a declarator list (`int a, b = 0;`, `int a = 1, b = 2;`, `int a[3], b = 1;`), `*` / `&` declarators (`int *p = &n;`), generic types (`List<String> xs =`); the type must start the statement | C, C++, Java, C#, and the default syntax |
+| a name in a function block's parameter list | all; first in each group in Go (`a, b int`) and every name in Lua, last in C and Java (`int a`), else followed by `:`, `,`, `)`, `=` or a closure's `\|` and not after a `:` |
+| `local a <const>, b`, `local function f`, `for i =`, `for k, v in`; a statement-start `name =` outside every function, which defines the global | Lua (`luaFacts`, [lua.md](lua.md#data-identities)) |
+| a scope's first assignment `x =`, `a, b =`; method, block and lambda parameters, block-locals, `for` and `rescue => e` variables, pattern captures, named regex captures; `$x =` outside every method and block, which defines the global | Ruby (`rubyFacts`, [ruby.md](ruby.md#data-identities)) |
+| a destructuring pattern after the keyword: `const { a, b: c } = o`, `const [a, b] = o`, `let (a, b) = o`, `val (a, b) = p`, `let P { x, y } = p`, `if let Some(v) = o`, `while let …` | all with those keywords |
+| a match-arm pattern on its line: `Some(v) =>`, `Ok(x) \| Err(x) =>`, `n if n > 3 =>` | Rust |
+| `catch (err)`, `catch (e: Exception)`, `catch (IOException e)` | first name in JS / TS, Kotlin, Swift / Scala / Dart; else the last |
+| a bare arrow parameter (`args =>`), and the names of a destructured parameter (`({ a, b = 1 }, [c, d]) =>`) | JS / TS |
+| lambda parameters: `{ a, b -> }`, `{ (k, v) -> }`; `{ a, b in }`, `{ [weak self] a in }` | Kotlin; Swift / Scala / Dart |
+| the leading names of each line of `var ( … )` / `const ( … )` | Go |
+| bracketed, starred and nested targets: `(a, b) = o`, `a, *rest = o`, `for i, (k, v) in …` | Python |
+| `$name =` at statement start; `as $v`, `as $k => $v` | the default syntax (PHP) |
+
+Inside a pattern a key before `:` in `{…}`, a type after `:` in `(…)`, a default
+value after `=`, a type or variant before `{` / `(` / `::`, a subscript or
+attribute target, and in Rust any capitalised name (a constant or unit variant)
+are not bindings. A `{…}` followed by `=` or `=>`, or right after `const` / `let`
+/ `var`, is a pattern rather than a scope (`isPatternBrace`), on both paths: its
+names belong to the enclosing block. Read as a nested scope, a destructured
+`const { a, b } = o` put `a` and `b` at proximity 2, so they never painted. In
+JavaScript and TypeScript a caret inside such a pattern, or inside a
+destructured parameter (`isParamPattern`), focuses the scope that owns the
+names, not the pattern's brace ([javascript.md](javascript.md#blocks-and-focus)).
+
+In JavaScript and TypeScript a `const` / `let` / `var` whose initializer is an
+arrow, a `function`, a `class` or a module (`require("…")`, `await
+import("…")`, with only member accesses after it) declares no data, and a key
+first in a `{…}` item (`key:`, `key?:`, `key!:`, a label) is no candidate
+([javascript.md](javascript.md#data-identities)).
+
+In Lua a candidate is a name in a binding position (not a member, key or
+label) that is no callee, standard global, module, local function or namespace
+global; its keywords are Lua's 22 reserved words, so `type`, `map` and `default`
+stay data ([lua.md](lua.md#data-identities)). In Ruby a candidate is an
+occurrence `rubyFacts` binds to a local, parameter or user global, by Ruby's own
+lexical rule: a name before its first assignment, or followed by an argument,
+is a method call ([ruby.md](ruby.md#data-identities)). Elsewhere a candidate occurrence is
+a code identifier that is not a keyword, self, `_` or Python `cls`; not a member (`item.size`), path segment (`Config::new`), callee
+(`fetch(`), macro (`println!(`) or argument label; and not a name declared by
+`function`, `class`, `def`, `fn`, `type`, `struct`, `import` and similar. Python
+imports are the exception to that last rule: they are resolved per occurrence,
+not per name. No identifier inside an import statement is a candidate, nor is a
+use that resolves to an import binding (`pyImportOffsets`, the resolver of the
+[import restore](import-restore.md#python)). A parameter or local that shares an
+import's name, `def connect(host, ssl)` next to `import ssl`, is still data
+(measured in [import-restore.md](import-restore.md#band-2)). Classes
+then follow the semantic path, with two differences: a name with no declaration is
+never painted (types, imports, functions), and a name whose only declarations are
+in functions that do not enclose the block is left neutral rather than painted as
+a global. Declarations the block cannot see (another function's, a sibling
+block's) are ignored when a visible one exists, as on the semantic path. The
+top-level scope carves out function bodies and signatures exactly as on the
+semantic path (`excludeRanges`).
+
+The per-lex part (candidates and declarations) is cached per lex and language and
+costs 30 to 48 ms once per version on a 1.3 MB Rust file. The file globals and
+shadow scopes are cached with it per `fnRanges` array, so after that a 5-block
+scope classifies in about 2 ms (stage table in
+[runtime.md](runtime.md#cost-on-large-files)).
 
 ---
 
@@ -318,29 +594,46 @@ visually merges the two identities shadowing already makes easy to confuse — t
 highlighting would invite the exact bug class it should expose.
 
 `FileIndex.shadowScopes` maps each name to the **function ranges that declare
-it**. `dropShadowed` (traces.ts) then removes any occurrence sitting inside a
-declaring scope that is *not* the traced identity's own:
+it**. An occurrence belongs to the innermost declaring scope around it, and
+`dropShadowed` (traces.ts) removes it when that scope is *not* the traced
+identity's own:
 
 | Traced identity | Own scope | Effect |
 |---|---|---|
 | true global (`out`, non-capture) | none | every fn-declaring scope subtracted |
 | capture (`out`, `isCapture`) | `homeFn` | other fns' bindings subtracted |
-| `fn` / `block` | `enclosingFn` | already clipped there; no-op in practice |
+| `fn` / `block` | `enclosingFn` | a nested closure that redeclares the name is subtracted |
+
+Innermost matters once closures are function ranges. Subtracting every foreign
+scope removed a closure parameter's own uses whenever the enclosing function also
+declared the name (`for c in &cfgs` around `.map(|c| c.with_retries(5))` in
+`samples/sample.rs`), because the enclosing function contains the closure.
 
 Verified on `samples/sample.js`: the top-level `cfgs` traces lines 123, 126, 130
 and no longer paints `summarize`'s parameter on lines 47-48.
 
 ---
 
-## The classification cache key MUST include the document URI
+## The classification cache key names the document object
 
-`cacheKey()` is `uri::version::focusKey`, and `focusKey` is only
-`openLine#depth`. Dropping the URI is not a theoretical hazard: a freshly
-reloaded window has **every document at version 1**, so `sample.js` top level and
-`sample.go` top level both keyed to `1::0#-1`. Switching tabs then rendered the
-first file's occurrence *offsets* against the second file's text — decorations
-landing mid-word and inside comments. That was the "garbled highlighting on files
-not focused at window reload" bug.
+`cacheKey()` is `uri#instance::version::focusKey`, and `focusKey` is
+`openLine#depth`, plus `#slot` for the second and later blocks that open on one
+line at one depth (`.map((x) => …).filter((y) => …)`). `instance` numbers each
+`TextDocument` object. The slot counts blocks rather than columns, so typing on a
+block's header line keeps its key and band 2 holds its tints. Without it, two
+same-line arrows shared a key: the second one's classification painted in both,
+and moving between them never reclassified.
+
+- **The URI** separates files: a freshly reloaded window has every document at
+  version 1, so without it `sample.js` top level and `sample.go` top level both
+  keyed to `1::0#-1`, and switching tabs rendered the first file's occurrence
+  offsets against the second file's text.
+- **The instance** separates two texts of one file. VS Code builds a new
+  `TextDocument` at version 1 when a file is reopened or its language mode
+  changes. A file edited while closed (a checkout, a pull, codegen) therefore
+  came back as `uri::1::focusKey`, hit the old entry, and painted the old offsets
+  on the new text — decorations inside a newly added comment — until the first
+  edit.
 
 ---
 
@@ -393,7 +686,9 @@ The fix: engagement requires an **attributed input kind**. `decorator.ts` keeps 
 `engaged` set of document URIs, added to only by
 
 - a selection change with `e.kind` set — `Keyboard` (1), `Mouse` (2), `Command` (3), or
-- an edit (`onEdit`, unconditional — typing is unambiguous intent).
+- an edit the user typed (`onEdit`; typing is unambiguous intent). Format on save,
+  rename and an auto-import neither engage nor enter Edit; see
+  [runtime.md](runtime.md#typing-versus-other-edits).
 
 `kind` is absent precisely when VS Code cannot attribute the change to input, which
 is exactly the restored-caret case.
@@ -403,19 +698,45 @@ is exactly the restored-caret case.
 | cold open / tab switch, caret restored | `undefined` | no | **Survey** |
 | any further programmatic reveal | `undefined` | no | **Survey** |
 | arrow key | `Keyboard` | yes | Focus |
-| click, even at the same position | `Mouse` | yes | Focus |
+| click that moves the caret or collapses a selection | `Mouse` | yes | Focus |
+| click on the caret's own position, nothing selected | no event | unchanged | unchanged |
 | go-to-definition, find | `Command` | yes | Focus |
 | typing | — | yes | Edit |
+| format on save, rename, auto-import | — | unchanged | unchanged |
 | return to a tab you had worked in | `undefined` | yes (already) | Focus |
+| reopen a file after closing its last tab | `undefined` | no | **Survey** |
 
-Requiring `kind` rather than movement is what keeps a **same-position click** working
-— that was an earlier bug ("stuck until I arrow-key").
+Every attributed kind engages, `Mouse` included. An earlier version accepted only
+`Keyboard` and `Command`, so a click could not enter Focus ("stuck until I
+arrow-key"). Requiring `kind` rather than movement keeps a click that collapses a
+selection at the caret working: the caret does not move, the event still says
+`Mouse`.
 
-The last row is deliberate: you chose that caret position earlier, so returning is
-not a fresh viewing context. `onDidCloseTextDocument` clears the entry, so reopening
-starts fresh and the set does not grow unbounded.
+A click that changes nothing reports nothing. VS Code 1.144.1 emits a selection
+change only when the cursor state differs: `_emitStateChangedIfNecessary` returns
+early on an equal `CursorModelState` (`workbench.desktop.main.js`). No extension
+sees a click on the caret's own position with nothing selected. A reopened file
+restores its caret where you last left it, so a click on that spot leaves the file
+in **Survey**; a click anywhere else, or an arrow key, enters Focus. The theme
+repo's real-editor `reopen` scenario measures it: 0 selection events on that
+click.
 
-### Defence in depth: the paint gate
+Returning to a tab is deliberate: you chose that caret position earlier, so it is
+not a fresh viewing context. Closing the document's last tab clears the entry
+(`window.tabGroups.onDidChangeTabs`), so reopening starts fresh; a tab in another
+group, or either side of a diff, keeps it. `onDidCloseTextDocument` alone did not
+do this. It fires when the model is disposed, and VS Code 1.144.1 holds a model
+that any extension opened with `openTextDocument` for up to 3 minutes after its
+editor closes (`BoundModelReferenceCollection`, `maxAge` 1e3\*60\*3, in
+`workbench.desktop.main.js`). Reopening inside that window handed back the same
+document, still engaged, and its restored caret entered Focus with band 2 painted.
+In VS Code 1.144.1 a file opened through `openTextDocument`, clicked, closed with
+Cmd+W and reopened came back in 流 Focus before the tab check and in 構 Survey after
+it; opened through Quick Open alone it came back in Survey either way.
+`onDidCloseTextDocument` still clears the entry, so the set does not grow
+unbounded.
+
+### Defence in depth: the paint check
 
 `render()` also requires engagement before applying bands 2 or 3, independently of
 the phase. Three fixes had tried to keep the *phase* right and a fresh tab still lit
@@ -433,16 +754,19 @@ them. VS Code scopes decorations per `TextEditor` and never clears them for us:
 an editor we painted and then navigated away from keeps its old ranges, computed
 from a *different* document's classification.
 
-`clearOtherEditors(keep)` therefore strips every decoration type from all other
-`visibleTextEditors` whenever the active editor changes, and on
-`onDidChangeVisibleTextEditors`. It bypasses the `lastApplied` dirty-check, which
-tracks only the active editor's state.
+`clearOtherEditors(keep)` therefore strips the gutter and every band-2/3 type
+from all other `visibleTextEditors` on every render. Band 1 is the opposite: it
+is painted on **every** visible source editor, so an inactive split shows `self`
+and the format placeholders the same as the active one. The dirty-check is per
+editor and per type, so neither calls `setDecorations` again once its ranges are
+in place, until an edit moves them
+([runtime.md](runtime.md#decorations-move-with-edits)).
 
-`clearAllVisible()` handles the case where there is **no** active text editor —
-focus in a webview, panel or another split. `clearAll(undefined)` could not: with
-no editor there is nothing to paint through, so it only reset the dirty-check map.
-A Focus → Survey relaxation firing while the caret was outside the document
-therefore left the tints on screen indefinitely.
+`clearAllVisible()` handles the case where there is **no** active source editor —
+focus in a webview, a preview, the settings UI or a panel such as Output. It
+clears bands 2 and 3 from every visible editor and keeps band 1. `refresh()`
+schedules that render as soon as the active editor goes away; before, the tints
+stayed until the next relaxation repainted, up to 24 s later.
 
 Worst case without it: a window reload restores several editors visible at once,
 and the unfocused ones show highlighting scattered over comments, strings and
@@ -459,6 +783,7 @@ For completeness, since it interacts: jump keywords (`return`, `break`,
 
 Neither Go's nor TypeScript's built-in grammar separates those groups by scope,
 so the theme ships injection grammars (`syntaxes/*-flow.injection.json`) that add
-`keyword.control.flow.*`. The theme also leaves semantic `keyword`, `property`
-and `member` **unmapped**, because semantic tokens override TextMate and would
-otherwise flatten distinctions the grammars do make (e.g. getter vs field).
+`keyword.control.flow.*`. The theme also leaves semantic `keyword` and `member`
+**unmapped**, because semantic tokens override TextMate and would otherwise
+flatten distinctions the grammars do make. Semantic `property` is mapped, to the
+member colour (`#a2bedb` in Okibi).

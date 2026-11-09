@@ -39,7 +39,7 @@ export interface BlockNames {
   focusKey: string;
   /** Classified data identities used in that block. */
   byName: Map<string, NameInfo>;
-  /** True for the synthetic module top-level scope (relaxes the ≥2-use gate). */
+  /** True for the synthetic module top-level scope (relaxes the ≥2-use floor). */
   isTopLevel?: boolean;
 }
 
@@ -71,7 +71,7 @@ function priorityRank(a: [string, NameInfo], b: [string, NameInfo]): number {
 /**
  * Names eligible for a hue at all: data identities, excluding self.
  *
- * `isTopLevel` relaxes the ≥2-use gate. That gate exists so dense nested blocks
+ * `isTopLevel` relaxes the ≥2-use floor. That floor exists so dense nested blocks
  * stay calm, but a module-level `const`/`var` is typically declared once at the
  * top and *used further down inside functions* — the exact case the reader wants
  * traced. Counting only its uses within the top-level scope would hide it.

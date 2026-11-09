@@ -73,9 +73,9 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/pure.test.js test/golden.test.js test/scopecolor.test.js test/edge.test.js test/markdown.test.js test/python.test.js test/rust.test.js test/render.test.js",
+    "test": "npm run compile && node --test test/pure.test.js test/golden.test.js test/scopecolor.test.js test/edge.test.js test/markdown.test.js test/python.test.js test/rust.test.js test/render.test.js test/lexer.test.js test/lexer-render.test.js test/escape.test.js test/risk-words.test.js test/runtime.test.js test/intervals.test.js test/palette.test.js test/imports.test.js test/shadows.test.js test/perf-golden.test.js test/lua.test.js test/ruby.test.js test/javascript.test.js",
     "vscode:prepublish": "npm run compile",
-    "bench": "npm run compile && node test/bench.js && node test/bench-nav.js"
+    "bench": "npm run compile && node test/bench.js && node test/bench-nav.js && node test/bench-scale.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

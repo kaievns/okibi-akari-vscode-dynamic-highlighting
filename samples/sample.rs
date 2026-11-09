@@ -38,7 +38,7 @@ trait Summarize {
 }
 
 impl Config {
-    // `self` is the gold self-slot across the impl
+    // `self` is the keyword colour across the impl
     fn new(name: &str) -> Self {
         let mut tags = HashMap::new();
         tags.insert("env".to_string(), "dev".to_string());

@@ -27,19 +27,16 @@ export const TOKENS = {
   n2: { dark: '#1b1e20', light: '#f9f6f2' }, // editor ground
   n11: { dark: '#e1e3e5', light: '#13110e' }, // foreground (fill is a % of this)
 
-  // band 2 · identity tints — ONE tint set for all data identities. The former
-  // idg-* chroma-boosted tier is retired from the spec: out-of-fn data uses the
-  // same hue and carries the distinction in WEIGHT alone (bold, bold-as-law).
-  // Designer palette (calibrated): slots {1,2,3,5,7}. Yamabuki gold (2) is in
-  // rotation now that this/self moved to keyword grey; wakaba (6) and moegi (4)
-  // are retired. Array is in ROTATION order [1,3,2,7,5] — greedy max-separation
-  // (hue gaps 125°,163°,136°,42°): the closest pair only when all five in play.
+  // band 2 · identity tints, one set for all data identities: globals take the
+  // same hex in bold. One OKLCH chroma per theme, per-hue L for even
+  // perceived lightness. Order is the hand-out order (lowest free index first).
+  // Values, method and invariants: docs/palette.md, test/palette.test.js.
   id: [
-    { dark: '#db9065', light: '#bc662f' }, // slot 1 · kohaku amber 50
-    { dark: '#9d8eff', light: '#6b5ecc' }, // slot 3 · fuji periwinkle 285
-    { dark: '#ddbd6e', light: '#9d7300' }, // slot 2 · yamabuki gold 88
-    { dark: '#ea94ff', light: '#8f4bb4' }, // slot 7 · ayame violet 312
-    { dark: '#f685b6', light: '#b34378' }, // slot 5 · akabeni rose 354
+    { dark: '#d88c60', light: '#9e572c' }, // spec slot 1 · kohaku 50
+    { dark: '#968ed9', light: '#5f5aa0' }, // spec slot 3 · fuji 288 / 285
+    { dark: '#bf9e4a', light: '#8e6804' }, // spec slot 2 · yamabuki 88 / 83
+    { dark: '#bb86c7', light: '#84528f' }, // spec slot 7 · ayame 320
+    { dark: '#d481a4', light: '#9b4e6f' }, // spec slot 5 · akabeni 354
   ] as TokenPair[],
   // this/self — --id-self = var(--syn-keyword): identical to band 1's resting
   // keyword colour, so painting it is a NO-OP wherever band 1 already got it right.
@@ -54,10 +51,13 @@ export const TOKENS = {
   idSelf: { dark: '#7c8894', light: '#6b7681' },
   // Format placeholders — member steel, the register for reaching into data. Same
   // value as the theme's FORMAT PLACEHOLDERS rule, because this decoration exists
-  // only to reach the ONE case a theme rule cannot: rust-analyzer emits a single
-  // `string` semantic token over a whole literal, which outranks the grammar's
-  // `meta.interpolation.rust` and turns the holes green. See src/placeholders.ts.
+  // only for the cases a theme rule cannot reach: rust-analyzer's single `string`
+  // token over a whole literal, and bracket-pair colorization on Python f-string
+  // field braces. See src/placeholders.ts.
   placeholder: { dark: '#a2bedb', light: '#516f8e' },
+  // The theme's namespace / type slate, for imported modules and types in a
+  // document no semantic provider colours. See src/imports.ts.
+  typeSlate: { dark: '#a5b6c8', light: '#52657a' },
   // --id-outer — designer token, role not yet specified in the dynamic spec;
   // carried here unwired until its behaviour is defined.
   idOuter: { dark: '#ff9c7c', light: '#bb461e' },
@@ -65,11 +65,19 @@ export const TOKENS = {
   // band 3 · risk
   riskAsync: { dark: '#4bc8d5', light: '#007481' },
   riskMut: { dark: '#eeb64f', light: '#a86d00' }, // designer token, not yet wired
-  riskEscape: { dark: '#f57c5f', light: '#be3a16' },
+  // Off-spec: held 30° or more of hue from editorError. docs/risk-marks.md#style-and-colour.
+  riskEscape: { dark: '#e0a26f', light: '#a06024' },
   riskDanger: { dark: '#f66e60', light: '#be241f' },
 
   // number-clay — engaged scope only
   numberEngaged: { dark: '#c9a18d', light: '#9f7661' },
+
+  // The theme's `comment` colour (italic), for band-1 marks that put comment text
+  // painted as code (a code-typed semantic token, a bracket-pair level) back.
+  comment: { dark: '#646a70', light: '#8b857d' },
+  // The theme's `string` colour, for brackets in Rust strings painted at a
+  // bracket-pair level. See docs/runtime.md#brackets-in-rust-comments-and-strings.
+  string: { dark: '#8ecd92', light: '#257231' },
 
   // --sel — ember 34%/28% wash. Identity-on-demand for OVERFLOWED (neutral)
   // bindings: caret on a neutral name lights its occurrences in the block.
@@ -82,6 +90,11 @@ export const TOKENS = {
   warn: { dark: '#e6af2b', light: '#956000' },
 } as const;
 
+/** The spec's `.u-escape`: dashed, 1.5px, offset 3px, never broken around descenders. */
+export function riskEscapeDecoration(color: string): string {
+  return `underline dashed ${color}; text-decoration-thickness: 1.5px; text-underline-offset: 3px; text-decoration-skip-ink: none`;
+}
+
 /** VS Code reports the active theme kind; pick the matching side of a token. */
 export function pick(pair: TokenPair, isDark: boolean): string {
   return isDark ? pair.dark : pair.light;
@@ -93,20 +106,6 @@ export function alphaHex(opacity: number): string {
   return Math.round(o * 255)
     .toString(16)
     .padStart(2, '0');
-}
-
-/**
- * A translucent fill = foreground colour at `opacity`, over the editor ground.
- * Returned as an 8-digit hex so it composes as a genuine overlay regardless of
- * what actually sits under the line.
- */
-export function fillColor(isDark: boolean, opacity: number): string {
-  const fg = isDark ? TOKENS.n11.dark : TOKENS.n11.light;
-  const clamped = Math.max(0, Math.min(1, opacity));
-  const alpha = Math.round(clamped * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `${fg}${alpha}`;
 }
 
 /**
@@ -142,18 +141,23 @@ export function gutterStripeUri(color: string, opacity: number, widthPct = 100):
  * rebuilt only on a dark↔light flip. All types use ClosedClosed range behaviour
  * so a mark doesn't grow while typing at its edge (prevents smear).
  *
- *   id[0..5]      — fn-local tints, normal weight (foreground colour)
- *   idg[0..5]     — out-of-fn tints, bold
- *   self          — this/self gold, bold
+ *   id[0..4]      — locals and captures, normal weight
+ *   idg[0..4]     — globals: the same five hexes, bold
+ *   self          — this/self in band 1's keyword colour, normal weight
  *   riskAsync     — await/async cyan
  *   riskDanger    — as/any, bold
  *   riskEscape    — dashed underline (colour in the CSS so it composes over a tint)
  *   numberEngaged — clay numeric literals
+ *   placeholder   — Rust format placeholders and Python f-string fields (band 1, always on)
+ *   commentRestore — comment colour over Go doc links and brackets in Rust comments (band 1, always on)
+ *   stringRestore — string colour over brackets in Rust strings (band 1, always on)
+ *   importRestore — type slate over imported modules and types (band 1, until a provider answers)
+ *   shadowRestore — page colour over non-call uses of a shadowed Python builtin (band 1, same lifetime)
  *   mdHighlight   — markdown ==highlight== wash (band 1, always on; see below)
  *   mdLinkPlain   — cancels VS Code's link underline (band 1, always on)
  *
- * The last two are band-1 marks and deliberately NOT phase-gated: they exist
- * because a colour theme physically cannot express them, not because they carry
+ * The band-1 marks are deliberately NOT phase-bound: they exist because a
+ * colour theme physically cannot express them, not because they carry
  * attention state.
  *
  *   - A `background` in `tokenColors` is parsed and indexed but never rendered
@@ -177,12 +181,16 @@ export interface DecorationPool {
   riskEscape: vscode.TextEditorDecorationType;
   numberEngaged: vscode.TextEditorDecorationType;
   placeholder: vscode.TextEditorDecorationType;
+  commentRestore: vscode.TextEditorDecorationType;
+  stringRestore: vscode.TextEditorDecorationType;
+  importRestore: vscode.TextEditorDecorationType;
+  shadowRestore: vscode.TextEditorDecorationType;
   mdHighlight: vscode.TextEditorDecorationType;
   mdLinkPlain: vscode.TextEditorDecorationType;
   /** Every type in the pool, for bulk dispose. */
   all(): vscode.TextEditorDecorationType[];
   /**
-   * The PHASE-GATED types only — bands 2 and 3.
+   * The PHASE-BOUND types only — bands 2 and 3.
    *
    * The clear helpers must use this rather than `all()`: bands 2/3 belong to the
    * focused block of the active editor and have to come off everything else, but
@@ -193,10 +201,24 @@ export interface DecorationPool {
   banded(): vscode.TextEditorDecorationType[];
 }
 
+const behaviors = new WeakMap<vscode.TextEditorDecorationType, vscode.DecorationRangeBehavior>();
+
+/** createTextEditorDecorationType, remembering the type's range behaviour for rangeBehaviorOf. */
+export function decorationType(options: vscode.DecorationRenderOptions): vscode.TextEditorDecorationType {
+  const type = vscode.window.createTextEditorDecorationType(options);
+  behaviors.set(type, options.rangeBehavior ?? vscode.DecorationRangeBehavior.OpenOpen);
+  return type;
+}
+
+/** How VS Code moves this type's ranges when text is typed at their edges; OpenOpen is its default. */
+export function rangeBehaviorOf(type: vscode.TextEditorDecorationType): vscode.DecorationRangeBehavior {
+  return behaviors.get(type) ?? vscode.DecorationRangeBehavior.OpenOpen;
+}
+
 export function buildDecorationPool(isDark: boolean): DecorationPool {
   const closed = vscode.DecorationRangeBehavior.ClosedClosed;
   const colorType = (color: string, bold: boolean): vscode.TextEditorDecorationType =>
-    vscode.window.createTextEditorDecorationType({
+    decorationType({
       color,
       fontWeight: bold ? 'bold' : 'normal',
       rangeBehavior: closed,
@@ -213,18 +235,32 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
   const placeholder = colorType(pick(TOKENS.placeholder, isDark), false);
   const riskAsync = colorType(pick(TOKENS.riskAsync, isDark), false);
   const riskDanger = colorType(pick(TOKENS.riskDanger, isDark), true);
-  const riskEscape = vscode.window.createTextEditorDecorationType({
-    textDecoration: `underline dashed ${pick(TOKENS.riskEscape, isDark)}`,
+  // VS Code writes `textDecoration` verbatim into `text-decoration:{0};`, so the
+  // spec's .u-escape geometry rides in the same string.
+  const riskEscape = decorationType({
+    textDecoration: riskEscapeDecoration(pick(TOKENS.riskEscape, isDark)),
     rangeBehavior: closed,
   });
   const numberEngaged = colorType(pick(TOKENS.numberEngaged, isDark), false);
+  const commentRestore = decorationType({
+    color: pick(TOKENS.comment, isDark),
+    fontStyle: 'italic',
+    fontWeight: 'normal',
+    rangeBehavior: closed,
+  });
+  const stringRestore = colorType(pick(TOKENS.string, isDark), false);
+  // After id / idg on purpose: VS Code inserts each type's CSS rule at the front of
+  // the sheet and decoration colour is `!important`, so the earlier type wins an overlap.
+  const importRestore = colorType(pick(TOKENS.typeSlate, isDark), false);
+  // The page colour, normal weight: the grammar paints a builtin bold call blue.
+  const shadowRestore = colorType(pick(TOKENS.n11, isDark), false);
 
   // The ==highlight== wash. `backgroundColor` is an 8-digit hex (--warn at 16%)
   // so it composes over the selection rather than replacing it, and the radius
   // plus a hair of horizontal padding reproduce the spec's chip without shifting
   // the glyphs — VS Code lays decorations out inline, so vertical padding here
   // would change the line box.
-  const mdHighlight = vscode.window.createTextEditorDecorationType({
+  const mdHighlight = decorationType({
     backgroundColor: `${pick(TOKENS.warn, isDark)}${alphaHex(0.16)}`,
     borderRadius: '2px',
     rangeBehavior: closed,
@@ -237,7 +273,7 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
   // substituted into the CSS template verbatim (no sanitising pass), so the flag
   // survives. `Open` range behaviour: this tracks a provider range, not a mark
   // being typed, so it should follow edits at the edges.
-  const mdLinkPlain = vscode.window.createTextEditorDecorationType({
+  const mdLinkPlain = decorationType({
     textDecoration: 'none !important',
     rangeBehavior: vscode.DecorationRangeBehavior.OpenOpen,
   });
@@ -251,10 +287,14 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     riskEscape,
     numberEngaged,
     placeholder,
+    commentRestore,
+    stringRestore,
+    importRestore,
+    shadowRestore,
     mdHighlight,
     mdLinkPlain,
     all(): vscode.TextEditorDecorationType[] {
-      return [...this.banded(), self, placeholder, mdHighlight, mdLinkPlain];
+      return [...this.banded(), self, placeholder, commentRestore, stringRestore, importRestore, shadowRestore, mdHighlight, mdLinkPlain];
     },
     // The PHASE bands: withdrawn when the caret leaves the editor, restored when it
     // comes back. `self` is deliberately NOT here — it is a band-1 mark this layer

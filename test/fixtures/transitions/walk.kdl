@@ -1,0 +1,30 @@
+/- kdl-version 2
+// KDL v2, with v1's bare keywords and r"…" raw strings.
+/* outer /* nested */ still a comment */
+package {
+    name my-pkg
+    version "1.2.3"
+    (author)person "Kat" email="kat@example.com" active=#true
+    dependencies platform=windows {
+        winapi "1.0.0" path="./crates/winapi"
+        (git)serde "1" features=derive
+    }
+    numbers 1_000 0xdead_beef 0o755 0b1010_0101 1.5e-3 -12 +7 #inf #-inf #nan #null
+    raw #"C:\path\with "quotes""# ##"has "# inside"## r"C:\Users\zkat\"
+    multi """
+        a multi-line string with self and 42
+        """
+    escapes "tab\t\u{1F600}\"\\\s" "ws \
+             escape"
+    "quoted node" "quoted key"=1 key=other
+    typed (u8)123 (date)"2026-11-07" (f64)1.5
+    node /-skipped-arg kept /-skipped=prop kept=prop /-{ skipped }
+    continued 1 2 \
+        3 4
+    mode async; owner self; ref this
+    legacy true false null
+}
+binds {
+    Mod+1 { focus-workspace 1; }
+    Mod+Shift+1 { move-window-to-workspace 1 focus=false; }
+}

@@ -8,9 +8,10 @@
  * with hysteresis (§3.6) so the screen is calm at rest and never flickers.
  *
  * Transitions (§3.6 validated-in-browser starting values, all configurable):
- *   - typing / insert         → Edit    (immediate)
+ *   - typing / insert         → Edit    (immediate; see isTypingEdit)
  *   - caret placement in block → Focus   (immediate; §3.3 Survey auto-advances)
- *   - caret leaves all blocks  → Survey  (immediate — top level is Survey)
+ *   - caret on no scope        → Survey  (immediate; only prose and data files
+ *                                          have none — code has the module top level)
  *   - no typing for editToFocus ms      → Edit  relaxes to Focus
  *   - no activity for focusToSurvey ms  → Focus relaxes to Survey
  *   - minHold ms floor before any downgrade, to kill flicker
@@ -65,12 +66,13 @@ export class PhaseMachine {
     this.dwell = dwell;
   }
 
-  /** Caret moved to a block (Focus) or top level (null → Survey). Immediate cut up; never a downgrade. */
+  /** Caret moved to a scope (Focus) or onto none (Survey). Immediate cut up; never a downgrade. */
   onCaret(inBlock: boolean, now: number): boolean {
     this.lastActivityAt = now;
     if (!inBlock) {
-      // Top level is Survey by definition (§3.2). This is an immediate move,
-      // not a timed relaxation — the caret is demonstrably outside any scope.
+      // No scope at the caret is Survey by definition (§3.2): only prose and data
+      // files have none, since code has the module top level. This is an
+      // immediate move, not a timed relaxation.
       return this.transition(Phase.Survey, now);
     }
     // §3.3 — an intentional caret placement auto-advances Survey → Focus.
@@ -164,4 +166,29 @@ export class PhaseMachine {
   private rank(p: Phase): number {
     return p === Phase.Survey ? 0 : p === Phase.Focus ? 1 : 2;
   }
+}
+
+interface LineSpan {
+  start: { line: number };
+  end: { line: number };
+}
+
+/**
+ * True when an edit reads as the user typing: every change touches a line one
+ * of the cursors is on. A change covers the lines it replaced and the lines its
+ * new text occupies, so the check holds whether the selections are read from
+ * before or after the edit (Enter puts the cursor on the line below the change).
+ * Rename, organise-imports and a formatter each also edit lines no cursor is on.
+ */
+export function isTypingEdit(
+  changes: readonly (LineSpan & { text?: string })[],
+  selections: readonly LineSpan[],
+): boolean {
+  if (changes.length === 0) {
+    return false;
+  }
+  return changes.every((c) => {
+    const last = Math.max(c.end.line, c.start.line + (c.text ?? '').split('\n').length - 1);
+    return selections.some((s) => c.start.line <= s.end.line && last >= s.start.line);
+  });
 }
