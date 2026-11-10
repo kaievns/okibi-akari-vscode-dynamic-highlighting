@@ -41,22 +41,26 @@ import {
   inSortedRanges,
   BraceBlock,
 } from './focus';
-import { LexResult, forgetLex, lexFor, relex, rememberLex, syntaxFor } from './lex';
+import { LexId, LexResult, forgetLex, lexFor, relex, rememberLex, syntaxFor } from './lex';
 import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL, isTypingEdit } from './phases';
 import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool, decorationType, rangeBehaviorOf } from './tokens';
 import { mayForceMove, rangesMovedBy } from './tracking';
-import { Classifier, RUST_PATH_KEYWORDS, SemanticState } from './classify-lsp';
+import { Classifier, PathKeywords, RUST_PATH_KEYWORDS, SemanticState } from './classify-lsp';
 import { Classification, OffsetRange } from './classify';
 import { ColorPlan, planFromColoring } from './colors';
 import { ScopeColoring } from './scopecolor';
 import { computeTraceRanges } from './traces';
 import { lexicalRisk, escapeRisk } from './risk';
 import { highlightSpans, linkSpans } from './markdown';
-import { Span, jsPlaceholderSpans, luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans, rustStringBracketSpans } from './placeholders';
+import {
+  Span, jsPlaceholderSpans, luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans, rustStringBracketSpans,
+  zigPlaceholderSpans,
+} from './placeholders';
 import { commentBracketSpans, goDocLinkSpans } from './doclinks';
 import { importUseNames, importUseSpans, shadowUseSpans } from './imports';
 import { luaRestoreSpans } from './lua';
 import { rubyKeywordSelf, rubyShadowSpans } from './ruby';
+import { zigImportSpans, zigKeywordSelf } from './zig';
 
 interface Config {
   enabled: boolean;
@@ -104,6 +108,14 @@ export function isDecoratable(doc: { uri: { scheme: string } }): boolean {
 const langOf = (doc: vscode.TextDocument): string => effectiveLanguageId(doc.languageId, doc.fileName);
 /** Band 1 reads a TypeScript declaration file as TypeScript; only bands 2–3 treat it as static. */
 const band1LangOf = (doc: vscode.TextDocument): string => band1LanguageId(langOf(doc));
+
+interface Band1Inputs {
+  readonly paths: PathKeywords | undefined;
+  readonly ok: boolean;
+  readonly strings: boolean;
+  readonly typed: string;
+}
+
 /** The `import * as` restore (docs/import-restore.md#javascript-and-typescript); the React ids wait for their JSX tag positions. */
 const NAMESPACE_RESTORE_LANGUAGES = new Set(['javascript', 'typescript']);
 
@@ -121,7 +133,10 @@ const PLACEHOLDER_SCANS: Record<string, ((text: string) => Span[]) | undefined> 
   lua: luaPlaceholderSpans,
   ruby: rubyPlaceholderSpans,
   javascript: jsPlaceholderSpans,
+  zig: zigPlaceholderSpans,
 };
+/** Languages whose theme paints the placeholders unless the server's answer types string literals. */
+const STRING_TOKEN_LANGUAGES = new Set(['lua', 'zig']);
 
 const COMMENT_RESTORE_SCANS: Record<string, ((text: string, lex: LexResult) => Span[]) | undefined> = {
   go: (text, lex) => goDocLinkSpans(text, lex),
@@ -289,6 +304,10 @@ export class Decorator implements vscode.Disposable {
     escape?: vscode.Range[];
   } | undefined;
   private classifyToken: vscode.CancellationTokenSource | undefined;
+  // The classifier state each document's last band-1 render read. A classify compares the
+  // state after its answer with this, not with the state when it started: answers to
+  // overlapping classifies land out of order, and each started from the same state.
+  private band1Seen = new WeakMap<vscode.TextDocument, Band1Inputs>();
 
   private relaxTimer: ReturnType<typeof setTimeout> | undefined;
   private classifyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -877,10 +896,6 @@ export class Decorator implements vscode.Disposable {
     this.classifyToken = new vscode.CancellationTokenSource();
     const token = this.classifyToken.token;
 
-    const pathsBefore = this.classifier.pathKeywordsOf(doc);
-    const okBefore = this.classifier.semanticOk(doc);
-    const stringsBefore = this.classifier.typesStrings(doc);
-    const typedBefore = this.classifier.typedNamespacesOf(doc);
     let scoped: { focused: Classification; coloring: ScopeColoring; semantic: SemanticState } | null;
     try {
       scoped = await this.classifier.classifyScope(
@@ -893,12 +908,7 @@ export class Decorator implements vscode.Disposable {
     } catch {
       scoped = null;
     }
-    if (
-      this.classifier.pathKeywordsOf(doc) !== pathsBefore ||
-      this.classifier.semanticOk(doc) !== okBefore ||
-      this.classifier.typesStrings(doc) !== stringsBefore ||
-      this.classifier.typedNamespacesOf(doc) !== typedBefore
-    ) {
+    if (!this.band1Current(doc)) {
       this.scheduleRender(); // band 1 follows the answer even when band 2 discards it
     }
     if (!scoped || token.isCancellationRequested) {
@@ -1097,6 +1107,23 @@ export class Decorator implements vscode.Disposable {
     this.updateStatus();
   }
 
+  /** What band 1 reads of the classifier for `doc`. */
+  private band1Inputs(doc: vscode.TextDocument): Band1Inputs {
+    return {
+      paths: this.classifier.pathKeywordsOf(doc),
+      ok: this.classifier.semanticOk(doc),
+      strings: this.classifier.typesStrings(doc),
+      typed: this.classifier.typedNamespacesOf(doc),
+    };
+  }
+
+  /** The last band-1 render of `doc` read the classifier as it stands now. */
+  private band1Current(doc: vscode.TextDocument): boolean {
+    const seen = this.band1Seen.get(doc);
+    const now = this.band1Inputs(doc);
+    return seen !== undefined && seen.paths === now.paths && seen.ok === now.ok && seen.strings === now.strings && seen.typed === now.typed;
+  }
+
   /**
    * The band-1 marks for one editor: markdown washes, `self` / `this`, Rust, Python, Lua,
    * Ruby and JavaScript format placeholders, the comment restores and the import and shadow restores. Each corrects something the
@@ -1108,6 +1135,7 @@ export class Decorator implements vscode.Disposable {
    */
   private renderBand1(editor: vscode.TextEditor): void {
     const doc = editor.document;
+    this.band1Seen.set(doc, this.band1Inputs(doc));
     this.renderMarkdownMarks(editor, doc);
     this.renderSelf(editor, doc);
     this.renderPlaceholders(editor, doc);
@@ -1119,7 +1147,7 @@ export class Decorator implements vscode.Disposable {
   /**
    * Paint the uses of imported modules and types at the theme's type slate, and the
    * non-call uses of a shadowed builtin at the page colour, in Python, Go, Lua, Ruby,
-   * JavaScript and TypeScript while `restoresImports` holds. The grammars cannot see
+   * JavaScript, TypeScript and Zig while `restoresImports` holds. The grammars cannot see
    * the import list or a binding, so with `python.languageServer: None`, gopls off or
    * a server still starting, `heapq.heapify` and `fmt.Println` read as plain locals
    * and a parameter named `id` reads as the builtin; tsserver sends no token for a
@@ -1174,7 +1202,7 @@ export class Decorator implements vscode.Disposable {
   private restoresImports(doc: vscode.TextDocument): boolean {
     const lang = langOf(doc);
     return lang === 'lua' || lang === 'ruby' || NAMESPACE_RESTORE_LANGUAGES.has(lang)
-      || ((lang === 'python' || lang === 'go') && !this.classifier.semanticOk(doc));
+      || ((lang === 'python' || lang === 'go' || lang === 'zig') && !this.classifier.semanticOk(doc));
   }
 
   private applyRestores(editor: vscode.TextEditor, r: { ranges: vscode.Range[]; shadows: vscode.Range[] }): void {
@@ -1187,7 +1215,7 @@ export class Decorator implements vscode.Disposable {
     const lua = lx.syntax.family === 'lua' ? luaRestoreSpans(lx) : undefined;
     const ruby = lx.syntax.family === 'ruby';
     const typed = this.classifier.typedNamespacesOf(doc);
-    let imports = lua ? lua.imports : ruby ? [] : importUseSpans(lx);
+    let imports = lua ? lua.imports : ruby ? [] : lx.syntax.family === 'zig' ? zigImportSpans(lx) : importUseSpans(lx);
     if (typed !== '') {
       const skip = new Set(typed.split(','));
       const names = importUseNames(lx);
@@ -1221,7 +1249,9 @@ export class Decorator implements vscode.Disposable {
    * comment, string or docstring is not painted, and a prose or data file paints
    * none. Ruby has no `this`, and `x.self` / `self:` are a method and a hash key
    * (docs/ruby.md#band-1-restores); JavaScript's `self` is an ordinary name
-   * (docs/javascript.md#band-1-restores). Cached per document version.
+   * (docs/javascript.md#band-1-restores); zls types Zig's `self` `parameter`, and its
+   * `this` and a member, field or enum member named `self` are ordinary names
+   * (docs/zig.md#band-1-restores). Cached per document version.
    */
   private renderSelf(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
     if (isNonFlowLanguage(band1LangOf(doc))) {
@@ -1236,10 +1266,13 @@ export class Decorator implements vscode.Disposable {
     } else {
       ranges = [];
       const lx = this.textStateFor(doc).lex;
-      const ruby = lx.syntax.family === 'ruby';
-      const js = lx.syntax.family === 'js';
+      const family = lx.syntax.family;
+      const keyword = (id: LexId): boolean => family === 'ruby' ? id.name === 'self' && rubyKeywordSelf(lx, id)
+        : family === 'js' ? id.name === 'this'
+          : family === 'zig' ? id.name === 'self' && zigKeywordSelf(lx, id)
+            : id.name === 'self' || id.name === 'this';
       for (const id of lx.idents) {
-        if ((id.name === 'self' && !js && (!ruby || rubyKeywordSelf(lx, id))) || (id.name === 'this' && !ruby) || (paths && RUST_PATH_KEYWORDS.has(id.name))) {
+        if (keyword(id) || (paths && RUST_PATH_KEYWORDS.has(id.name))) {
           ranges.push(this.toRange(doc, { start: id.offset, end: id.offset + id.length }));
         }
       }
@@ -1252,8 +1285,8 @@ export class Decorator implements vscode.Disposable {
   /**
    * Paint format placeholders at member steel, file-wide and phase-independent, in
    * Rust (rust-analyzer's one `string` token covers the holes), Python f-strings
-   * (bracket-pair colorization paints the field braces), Lua while
-   * lua-language-server types its string literals, Ruby interpolation and JavaScript
+   * (bracket-pair colorization paints the field braces), Lua and Zig while
+   * lua-language-server or zls types their string literals, Ruby interpolation and JavaScript
    * template holes (bracket-pair colorization paints `#{` `}` and `${` `}`). Go and
    * Python `%` formats and TypeScript template holes sit inside a scope bracket-pair
    * colorization leaves alone, and the theme reaches them. Cached per
@@ -1262,7 +1295,7 @@ export class Decorator implements vscode.Disposable {
    */
   private renderPlaceholders(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
     const scan = PLACEHOLDER_SCANS[band1LangOf(doc)];
-    if (!scan || (langOf(doc) === 'lua' && !this.classifier.typesStrings(doc))) {
+    if (!scan || (STRING_TOKEN_LANGUAGES.has(band1LangOf(doc)) && !this.classifier.typesStrings(doc))) {
       this.applyType(editor, this.pool.placeholder, []);
       return;
     }

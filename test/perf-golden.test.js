@@ -27,16 +27,17 @@ const { Classifier } = require('../out/classify-lsp');
 const { planFromColoring } = require('../out/colors');
 const { computeTraceRanges } = require('../out/traces');
 const { lexicalRisk, escapeRisk } = require('../out/risk');
-const { luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans } = require('../out/placeholders');
+const { luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans, zigPlaceholderSpans } = require('../out/placeholders');
 const { goDocLinkSpans } = require('../out/doclinks');
 const { lex } = require('../out/lex');
+const { zigFacts, zigImportSpans } = require('../out/zig');
 const { Decorator } = require('../out/decorator');
 const { generate } = require('./perf-inputs');
 
 const HASH_FILE = path.join(__dirname, 'fixtures', 'perf-golden.json');
 const RECORD = process.env.PERF_GOLDEN_RECORD === '1';
 const DUMP = process.env.PERF_GOLDEN_DUMP;
-const INPUTS = ['ts', 'js', 'go', 'rs', 'py', 'lua', 'rb'].flatMap((ext) => [2000, 10000].map((lines) => [ext, lines]));
+const INPUTS = ['ts', 'js', 'go', 'rs', 'py', 'lua', 'rb', 'zig'].flatMap((ext) => [2000, 10000].map((lines) => [ext, lines]));
 const SAMPLED_BLOCKS = 24;
 
 const recorded = fs.existsSync(HASH_FILE) ? JSON.parse(fs.readFileSync(HASH_FILE, 'utf8')) : {};
@@ -254,9 +255,22 @@ function structureSection(input) {
   }
   sec.add('innermostBlock', carets);
   sec.add('band1', {
-    placeholders: ({ rust: rustPlaceholderSpans, python: pythonPlaceholderSpans, lua: luaPlaceholderSpans, ruby: rubyPlaceholderSpans }[languageId]?.(text) ?? []).map(r2a),
+    placeholders: ({
+      rust: rustPlaceholderSpans, python: pythonPlaceholderSpans, lua: luaPlaceholderSpans, ruby: rubyPlaceholderSpans, zig: zigPlaceholderSpans,
+    }[languageId]?.(text) ?? []).map(r2a),
     goDocLinks: languageId === 'go' ? goDocLinkSpans(text, lx).map(r2a) : [],
   });
+  if (languageId === 'zig') {
+    const z = zigFacts(lx);
+    sec.add('zigFacts', {
+      nonDataAt: [...z.nonDataAt].sort((a, b) => a - b),
+      nonDataNames: [...z.nonDataNames].sort(),
+      captures: z.captures.map((c) => c.offset),
+      containerOpens: [...z.containerOpens].sort((a, b) => a - b),
+      imports: [...z.imports].sort(),
+      importSpans: zigImportSpans(lx).map(r2a),
+    });
+  }
   return { sec, blocks };
 }
 

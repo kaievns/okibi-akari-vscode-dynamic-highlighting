@@ -32,6 +32,7 @@ import { IntervalIndex, bestAt, buildIntervalIndex } from './intervals';
 import { rustInlineArgs } from './placeholders';
 import { LUA_KEYWORDS, LUA_STD, luaCallee, luaFacts } from './lua';
 import { rubyFacts, rubyTokens } from './ruby';
+import { isZigReserved, isZigTypeName, zigFacts } from './zig';
 
 export type Cls = 'block' | 'fn' | 'out' | 'self';
 export type ClassSource = 'lsp' | 'heuristic' | 'mixed';
@@ -427,7 +428,7 @@ export function buildFileIndex(
     // object-shorthand (`{ name }`) is a real read of a binding and tints like it.
     const tintable =
       TINTABLE_TYPES.has(tok.type) ||
-      (tok.type === 'property' && isShorthandPropertyRead(text, tok.offset, tok.length, tok.modifiers));
+      (tok.type === 'property' && lx.syntax.family !== 'zig' && isShorthandPropertyRead(text, tok.offset, tok.length, tok.modifiers));
     if (!tintable) {
       continue;
     }
@@ -1200,6 +1201,7 @@ export function outermostFnOf(fnRanges: OffsetRange[], offset: number): OffsetRa
 
 function isSelfName(name: string, family?: string): boolean {
   if (family === 'js') return name === 'this';
+  if (family === 'zig') return name === 'self';
   return SELF_NAMES.has(name) || name.startsWith('@');
 }
 
@@ -1934,7 +1936,12 @@ function heuristicCandidate(lx: LexResult, id: LexId, nonData: Set<string>): boo
     const b = luaFacts(lx).binding.get(id.offset);
     return b !== undefined && !(b < 0 && LUA_STD.has(id.name)) && !luaCallee(lx, id);
   }
-  if (HEURISTIC_KEYWORDS.has(id.name) || id.name === '_' || isSelfName(id.name, lx.syntax.family) || nonData.has(id.name)) {
+  const zig = lx.syntax.family === 'zig';
+  if (zig ? isZigReserved(id.name) || isZigTypeName(id.name) || zigFacts(lx).nonDataAt.has(id.offset) || zigFacts(lx).nonDataUse(id.name, id.offset)
+    : HEURISTIC_KEYWORDS.has(id.name)) {
+    return false;
+  }
+  if (id.name === '_' || isSelfName(id.name, lx.syntax.family) || nonData.has(id.name)) {
     return false;
   }
   if (lx.syntax.family === 'python' && id.name === 'cls') {
@@ -2066,6 +2073,7 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
     }
   }
 
+  const zig = family === 'zig' ? zigFacts(lx) : undefined;
   const lua = family === 'lua' ? luaFacts(lx, blocks) : undefined;
   if (lua) {
     for (const o of [...lua.modules, ...lua.functionSites]) nonData.add(lua.decls.get(o)!.name);
@@ -2176,6 +2184,9 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
     return base;
   }
   declareShapes(lx, keywords, declare);
+  if (zig) {
+    for (const id of zig.captures) declare(id);
+  }
   if (family === 'c' || family === 'java' || family === 'default') {
     for (let i = 1; i < ids.length; i++) {
       const id = ids[i];

@@ -1,0 +1,151 @@
+id,file,jsLine,function,operator,original,replacement,before,after,firstNamedKiller,whyNotKilled
+8,out/zig.js,32,isZigTypeName,drop-right,/^[A-Z]/.test(name) && (name.length === 1 || /[a-z]/.test(name)),(/^[A-Z]/.test(name)),survived,killed,"zig: zig names: keywords, primitive types and any [iu]N are reserved; TitleCase and one capital letter are types, ALL_CAPS is a value",
+13,out/zig.js,32,isZigTypeName,num+1,1,2,survived,killed,"zig: zig names: keywords, primitive types and any [iu]N are reserved; TitleCase and one capital letter are types, ALL_CAPS is a value",
+16,out/zig.js,63,computeZigFacts>idStartingAt,binop,<,<=,survived,survived,,equivalent: an identifier looked up after another token never starts at offset 0
+31,out/zig.js,78,computeZigFacts>next,drop-right,c === 32 || c === 9 || c === 10 || c === 13,(c === 32 || c === 9 || c === 10),survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+32,out/zig.js,78,computeZigFacts>next,binop,||,&&,survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+33,out/zig.js,78,computeZigFacts>next,drop-left,c === 32 || c === 9 || c === 10,(c === 10),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+37,out/zig.js,78,computeZigFacts>next,drop-right,c === 32 || c === 9,(c === 32),survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+38,out/zig.js,78,computeZigFacts>next,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+43,out/zig.js,78,computeZigFacts>next,num+1,10,11,survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+46,out/zig.js,80,computeZigFacts>next,drop-jump,continue;,;,survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+47,out/zig.js,82,computeZigFacts>next,if-false,c === 47 && text.charCodeAt(i + 1) === 47,false,survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+55,out/zig.js,82,computeZigFacts>next,num+1,47,48,survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+57,out/zig.js,84,computeZigFacts>next,binop,&&,||,survived,survived,,"equivalent: a `//` in code always starts a comment span, so `s` is never undefined there"
+58,out/zig.js,84,computeZigFacts>next,drop-left,s && s.region !== 'string',(s.region !== 'string'),survived,survived,,"equivalent: a `//` in code always starts a comment span, so `s` is never undefined there"
+59,out/zig.js,84,computeZigFacts>next,drop-right,s && s.region !== 'string',(s),survived,survived,,"equivalent: the walk starts in code, so a `//` it meets never sits in a string"
+61,out/zig.js,86,computeZigFacts>next,drop-jump,continue;,;,survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+67,out/zig.js,94,computeZigFacts,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+68,out/zig.js,97,computeZigFacts,num+1,0,1,survived,survived,,"equivalent for valid Zig: a file's first identifier is a keyword or a top-level field name, which no rule marks"
+70,out/zig.js,100,computeZigFacts,if-false,"id.name[0] === '@' && id.name[1] !== '""'",false,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+72,out/zig.js,100,computeZigFacts,drop-left,"id.name[0] === '@' && id.name[1] !== '""'","(id.name[1] !== '""')",killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+85,out/zig.js,106,computeZigFacts,binop,!==,===,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+99,out/zig.js,110,computeZigFacts,drop-left,word && LABELLED.has(word.name),(LABELLED.has(word.name)),killed,killed,"zig: zig classification, no server: locals, parameters and captures are data; types, namespaces, labels, fields, builtins and self are not",
+110,out/zig.js,115,computeZigFacts,drop-left,"c === ':' || c === ','","(c === ',')",killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+116,out/zig.js,116,computeZigFacts,binop,||,&&,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+118,out/zig.js,116,computeZigFacts,drop-right,before === 'break' || before === 'continue' || field,(before === 'break' || before === 'continue'),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+120,out/zig.js,116,computeZigFacts,drop-left,before === 'break' || before === 'continue',(before === 'continue'),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+123,out/zig.js,116,computeZigFacts,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+142,out/zig.js,121,computeZigFacts,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+150,out/zig.js,128,computeZigFacts,drop-left,open >= 0 && containerOpens.has(open),(containerOpens.has(open)),survived,removed,,"the field check now reads `containerOpens.has(enclosingOpen(…))`, which never holds -1"
+153,out/zig.js,128,computeZigFacts,num+1,0,1,survived,removed,,"the field check now reads `containerOpens.has(enclosingOpen(…))`, which never holds -1"
+165,out/zig.js,129,computeZigFacts,drop-right,"pc === '{' || pc === ','",(pc === '{'),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+177,out/zig.js,131,computeZigFacts,drop-left,!b || (b.name !== 'const' && b.name !== 'var'),((b.name !== 'const' && b.name !== 'var')),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+184,out/zig.js,131,computeZigFacts,binop,!==,===,survived,removed,,the field rule's `const` / `var` check could never fail (the word before a field is none or `comptime`) and is gone
+194,out/zig.js,140,computeZigFacts,drop-right,"text[t] === ',' || text[t] === ')'","(text[t] === ',')",hash-only,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+195,out/zig.js,140,computeZigFacts,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+199,out/zig.js,146,computeZigFacts,binop,&&,||,hash-only,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+204,out/zig.js,146,computeZigFacts,drop-right,before === 'const' && (c === '=' || c === ':'),(before === 'const'),survived,survived,,"equivalent for valid Zig: `const` is followed by a name and `=` or `:`, or by `,` in a destructuring, whose initializer no rule reads"
+208,out/zig.js,146,computeZigFacts,drop-right,c === '=' || c === ':',(c === '='),survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+212,out/zig.js,146,computeZigFacts,num+1,1,2,survived,survived,,equivalent for valid Zig: no `==` follows a declared name
+217,out/zig.js,150,computeZigFacts,drop-left,"eq < 0 || text.slice(n, eq).includes(';')","(text.slice(n, eq).includes(';'))",survived,survived,,"edge input only: a typed `const` with no `=` and no `;` after it, at the end of the file"
+220,out/zig.js,150,computeZigFacts,num+1,0,1,survived,survived,,"equivalent: `eq` is at least the name's offset, never 0"
+223,out/zig.js,154,computeZigFacts,num+1,1,2,survived,survived,,fast path: the hint is checked against the offset; same output
+227,out/zig.js,157,computeZigFacts,if-false,TYPE_INIT_WORDS.has(init.name) || TYPE_INIT_BUILTINS.has(init.name),false,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+233,out/zig.js,161,computeZigFacts,binop,&&,||,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+239,out/zig.js,161,computeZigFacts,drop-left,"text[call] !== '(' || text[next(closeOf(lx, call))] !== ';'","(text[next(closeOf(lx, call))] !== ';')",survived,survived,,equivalent for valid Zig: a builtin name is always followed by `(`
+243,out/zig.js,162,computeZigFacts,if-false,value,false,killed,killed,"zig: zig facts: a const is a type or namespace only when its initializer is one; error values, comparisons and literals are values",
+248,out/zig.js,165,computeZigFacts,drop-right,init.name !== 'fn' && !isZigTypeName(id.name),(init.name !== 'fn'),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+254,out/zig.js,170,computeZigFacts,drop-left,"(scope < 0 || containerOpens.has(scope)) && nonDataNames.has(init.name) && aliasChain(lx, init, idStartingAt)","(aliasChain(lx, init, idStartingAt))",killed,killed,zig: zig facts: an alias of a namespace is not data at container level; inside a function it is a value,
+258,out/zig.js,170,computeZigFacts,drop-right,(scope < 0 || containerOpens.has(scope)) && nonDataNames.has(init.name),((scope < 0 || containerOpens.has(scope))),survived,killed,"zig: zig facts: only an alias of an import can be a namespace; a value alias, a type alias and a TitleCase alias are not",
+262,out/zig.js,170,computeZigFacts,binop,<,<=,survived,survived,,equivalent for valid Zig: no Zig source starts with `{`
+266,out/zig.js,172,computeZigFacts,drop-left,imports.has(init.name) && !isZigTypeName(id.name),(!isZigTypeName(id.name)),survived,killed,"zig: zig facts: only an alias of an import can be a namespace; a value alias, a type alias and a TitleCase alias are not",
+267,out/zig.js,172,computeZigFacts,drop-right,imports.has(init.name) && !isZigTypeName(id.name),(imports.has(init.name)),survived,killed,"zig: zig facts: only an alias of an import can be a namespace; a value alias, a type alias and a TitleCase alias are not",
+269,out/zig.js,177,computeZigFacts,binop,>=,>,survived,survived,,edge input only: a `|` at offset 0
+278,out/zig.js,178,computeZigFacts,drop-right,!lx.isCode(i) || text[i + 1] === '|' || text[i - 1] === '|',(!lx.isCode(i) || text[i + 1] === '|'),survived,survived,,equivalent for valid Zig: no capture follows an error-set merge `||`
+281,out/zig.js,178,computeZigFacts,drop-right,!lx.isCode(i) || text[i + 1] === '|',(!lx.isCode(i)),survived,survived,,equivalent for valid Zig: no capture follows an error-set merge `||`
+282,out/zig.js,178,computeZigFacts,drop-not,!lx.isCode(i),(lx.isCode(i)),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+286,out/zig.js,178,computeZigFacts,num+1,1,2,survived,survived,,equivalent for valid Zig: no capture sits next to `||` or `|=`
+290,out/zig.js,181,computeZigFacts,if-false,p < 0,false,survived,survived,,edge input only: a `|` with nothing before it
+296,out/zig.js,184,computeZigFacts,binop,&&,||,survived,survived,,"equivalent for valid Zig: a capture follows `=>`, never a bare `=` or `>`"
+305,out/zig.js,188,computeZigFacts,binop,>,>=,survived,survived,,edge input only: a `(` at offset 0
+308,out/zig.js,189,computeZigFacts,drop-left,w !== undefined && CAPTURE_PARENS.has(w.name),(CAPTURE_PARENS.has(w.name)),survived,killed,"zig: zig facts: a bar that opens no capture: bitwise or after a group, `||` error-set merges, and a half-typed capture",
+324,out/zig.js,201,computeZigFacts,if-false,!/^\s*\*?\s*[\p{ID_Start}_@][^|]*$/u.test(inner) || inner.includes('\n'),false,survived,killed,"zig: zig facts: a bar that opens no capture: bitwise or after a group, `||` error-set merges, and a half-typed capture",
+333,out/zig.js,208,computeZigFacts,num+1,0,1,hash-only,killed,"zig: zig facts: only an alias of an import can be a namespace; a value alias, a type alias and a TitleCase alias are not",
+334,out/zig.js,213,computeZigFacts,if-false,!lengths.has(id.length) || !aliases.has(id.name),false,survived,survived,,fast path: the scan records members and calls for every name; only aliases are read; same output
+340,out/zig.js,214,computeZigFacts,drop-jump,continue;,;,survived,survived,,fast path: the scan records members and calls for every name; only aliases are read; same output
+354,out/zig.js,220,computeZigFacts,drop-right,text[n] === '.' && text[n + 1] !== '.' && text[n + 1] !== '*',(text[n] === '.' && text[n + 1] !== '.'),survived,survived,,equivalent for valid Zig: a namespace is never dereferenced (`ns.*`)
+358,out/zig.js,220,computeZigFacts,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+362,out/zig.js,220,computeZigFacts,num+1,1,2,survived,survived,,equivalent for valid Zig: a namespace is never followed by `..` or `.?`
+372,out/zig.js,234,lastIdFrom,num+1,1,2,killed,killed,zig: exit 1,
+380,out/zig.js,244,idEndingAt,binop,>=,>,survived,survived,,"equivalent for valid Zig: the file's first identifier is never the word before `{`, `|` or a label"
+383,out/zig.js,244,idEndingAt,num+1,1,2,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+389,out/zig.js,251,openOf,drop-left,c === ')' || c === ']' || c === '}',(c === '}'),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+392,out/zig.js,251,openOf,drop-left,c === ')' || c === ']',(c === ']'),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+396,out/zig.js,251,openOf,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+397,out/zig.js,253,openOf,if-false,c === '(' || c === '[' || c === '{',false,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+401,out/zig.js,253,openOf,binop,||,&&,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+402,out/zig.js,253,openOf,drop-left,c === '(' || c === '[',(c === '['),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+404,out/zig.js,253,openOf,binop,===,!==,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+411,out/zig.js,263,opensContainer,if-false,p >= 0 && lx.text[p] === ')',false,hash-only,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+413,out/zig.js,263,opensContainer,drop-left,p >= 0 && lx.text[p] === ')',(lx.text[p] === ')'),survived,survived,,"equivalent: `text[-1]` is undefined, never `)`"
+420,out/zig.js,265,opensContainer,num+1,1,2,survived,survived,,equivalent: -2 and -1 both mean no position
+423,out/zig.js,268,opensContainer,binop,&&,||,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+425,out/zig.js,268,opensContainer,drop-right,w !== undefined && CONTAINER_WORDS.has(w.name),(w !== undefined),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+428,out/zig.js,273,closeOf,binop,<,<=,survived,survived,,equivalent: `punct[length]` is undefined and matches no bracket
+431,out/zig.js,275,closeOf,drop-left,c === '(' || c === '[' || c === '{',(c === '{'),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+434,out/zig.js,275,closeOf,drop-left,c === '(' || c === '[',(c === '['),killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+442,out/zig.js,277,closeOf,drop-right,(c === ')' || c === ']' || c === '}') && --depth === 0,((c === ')' || c === ']' || c === '}')),survived,killed,"zig: zig facts: a declaration read across blanks, tabs, line breaks and comments; typed consts; comptime fields",
+451,out/zig.js,277,closeOf,binop,===,!==,killed,killed,"zig: zig facts: a const is a type or namespace only when its initializer is one; error values, comparisons and literals are values",
+462,out/zig.js,289,aliasChain,binop,||,&&,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+467,out/zig.js,290,aliasChain,flip,true,false,killed,killed,"zig: zig facts: labels, builtins, fields, enum members, type parameters, type and namespace consts, captures",
+472,out/zig.js,295,aliasChain,if-false,id === undefined,false,survived,survived,,edge input only: a line break between `.` and the member in a container-level alias
+483,out/zig.js,308,zigKeywordSelf,if-false,text[n] !== ':',false,survived,removed,,"the check now reads `:`, `,`, `=` and `}` (an enum member `self` too)"
+486,out/zig.js,311,zigKeywordSelf,binop,||,&&,survived,survived,,edge input only: a label named `self`
+488,out/zig.js,311,zigKeywordSelf,drop-right,"open < 0 || text[open] !== '{' || !opensContainer(lx, open)",(open < 0 || text[open] !== '{'),survived,killed,"zig: zig band 1: `self` at keyword grey in every phase and server state; `this`, a member `.self` and a field `self` are names",
+495,out/zig.js,311,zigKeywordSelf,drop-not,"!opensContainer(lx, open)","(opensContainer(lx, open))",killed,killed,"zig: zig band 1: `self` at keyword grey in every phase and server state; `this`, a member `.self` and a field `self` are names",
+497,out/zig.js,322,zigImportSpans,binop,===,!==,killed,killed,"zig: zig band 1: namespace consts at type slate with no server, declaration and uses; never members or calls; off once zls answers",
+498,out/zig.js,322,zigImportSpans,num+1,0,1,survived,killed,"zig: zig band 1: namespace consts at type slate with no server, declaration and uses; never members or calls; off once zls answers",
+499,out/zig.js,325,zigImportSpans,if-false,!names.has(id.name),false,killed,killed,"zig: zig band 1: namespace consts at type slate with no server, declaration and uses; never members or calls; off once zls answers",
+511,out/zig.js,328,zigImportSpans,binop,===,!==,killed,killed,"zig: zig band 1: namespace consts at type slate with no server, declaration and uses; never members or calls; off once zls answers",
+517,out/zig.js,331,zigImportSpans,drop-right,text[n] === ' ' || text[n] === '\t',(text[n] === ' '),survived,survived,,edge input only: a tab between a namespace name and `(`
+520,out/zig.js,333,zigImportSpans,if-false,text[n] === '(',false,survived,survived,,equivalent for valid Zig: no namespace is called
+537,out/placeholders.js,615,zigPlaceholderSpans,num+1,2,3,survived,survived,,"equivalent: a two-character literal `""""` holds no hole"
+538,out/placeholders.js,615,zigPlaceholderSpans,binop,!==,===,killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+541,out/placeholders.js,617,zigPlaceholderSpans,if-false,"text[s.start - 1] !== '(' && !(text[s.start - 1] === ' ' && text[s.start - 2] === ',')",false,killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+551,out/placeholders.js,617,zigPlaceholderSpans,binop,===,!==,killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+554,out/placeholders.js,617,zigPlaceholderSpans,num+1,2,3,killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+558,out/placeholders.js,621,zigPlaceholderSpans,drop-jump,continue;,;,killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+559,out/placeholders.js,622,zigPlaceholderSpans,num+1,1,2,survived,survived,,"equivalent: `to` bounds only where a hole may start, and a hole needs two characters"
+561,out/placeholders.js,623,zigPlaceholderSpans,binop,<,<=,survived,survived,,equivalent: the character at `to` is the closing quote
+569,out/placeholders.js,630,zigPlaceholderSpans,drop-right,(c === '{' || c === '}') && text[i + 1] === c,((c === '{' || c === '}')),killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+578,out/placeholders.js,632,zigPlaceholderSpans,drop-jump,continue;,;,survived,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+579,out/placeholders.js,634,zigPlaceholderSpans,if-false,c === '{',false,killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+580,out/placeholders.js,634,zigPlaceholderSpans,binop,===,!==,killed,killed,"zig: zig placeholders: the holes of a literal after `(` or `, ` with its `.{` arguments on the line; escapes, `{{`, `}}` and other literals are text",
+590,out/lex.js,208,code,binop,===,!==,killed,killed,"zig: zig lexer: // /// //! comments, no block comments, \\ lines to their end, chars, @'…' and @builtins",
+593,out/lex.js,208,code,drop-right,next === CH.slash || (next === CH.star && fam !== 'zig'),(next === CH.slash),killed,killed,lexer: lexer tables: comment / doc / string spans and code identifiers per language,
+598,out/lex.js,208,code,binop,===,!==,killed,killed,lexer: lexer tables: comment / doc / string spans and code identifiers per language,
+604,out/lex.js,212,code,binop,===,!==,killed,killed,"zig: zig lexer: // /// //! comments, no block comments, \\ lines to their end, chars, @'…' and @builtins",
+606,out/lex.js,212,code,drop-left,c === CH.at || (c === CH.bslash && next === CH.bslash),((c === CH.bslash && next === CH.bslash)),killed,killed,"zig: zig lexer: // /// //! comments, no block comments, \\ lines to their end, chars, @'…' and @builtins",
+607,out/lex.js,212,code,drop-right,c === CH.at || (c === CH.bslash && next === CH.bslash),(c === CH.at),killed,killed,"zig: zig lexer: // /// //! comments, no block comments, \\ lines to their end, chars, @'…' and @builtins",
+612,out/lex.js,212,code,binop,===,!==,killed,killed,"zig: zig lexer: // /// //! comments, no block comments, \\ lines to their end, chars, @'…' and @builtins",
+613,out/lex.js,212,code,binop,===,!==,killed,killed,"zig: zig lexer: // /// //! comments, no block comments, \\ lines to their end, chars, @'…' and @builtins",
+616,out/lex.js,417,zigAt,if-false,next === CH.dq,false,killed,killed,"zig: zig lexer: // /// //! comments, no block comments, \\ lines to their end, chars, @'…' and @builtins",
+645,out/lex.js,1748,number,binop,===,!==,killed,killed,"zig: zig lexer: numerals as Zig reads them, ranges and hex fractions included",
+648,out/focus.js,1742,effectiveLanguageId,binop,&&,||,killed,killed,"zig: zig band 1: `self` at keyword grey in every phase and server state; `this`, a member `.self` and a field `self` are names",
+649,out/focus.js,1742,effectiveLanguageId,drop-left,languageId === 'zig' && /\.zon$/i.test(fileName),(/\.zon$/i.test(fileName)),survived,survived,,"equivalent: only ziglang.vscode-zig gives `.zon` an id; without it the file is `plaintext`, which is prose"
+658,out/focus.js,2291,isControlFlowHeader,drop-right,!ZIG_FN.test(header) && !ZIG_CONTAINER.test(header) && ZIG_CONTROL.test(header),(!ZIG_FN.test(header) && !ZIG_CONTAINER.test(header)),hash-only,killed,zig: zig headers: fn with every prefix and test blocks are functions; containers and control flow are not,
+663,out/focus.js,2291,isControlFlowHeader,drop-not,!ZIG_CONTAINER.test(header),(ZIG_CONTAINER.test(header)),killed,killed,zig: zig headers: fn with every prefix and test blocks are functions; containers and control flow are not,
+670,out/classify.js,294,buildFileIndex,binop,===,!==,killed,killed,rest: buildFileIndex: class members are NOT data identities,
+674,out/classify.js,1642,heuristicCandidate,binop,===,!==,killed,killed,"rest: heuristic: keys, type members and class fields are not candidates; values and shorthands are",
+676,out/classify.js,1643,heuristicCandidate,binop,||,&&,hash-only,killed,"zig: zig classification, no server: a TitleCase or one-letter capital local is a type by convention, an ALL_CAPS one is data",
+677,out/classify.js,1643,heuristicCandidate,drop-left,"(0, zig_1.isZigReserved)(id.name) || (0, zig_1.isZigTypeName)(id.name) || (0, zig_1.zigFacts)(lx).nonDataAt.has(id.offset)","((0, zig_1.zigFacts)(lx).nonDataAt.has(id.offset))",killed,killed,"zig: zig classification, no server: locals, parameters and captures are data; types, namespaces, labels, fields, builtins and self are not",
+682,out/classify.js,1643,heuristicCandidate,num+1,0,1,survived,survived,,"equivalent: the compiler's `(0, f)(…)` call form; the first operand is discarded"
+684,out/classify.js,1643,heuristicCandidate,num+1,0,1,survived,survived,,"equivalent: the compiler's `(0, f)(…)` call form; the first operand is discarded"
+685,out/classify.js,1788,heuristicBaseFor,binop,===,!==,killed,killed,"zig: zig classification, no server: locals, parameters and captures are data; types, namespaces, labels, fields, builtins and self are not",
+687,out/classify.js,1789,heuristicBaseFor,if-false,zig,false,killed,killed,"zig: zig classification, no server: locals, parameters and captures are data; types, namespaces, labels, fields, builtins and self are not",
+693,out/classify-lsp.js,519,fetchSemanticTokens,drop-left,doc.languageId === 'lua' || doc.languageId === 'zig',(doc.languageId === 'zig'),killed,killed,"rest: lua placeholders paint while lua-language-server types string literals, in every phase, and follow its answers",
+697,out/risk.js,263,parseTarget,if-false,text[j] === '.' && (text[j + 1] === '*' || text[j + 1] === '?') && lx.syntax.family === 'zig',false,killed,killed,"zig: zig escape marks with zls tokens: writes through a parameter pointer, a self field, an outer local and a container var",
+699,out/risk.js,263,parseTarget,drop-left,text[j] === '.' && (text[j + 1] === '*' || text[j + 1] === '?') && lx.syntax.family === 'zig',(lx.syntax.family === 'zig'),killed,killed,zig: exit 1,
+707,out/risk.js,263,parseTarget,drop-right,text[j + 1] === '*' || text[j + 1] === '?',(text[j + 1] === '*'),survived,killed,"zig: zig escape marks through `.*` and `.?` and a long member, with zls-shaped tokens",
+708,out/risk.js,263,parseTarget,binop,===,!==,killed,killed,"zig: zig escape marks with zls tokens: writes through a parameter pointer, a self field, an outer local and a container var",
+710,out/risk.js,263,parseTarget,binop,===,!==,survived,killed,"zig: zig escape marks through `.*` and `.?` and a long member, with zls-shaped tokens",
+715,out/risk.js,465,escapeRisk,binop,===,!==,killed,killed,rest: self/this writes mark outside initializers only,
+720,out/risk.js,470,escapeRisk,drop-left,family !== 'python' && family !== 'rust' && family !== 'zig',(family !== 'zig'),killed,killed,rest: escape: ++/-- per language,
+723,out/risk.js,470,escapeRisk,drop-left,family !== 'python' && family !== 'rust',(family !== 'rust'),killed,killed,rest: escape: ++/-- per language,
+726,out/risk.js,470,escapeRisk,binop,!==,===,killed,killed,rest: escape corpus corpus.ts: marks and the blocks that show them,
+735,out/decorator.js,1009,restoresImports,binop,||,&&,killed,killed,rest: restore is band 1: same ranges in every phase with no provider,
+736,out/decorator.js,1009,restoresImports,drop-left,lang === 'python' || lang === 'go',(lang === 'go'),killed,killed,rest: restore is band 1: same ranges in every phase with no provider,
+741,out/decorator.js,1009,restoresImports,drop-not,!this.classifier.semanticOk(doc),(this.classifier.semanticOk(doc)),killed,killed,"zig: zig band 1: namespace consts at type slate with no server, declaration and uses; never members or calls; off once zls answers",
+756,out/decorator.js,1099,renderPlaceholders,binop,&&,||,killed,killed,zig: zig band 1: placeholders while zls types string literals,
+759,out/decorator.js,1099,renderPlaceholders,drop-not,!this.classifier.typesStrings(doc),(this.classifier.typesStrings(doc)),killed,killed,zig: zig band 1: placeholders while zls types string literals,

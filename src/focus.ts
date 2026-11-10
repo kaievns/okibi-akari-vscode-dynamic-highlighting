@@ -1651,11 +1651,12 @@ export const staticContentLanguages = (): string[] => [...STATIC_CONTENT_LANGUAG
 
 /**
  * Ids the layer gives a document itself (`effectiveLanguageId`), no extension
- * registers them, each with the language its grammar paints. A TypeScript
+ * registers them, each with the language band 1 restores it as. A TypeScript
  * declaration file holds signatures only, so it has no data flow; band 1 still
- * restores it as TypeScript (docs/javascript.md#declaration-files).
+ * restores it as TypeScript (docs/javascript.md#declaration-files). ZON is data,
+ * and band 1 restores nothing in it (docs/zig.md#zon).
  */
-const DERIVED_STATIC_LANGUAGES = new Map([['typescript-declaration', 'typescript']]);
+const DERIVED_STATIC_LANGUAGES = new Map([['typescript-declaration', 'typescript'], ['zon', 'zon']]);
 
 /** The language band 1 restores a document as: a derived static id's grammar language, else the id itself. */
 export function band1LanguageId(languageId: string): string {
@@ -1670,11 +1671,13 @@ const TS_DECLARATION = /\.d\.(?:[cm]?ts|[^./\\]+\.ts)$/i;
  * claims `.erb`, so without Shopify.ruby-lsp a template opens as `ruby`; it is read
  * as `erb`, static content (docs/ruby.md#erb-templates). VS Code opens a `.d.ts`,
  * `.d.mts`, `.d.cts` or `.d.<ext>.ts` file as `typescript`; it is read as
- * `typescript-declaration`.
+ * `typescript-declaration`. ziglang.vscode-zig opens a `.zon` file as `zig`; it is
+ * read as `zon`.
  */
 export function effectiveLanguageId(languageId: string, fileName: string): string {
   if (languageId === 'ruby' && RUBY_TEMPLATE.test(fileName)) return 'erb';
   if (languageId === 'typescript' && TS_DECLARATION.test(fileName)) return 'typescript-declaration';
+  if (languageId === 'zig' && /\.zon$/i.test(fileName)) return 'zon';
   return languageId;
 }
 
@@ -1997,6 +2000,9 @@ const CONTROL_HEADER = /\b(if|elif|for|while|switch|else|do|range|select|case|ma
 const CONTROL_KEYWORD = /\b(if|elif|for|while|switch|else|do|range|select|case|match|with|try|except|finally|loop)\b/;
 const RUST_FN = /^\s*(pub\s*(\([^)]*\)\s*)?)?(const\s+|async\s+|unsafe\s+|extern\s+("[^"]*"\s+)?)*fn\b/;
 const RUST_TYPE_BODY = /^\s*(pub\s*(\([^)]*\)\s*)?)?(struct|enum|trait|impl|mod|union)\b/;
+const ZIG_FN = /^\s*(pub\s+)?((export|extern(\s*"[^"]*")?|inline|noinline)\s+)*fn\b|^\s*test\b/;
+const ZIG_CONTAINER = /\b(struct|enum|union|opaque|error)\s*(\([^)]*\))?\s*$/;
+const ZIG_CONTROL = /\b(if|else|while|for|switch|catch|orelse|defer|errdefer|comptime|suspend|nosuspend)\b/;
 /** Headers that end in `(…)` but open a statement block, not a function. */
 const NOT_A_FUNCTION = /^\s*\}?\s*(catch|when|synchronized|using|lock|fixed|foreach|unless|until|guard)\b/;
 
@@ -2013,6 +2019,7 @@ const FUNCTION_KEYWORDS: Record<string, Set<string>> = {
   kotlin: new Set(['fun']),
   nested: new Set(['func', 'def']),
   python: new Set(['def']),
+  zig: new Set(['fn']),
   default: new Set(['function', 'func', 'fn', 'def']),
 };
 
@@ -2226,6 +2233,9 @@ function functionHeaderText(header: string, languageId?: string): boolean {
   if (languageId === 'ruby') {
     return /^(def\b|do\b|\{|->)/.test(header);
   }
+  if (languageId === 'zig') {
+    return ZIG_FN.test(header);
+  }
   if (/^\s*(async\s+)?(def|lambda)\b/.test(header)) {
     return true;
   }
@@ -2263,6 +2273,9 @@ function isControlFlowHeader(text: string, block: BraceBlock, languageId?: strin
   if (languageId === 'ruby') {
     return RUBY_CONTROL.test(header);
   }
+  if (languageId === 'zig') {
+    return !ZIG_FN.test(header) && !ZIG_CONTAINER.test(header) && ZIG_CONTROL.test(header);
+  }
   // A Python `def`/`class`/`lambda` is a DECLARATION even though its header also
   // contains words this regex would otherwise match (`for` inside a default, say),
   // so it is checked first and short-circuits. Without this, `def load_config(...)`
@@ -2291,7 +2304,7 @@ function isControlFlowHeader(text: string, block: BraceBlock, languageId?: strin
  */
 function controlKeywordStart(text: string, block: BraceBlock, languageId?: string): number {
   const h = headerOf(text, block, languageId);
-  const m = CONTROL_KEYWORD.exec(h.text);
+  const m = (languageId === 'zig' ? ZIG_CONTROL : CONTROL_KEYWORD).exec(h.text);
   return m ? h.start + m.index : h.start;
 }
 

@@ -8,7 +8,7 @@
 // server would report: one range per declared function, from its line start to
 // the end of its block.
 //
-// Token fixtures are real captures (TS, JS, Go, Rust, Lua; Lua's in the wire format)
+// Token fixtures are real captures (TS, JS, Go, Rust, Lua, Ruby, Zig; the last three in the wire format)
 // or Pylance-shaped:
 //   python3 -I test/gen-py-semtok.py samples/sample.py 1 > test/fixtures/sample.py.tokens.json
 // Lua copies keep the standard globals' names, so each copy calls the same builtins.
@@ -34,6 +34,7 @@ const LANGS = {
     keep: () => require('../out/ruby').RUBY_GRAMMAR_BUILTINS, locals: true, lspSymbols: true,
     body: (text) => text.slice(0, text.indexOf('\n__END__\n') + 1),
   },
+  zig: { sample: 'samples/sample.zig', lsp: 'test/fixtures/sample.zig.lsp.json', languageId: 'zig', lspSymbols: true },
 };
 
 const KEEP = new Set(['self', 'this', 'Self', 'super', 'None', 'True', 'False']);
@@ -126,7 +127,7 @@ const memo = new Map();
 
 /**
  * `{ key, ext, languageId, text, tokens, symbols, copies, unit }` for a language
- * key (ts, go, rs, py, lua, rb) and a target line count. `scanBlocks(text, languageId)`
+ * key (ts, js, go, rs, py, lua, rb, zig) and a target line count. `scanBlocks(text, languageId)`
  * locates the symbols' block ends in the base sample.
  */
 function generate(ext, lines, scanBlocks) {

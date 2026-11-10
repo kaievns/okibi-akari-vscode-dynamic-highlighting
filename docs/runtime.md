@@ -186,8 +186,8 @@ for the next relaxation, up to 24 s.
 | Marks | Editors |
 |---|---|
 | Band 1: `self` / `this`, Rust `Self` / `crate` / `super`, Rust format placeholders, Python f-string fields, Ruby `#{` / `}`, Go doc links, brackets in Rust comments and strings, markdown washes, the Lua module and shadow restores, the Ruby shadow restore | every visible source editor |
-| Band 1: Lua format placeholders | every visible source editor, while the document's last answer types its string literals ([lua.md](lua.md#band-1-restores)) |
-| Band 1: the import restore (Python, Go), the shadow restore (Python) | every visible source editor, until a provider answers for the document |
+| Band 1: Lua and Zig format placeholders | every visible source editor, while the document's last answer types its string literals ([lua.md](lua.md#band-1-restores), [zig.md](zig.md#band-1-restores)) |
+| Band 1: the import restore (Python, Go, Zig), the shadow restore (Python) | every visible source editor, until a provider answers for the document |
 | Gutter, band 2, clay numbers, band 3 | the active editor only |
 
 An edit repaints band 1 in every visible editor showing the document, the active
@@ -448,7 +448,7 @@ What a keystroke pays, at 50k lines:
 
 | When | Work |
 |---|---|
-| synchronously, every keystroke | the text (`getText()`), a re-lex around the change, the block scan, the band-1 scans that walk the file (Rust, Python, Lua, Ruby and JavaScript placeholders, JavaScript and TypeScript JSDoc brackets, `self`), the render |
+| synchronously, every keystroke | the text (`getText()`), a re-lex around the change, the block scan, the band-1 scans that walk the file (Rust, Python, Lua, Ruby, JavaScript and Zig placeholders, JavaScript and TypeScript JSDoc brackets, `self`), the render |
 | once typing pauses for `editDebounceMs` | the server's answer (decoded only when it is for the current text), a function scope for every block, `buildFileIndex` and the scope's classification; without a server the heuristic's file-wide base; the import and shadow restores |
 
 The changes, by effect:
@@ -539,8 +539,8 @@ longer wait before a step makes it slower in both builds: the same jump costs
 after a caret move and the typing debounce plus 30 ms after an edit, the same in
 both.
 
-Lua and Ruby came after these measurements; their figures are in
-[lua.md](lua.md#cost) and [ruby.md](ruby.md#cost).
+Lua, Ruby and Zig came after these measurements; their figures are in
+[lua.md](lua.md#cost), [ruby.md](ruby.md#cost) and [zig.md](zig.md#cost).
 
 Per stage, `node test/bench-scale.js 50000 --stages` (warm, mean of 5 calls, ms,
 before → after):
@@ -584,7 +584,7 @@ final state. A difference is a leftover. The harness is
 
 The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
-`walk.lua`, `walk.rb` and `walk.js` have walks of their own, below),
+`walk.lua`, `walk.rb`, `walk.js` and `walk.zig` have walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
 walks (88 of the default 300) a data file goes in as the second document, and in
@@ -715,6 +715,27 @@ from seed 1000 found nothing. An import recompute pending in any document, a
 `walk.ts` edit's included, keeps every editor's import and shadow restores out
 of that step's comparison and its counts.
 
+**The Zig walks** are two more tests, 120 walks each (`OKIBI_ZIG_WALKS`). The
+first opens `walk.zig`, alone or with `walk.ts`, `walk.py` or `walk.md`, and in
+3 of 10 walks `walk.zon` as well, which opens as `zig` and is answered by the
+same server, as zls answers it in the editor. Each server's mode is drawn from
+`ok`, `degraded`, `none` and `empty`, and for Zig also `strings`, which adds a
+`string` token over each literal as zls does under `full`; the main walk's
+events replay with the same seed. The Zig server answers in zls 0.17's
+`partial` shape: identifiers only, none on keywords, primitive types or
+`@builtins`; zls has no degraded shape, so `degraded` answers as `ok`. `walk.zig` holds a namespace import and alias, a struct with
+methods on `self`, captures, a `\\` line with braces and a name in it, a
+labelled block, a format string, a write through a pointer parameter and a
+`@ptrCast`. In the default run `walk.zig` showed identity tints on 548 steps,
+clay on 1,209, the namespace restore on 629, escape marks on 138, danger marks
+on 180, `self` paint on 2,667 and format placeholders on 556, and `walk.zon` was
+the active editor at 229, where it must show nothing at all, as a data file
+must; the test fails if any is never shown, and on any async mark. The second
+walks `walk.zig` alone with the reclose walk's weights: deleting a string's
+closing `"`, a `\\` line's second backslash or a block's `}` and typing it
+back; carets go to 8 identifiers in code and in the `\\` line. 600 walks of
+each from seed 1000 found nothing.
+
 ### The oracle
 
 Once the files are open, and after every step, the harness records what each
@@ -791,6 +812,7 @@ Each is a named test in `test/transitions.test.js` that fails without its fix.
 | Deleting and undoing before the repaint left the restored code without its tints | [Decorations move with edits](#decorations-move-with-edits) | `markMoved` |
 | The gutter and bands painted a block the caret was not in, after typing a brace | the render between an edit and its caret update read the old caret against the new text; the caret then landed in the block `onSelection` had last seen, which it took as no change | render when the caret's block differs from the block last painted (`renderedBlockKey`) |
 | The `Self` / `crate` / `super` and import restores followed an answer for older text that arrived after the newer one | `fetchBundle` set `semanticOk` and the path keywords from every answer, whatever its version | only an answer for the newest version answered so far sets them (`answeredVersion`) |
+| The placeholders stayed on after the last answer typed no string literals, in Zig and Lua | two classifies started from the same state; the later version's answer arrived last and turned `typesStrings` back off, but its classify compared with the state it started from, which also typed none, so it scheduled no render | `runClassify` compares the classifier state with the state the document's last band-1 render read (`band1Seen`), for the path keywords, `semanticOk`, `typesStrings` and the typed namespaces |
 | Band 2 stayed empty after an edit put the caret inside a new block without moving it (indenting the line under a Python `def` header) | the classification of the new block failed the epoch guard against the focus key of the last caret move, and nothing classified again | `runClassify` sets the current focus key to the block it classifies |
 | A quick fix appending `._x` to `self` left the `self` mark over `self._x` (found in review; the harness then had no forced edits) | VS Code applies the fix with `forceMoveMarkers`, so the mark's end moved past `._x`; `rangesMovedBy` assumed it stuck, and the recomputed ranges equalled the record, so nothing re-sent them | `markMoved` takes an edit as forced unless it is an undo or redo or touches a caret ([Decorations move with edits](#decorations-move-with-edits)); two tests, the fix away from the caret's line and on it |
 
@@ -806,7 +828,10 @@ Each is a named test in `test/transitions.test.js` that fails without its fix.
   is consistent with it.
 - A forced edit that touches a caret reads as typing, so a mark ending where it
   inserts keeps the inserted text until its type's ranges change. The quick fix
-  event skips the caret for that reason; a fix at the caret is not caught.
+  event skips, for that reason, any insertion point whose text would touch a
+  caret by `mayForceMove`'s own rule, not only the caret's offset: seed 40141
+  appended `.clone()` 3 characters before the caret, after `std`, and the
+  restore covered `std.clone()`. A fix at the caret is not caught.
 - Not modelled: multi-cursor edits, diff editors, notebooks, word wrap, the
   3-minute model hold as a duration, and a server that answers in a different
   order than asked, other than through latency.

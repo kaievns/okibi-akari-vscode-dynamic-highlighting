@@ -83,6 +83,10 @@ global is bound, and adds the declarations (with `declaration`), the writes and
 the reads it left untyped. A method call, `@x`, `@@x`, a label and a symbol have
 no binding ([ruby.md](ruby.md#data-identities)).
 
+A Zig `property` token is never data: Zig has no `{ name }` shorthand. zls
+types `self` `parameter`; it is the receiver, and a parameter named `this` is
+data ([zig.md](zig.md#data-identities)).
+
 ### Python rebinding
 
 Python has no block scope, so a later store to a name is a write to the
@@ -527,6 +531,7 @@ found:
 | a name in a function block's parameter list | all; first in each group in Go (`a, b int`) and every name in Lua, last in C and Java (`int a`), else followed by `:`, `,`, `)`, `=` or a closure's `\|` and not after a `:` |
 | `local a <const>, b`, `local function f`, `for i =`, `for k, v in`; a statement-start `name =` outside every function, which defines the global | Lua (`luaFacts`, [lua.md](lua.md#data-identities)) |
 | a scope's first assignment `x =`, `a, b =`; method, block and lambda parameters, block-locals, `for` and `rescue => e` variables, pattern captures, named regex captures; `$x =` outside every method and block, which defines the global | Ruby (`rubyFacts`, [ruby.md](ruby.md#data-identities)) |
+| the names of a capture `\|x\|`, `\|*x\|`, `\|x, i\|` after an `if`, `while` or `for` header, `=>`, `catch`, `else` or `errdefer` | Zig (`zigFacts`, [zig.md](zig.md#data-identities)) |
 | a destructuring pattern after the keyword: `const { a, b: c } = o`, `const [a, b] = o`, `let (a, b) = o`, `val (a, b) = p`, `let P { x, y } = p`, `if let Some(v) = o`, `while let …` | all with those keywords |
 | a match-arm pattern on its line: `Some(v) =>`, `Ok(x) \| Err(x) =>`, `n if n > 3 =>` | Rust |
 | `catch (err)`, `catch (e: Exception)`, `catch (IOException e)` | first name in JS / TS, Kotlin, Swift / Scala / Dart; else the last |
@@ -559,7 +564,12 @@ global; its keywords are Lua's 22 reserved words, so `type`, `map` and `default`
 stay data ([lua.md](lua.md#data-identities)). In Ruby a candidate is an
 occurrence `rubyFacts` binds to a local, parameter or user global, by Ruby's own
 lexical rule: a name before its first assignment, or followed by an argument,
-is a method call ([ruby.md](ruby.md#data-identities)). Elsewhere a candidate occurrence is
+is a method call ([ruby.md](ruby.md#data-identities)). In Zig the keywords are
+Zig's and its primitive types, and a TitleCase or one-letter capital name, a
+`@builtin`, a label, a field or enum member written in a container body, a type
+parameter, `self`, and a `const` bound to a type, namespace or function (or a
+container-level alias of one) are not candidates (`zigFacts`,
+[zig.md](zig.md#data-identities)). Elsewhere a candidate occurrence is
 a code identifier that is not a keyword, self, `_` or Python `cls`; not a member (`item.size`), path segment (`Config::new`), callee
 (`fetch(`), macro (`println!(`) or argument label; and not a name declared by
 `function`, `class`, `def`, `fn`, `type`, `struct`, `import` and similar. Python

@@ -56,6 +56,7 @@ from that layout.
 | `perl`, `r`, `julia`, `elixir`, `coffeescript`, `powershell` | `#` | `'` `"` multi-line with escapes | string | — |
 | `lua` | `--`; `--[[ ]]`, `--[==[ ]==]` (matching `=` count); `#!` at offset 0 | `'` `"` single-line with escapes, `\` + newline and `\z` + blanks continue it; `[[ ]]`, `[==[ ]==]` multi-line, no escapes | string | `//` and `#` are operators; hex fractions, a trailing dot and LuaJIT suffixes stay in the numeral ([lua.md](lua.md#lexer)) |
 | `ruby` | `#`; `=begin` … `=end` at column 0; everything after a top-level `__END__` line | `'` `"` `` ` `` multi-line with escapes, `#{}` / `#@x` / `#$x` holes in `"` and `` ` ``; `%`-literals with any delimiter and nesting; heredocs, bodies read at the line break; `/re/` and `?a` where an expression starts or as a command argument; symbols and `"key":` labels | string | `@x`, `@@x`, `$x`, `name?` / `name!` are one identifier; `//` is an empty regex where an expression starts ([ruby.md](ruby.md#lexer)) |
+| `zig`, `zon` | `//`, `///`, `//!`; no block comment | `'` `"` single-line with escapes; `\\` to the line end, one line of a multiline string | char | `@"…"` and `@name` are one identifier with the `@`; hex fractions stay in the numeral ([zig.md](zig.md#lexer)) |
 | anything else | `//`, `/* */` | `'` `"` single-line; `` ` `` multi-line with `${}` | string | no `#` comments, no lifetime rule |
 
 On JavaScript and TypeScript the regions match TypeScript's own parser on every
@@ -138,7 +139,10 @@ at the line start before the `def` that opened it (`defStarts`) and rebuilds it,
 and it stops only at a line start outside every `def` where the names added since
 its start equal the previous lex's. Anything that spans lines (a block comment, a multi-line string, a hole, a
 JSX element) consumes its line breaks itself, so no line start inside it is
-recorded and a change inside it re-lexes from before it. Ruby heredoc bodies
+recorded and a change inside it re-lexes from before it. Zig has no such
+span: a `\\` line ends at its line break, and so does an unclosed `"…`, `'…` or
+`@"…` whose last character is a backslash, since in Zig a backslash before a line
+break escapes nothing; so every Zig line start is recorded. Ruby heredoc bodies
 are read at the line break that ends their opener's line, before that line
 start is recorded, so they count as such a span. Three decisions read more
 than a line ahead and leave no span over what they read:
@@ -156,7 +160,9 @@ fixtures (4,221 re-lexed; for the rest no line start was recorded above the
 edited line, mostly once an edit opened a string that runs to the end of the
 file), and on the first two cases above. `test/ruby.test.js` does the same for
 Ruby over 300 chained edits that also add and remove assignments, parameters,
-`def` and `end` lines, the local-variable table included.
+`def` and `end` lines, the local-variable table included, and `test/zig.test.js`
+for Zig over 300 chained edits that open and close strings, chars, `\\` lines
+and `@"` identifiers.
 
 The decorator keeps the previous version's lex for a document an editor shows,
 and the next render consumes it. Two edits before a render, or one event with
@@ -197,6 +203,8 @@ file where every name but `let` is that long, a re-lex 95% into the file costs
 | `luaFacts` | `idents` for declarations and one resolution sweep; neighbours by `prevSignificant`, comments skipped by `spanAt`; `require` arguments by their `string` span; table keys by `enclosingOpen`. Once per lex |
 | `scanRubyBlocks` | code block keywords from `idents`, not after `.` / `::` or before a label colon; `{` / `}` from `punct`, a block or a hash by `prevSignificant`; header ends walk `punct` and `idents` to `then` / `do` / `;` or the logical line end |
 | `rubyFacts` | `idents` for declarations and one resolution sweep over the scopes of `scanRubyBlocks`; parameter lists and patterns by character walks that skip non-code spans (`isCode`, `spanAt`); members by `prevSignificant`; named regex captures from the regex's `string` span. Once per lex |
+| `zigFacts` | `idents` in one sweep: neighbours by `prevSignificant` and a forward walk that skips `//` comments by `spanAt`; container bodies from `punct` (a `{` after `struct`, `enum`, `union`, `opaque` or `error`, through a `(…)`); fields by `enclosingOpen`; each binding's scope from `enclosingOpen` and its bracket's close in `punct`, once per bracket; captures from code `\|` (`isCode`). Once per lex |
+| `zigImportSpans`, `zigKeywordSelf` | `idents` with `prevSignificant`; `zigImportSpans` keeps a use inside its binding's scope (`zigFacts`, a binary search once a name has 8 scopes); `zigKeywordSelf` reads a `self:`'s enclosing `{` by `enclosingOpen` |
 | `lexIdentifiers` | `identsIn` (thin wrapper, kept for tests and callers) |
 | `buildFileIndex` | `idents` for `self`, `macroArgRanges` over code `name!(` (found by `bangCalls`; Rust only) with `punct` matching, `typeDeclRanges` / `pyClassFieldRanges` (Python only) only on code keywords, function-type parameter lists from `typeArrowsOf` |
 | `classifyFromSemantic` / `classifyFromHeuristic` | `identsIn` for the block; the heuristic's candidates and declarations once per lex and language, from `prevSignificant`, `enclosingOpen` and `punct` |

@@ -90,7 +90,7 @@ export function rustPathKeywords(tokens: readonly DecodedToken[]): PathKeywords 
  * Does an answer type a string literal, with a `string` token and no modifier?
  * lua-language-server 3.19.2 sends one over each literal only under
  * `Lua.semantic.keyword`; its LuaCATS strings carry `static`, `abstract` or
- * `defaultLibrary`.
+ * `defaultLibrary`. zls 0.17.0 sends one only under `semantic_tokens: full`.
  */
 export function typesStringLiterals(data: ArrayLike<number>, tokenTypes: readonly string[]): boolean {
   const string = tokenTypes.indexOf('string');
@@ -213,7 +213,7 @@ export class Classifier implements vscode.Disposable {
    */
   private answered = new WeakSet<vscode.TextDocument>();
   private pathKeywords = new WeakMap<vscode.TextDocument, PathKeywords>();
-  /** Lua documents whose last answer with tokens typed string literals (`typesStringLiterals`). */
+  /** Lua and Zig documents whose last answer with tokens typed string literals (`typesStringLiterals`). */
   private stringLiterals = new WeakSet<vscode.TextDocument>();
   /** JS / TS: the namespace-import names whose uses the last answer with tokens typed, sorted and joined. */
   private typedNamespaces = new WeakMap<vscode.TextDocument, string>();
@@ -235,7 +235,7 @@ export class Classifier implements vscode.Disposable {
     return this.typedNamespaces.get(doc) ?? '';
   }
 
-  /** Did the last Lua answer with tokens cover its string literals with `string` tokens? */
+  /** Did the last Lua or Zig answer with tokens cover its string literals with `string` tokens? */
   typesStrings(doc: vscode.TextDocument): boolean {
     return this.stringLiterals.has(doc);
   }
@@ -615,7 +615,7 @@ export class Classifier implements vscode.Disposable {
       return { tokens: null, semantic: 'empty' };
     }
     const rust = doc.languageId === 'rust';
-    const strings = doc.languageId === 'lua' && typesStringLiterals(tokens.data, legend.tokenTypes);
+    const strings = (doc.languageId === 'lua' || doc.languageId === 'zig') && typesStringLiterals(tokens.data, legend.tokenTypes);
     if (doc.version !== version) {
       // Tokens for old text are never classified; only the answer's state is read.
       const { any, paths } = answerStateOf(tokens.data, legend.tokenTypes, lineStarts, text, rust);

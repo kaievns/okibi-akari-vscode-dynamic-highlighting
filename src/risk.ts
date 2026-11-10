@@ -29,6 +29,8 @@ export interface LexicalRisk {
 }
 
 const ASYNC_WORDS = new Set(['await', 'async']);
+/** Families whose `async` and `await` are plain names: Lua and Ruby have no such keywords, and Zig 0.17's list has neither. */
+const NO_ASYNC_FAMILIES = new Set(['lua', 'ruby', 'zig']);
 
 type DangerRule = (lx: LexResult, id: LexId) => boolean;
 
@@ -39,7 +41,7 @@ export function lexicalRisk(text: string, block: OffsetRange, languageId?: strin
   const result: LexicalRisk = { async: [], danger: [], numberEngaged: lx.numbersIn(block.start, block.end) };
   for (const id of lx.identsIn(block.start, block.end)) {
     const range: OffsetRange = { start: id.offset, end: id.offset + id.length };
-    if (ASYNC_WORDS.has(id.name) && lx.syntax.family !== 'lua' && lx.syntax.family !== 'ruby') {
+    if (ASYNC_WORDS.has(id.name) && !NO_ASYNC_FAMILIES.has(lx.syntax.family)) {
       result.async.push(range);
     } else if (danger && danger(lx, id)) {
       result.danger.push(range);
@@ -194,6 +196,11 @@ const onlyAs = (rule: DangerRule): DangerRule => (lx, id) => id.name === 'as' &&
 const tsDanger: DangerRule = (lx, id) =>
   (id.name === 'as' && tsCast(lx, id)) || (id.name === 'any' && tsAnyType(lx, id));
 
+/** Zig's pointer casts and pointer/integer round trips; the value casts are checked (docs/zig.md#danger-marks). */
+const ZIG_DANGER = new Set([
+  '@ptrCast', '@alignCast', '@constCast', '@volatileCast', '@addrSpaceCast', '@intFromPtr', '@ptrFromInt', '@fieldParentPtr',
+]);
+
 /**
  * Per-language danger words. A language without an entry gets none: Python's `as`
  * binds an alias and `any()` is a builtin, JavaScript has no casts, and Go's `any`
@@ -206,6 +213,7 @@ const DANGER_RULES = new Map<string, DangerRule>([
   ['kotlin', onlyAs(importAwareCast)],
   ['dart', onlyAs(importAwareCast)],
   ['swift', onlyAs(importAwareCast)],
+  ['zig', (_lx, id) => ZIG_DANGER.has(id.name)],
 ]);
 
 // ── escaping writes ──────────────────────────────────────────────────────────
@@ -215,9 +223,11 @@ const SELF_ROOTS: ReadonlySet<string> = new Set(['self', 'this']);
 const PY_SELF_ROOTS: ReadonlySet<string> = new Set(['self', 'cls']);
 /** In JavaScript `self` is a plain name (`var self = this`, a worker's global). */
 const JS_SELF_ROOTS: ReadonlySet<string> = new Set(['this']);
+/** In Zig `this` is a plain parameter name. */
+const ZIG_SELF_ROOTS: ReadonlySet<string> = new Set(['self']);
 
 const ASSIGN_OPS = [
-  '>>>=', '<<=', '>>=', '**=', '//=', '??=', '||=', '&&=', '&^=',
+  '<<|=', '+%=', '-%=', '*%=', '+|=', '-|=', '*|=', '>>>=', '<<=', '>>=', '**=', '//=', '??=', '||=', '&&=', '&^=',
   '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '@=', '=',
 ];
 
@@ -271,7 +281,8 @@ interface Target {
 
 /**
  * The write target starting at ids[k]: `root`, `root.a.b`, `root[k]`, `root?.a`,
- * `root->a`, `root!!.a`. A call in the chain makes the receiver unknown: null.
+ * `root->a`, `root!!.a`, Zig's `root.*` and `root.?.a`. A call in the chain makes
+ * the receiver unknown: null.
  */
 function parseTarget(lx: LexResult, ids: LexId[], k: number): Target | null {
   const text = lx.text;
@@ -285,6 +296,11 @@ function parseTarget(lx: LexResult, ids: LexId[], k: number): Target | null {
     while (text[j] === '!' && (text[j + 1] === '!' || text[j + 1] === '.')) j++;
     if (text[j] === '?' && text[j + 1] === '.') j++;
     const arrow = text[j] === '-' && text[j + 1] === '>';
+    if (text[j] === '.' && (text[j + 1] === '*' || text[j + 1] === '?') && lx.syntax.family === 'zig') {
+      end = nameEnd = j + 2;
+      chained = true;
+      continue;
+    }
     if ((text[j] === '.' && text[j + 1] !== '.') || arrow) {
       j = skipSpaces(text, j + (arrow ? 2 : 1));
       const id = ids[next];
@@ -486,12 +502,12 @@ export function escapeRisk(
   const regions = c.excludeRanges && c.excludeRanges.length > 0 ? gaps(block, c.excludeRanges) : [block];
   const outerNames: ReadonlySet<string> =
     family === 'python' ? pyOuterNames(lx, block, c.enclosingFn) : EMPTY_SET;
-  const selfRoots = family === 'python' ? PY_SELF_ROOTS : family === 'js' ? JS_SELF_ROOTS : SELF_ROOTS;
+  const selfRoots = family === 'python' ? PY_SELF_ROOTS : family === 'js' ? JS_SELF_ROOTS : family === 'zig' ? ZIG_SELF_ROOTS : SELF_ROOTS;
   if (family === 'ruby') {
     return rubyEscapeRisk(lx, block, regions, scanBlocks(text, languageId));
   }
   const lua = family === 'lua' ? luaFacts(lx) : undefined;
-  const postfixIncr = family !== 'python' && family !== 'rust' && !lua;
+  const postfixIncr = family !== 'python' && family !== 'rust' && family !== 'zig' && !lua;
   const prefixIncr = postfixIncr && family !== 'go';
   const tuples = family === 'python' || family === 'go' || lua !== undefined;
   const derefs = family === 'rust' || family === 'c' || family === 'go';

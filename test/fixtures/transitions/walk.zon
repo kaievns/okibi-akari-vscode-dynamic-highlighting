@@ -1,0 +1,16 @@
+// ZON with self, this, async, a pointer cast's name and numbers.
+.{
+    .name = .walk,
+    .version = "0.1.0",
+    .fingerprint = 0x9ab3c1d2e4f50617,
+    .minimum_zig_version = "0.17.0",
+    .self = .{ .this = 1, .async = true, .count = 1_000 },
+    .dependencies = .{
+        .ptrCast = .{
+            .url = "https://example.com/walk-{d}.tar.gz",
+            .hash = "walk-0.1.0-AAAA",
+            .lazy = false,
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}

@@ -1,0 +1,40 @@
+corpus,files,measure,reference,before,after
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,non-blank characters,std.zig.Tokenizer,13519591,13519591
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,characters in the wrong region,std.zig.Tokenizer,208355,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"characters in the wrong region: code read as string (@""…"")",std.zig.Tokenizer,44159,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,characters in the wrong region: string read as code (\\ lines),std.zig.Tokenizer,159064,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,characters in the wrong region: string read as comment,std.zig.Tokenizer,5132,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,files with a wrong region,std.zig.Tokenizer,272,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,brace pairs (reference 87701) matched,l_brace / r_brace tokens,87678,87701
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,brace pairs not in the reference,l_brace / r_brace tokens,2258,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,brace pairs not in the reference: inside \\ lines,l_brace / r_brace tokens,2254,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,brace pairs missed,l_brace / r_brace tokens,23,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,numerals (reference 121781) matched,number_literal tokens,121780,121781
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,numerals inside strings or comments,number_literal tokens,3380,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints right, no server (6665 blocks)",zls 0.17.0 full tokens,51625,59286
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, no server",zls 0.17.0 full tokens,12558,540
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, no server: on struct / type / enum / typeParameter",zls 0.17.0 full tokens,6973,264
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, no server: on namespace",zls 0.17.0 full tokens,4789,212
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, no server: on label / property / enumMember / keywordLiteral",zls 0.17.0 full tokens,490,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, no server: inside a string",zls 0.17.0 full tokens,252,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, no server: on function",zls 0.17.0 full tokens,54,54
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, no server: on no token",zls 0.17.0 full tokens,0,10
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"data names untinted, no server",zls 0.17.0 full tokens,6920,3009
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"data names untinted, no server: self",zls 0.17.0 full tokens,1492,1537
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints right, zls partial and full",zls 0.17.0 full tokens,57014,60758
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"tints wrong, zls partial and full (property)",zls 0.17.0 full tokens,25,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"data names untinted, zls partial and full",zls 0.17.0 full tokens,1531,1537
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,escape marks with zls tokens (6665 blocks),write form at the mark,2055,2277
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,escape marks on ++ (array concatenation),write form at the mark,15,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,escape marks on =,write form at the mark,1480,1619
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"escape marks on +%=, -%=, *%=",write form at the mark,0,74
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,danger marks,ZIG_DANGER builtins,0,3534
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,async marks,zls token at the mark,142,0
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"namespace restore spans, no server",zls 0.17.0 full tokens,0,37180
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,namespace restore spans on a zls namespace token,zls 0.17.0 full tokens,0,32438
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"namespace restore spans on a zls struct, type or enum token",zls 0.17.0 full tokens,0,3329
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,namespace restore spans on a zls variable token,zls 0.17.0 full tokens,0,1383
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,"zls namespace uses not after . (36448) the restore misses",zls 0.17.0 full tokens,36448,4032
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,format placeholders the theme's zig-gaps injection scopes,TextMate,-,2404
+Zig 0.17.1 std + zls 0.17.0 + init + synthetic,630,format placeholders zigPlaceholderSpans paints equal to the theme's,TextMate,-,2404
+std/Io/Threaded.zig,1,"zigFacts ms (20074 lines, median of 15, load average 8)",-,12.7,9.3

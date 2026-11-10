@@ -58,8 +58,8 @@ of band 1's number pair). Always shape + colour, never colour alone.
 
 | Mark | Applies to |
 |---|---|
-| async cyan | `await` / `async`; none in Lua or Ruby, which have no such keyword |
-| danger bold | casts and the `any` type, per language: TS `as` casts and `any` types; Rust, Kotlin, Swift and Dart `as` casts; nothing in Python, JavaScript, Go, Lua or Ruby |
+| async cyan | `await` / `async`; none in Lua, Ruby or Zig, which have no such keyword (Zig 0.17's `.async(` and `.await(` are methods) |
+| danger bold | casts and the `any` type, per language: TS `as` casts and `any` types; Rust, Kotlin, Swift and Dart `as` casts; Zig's pointer casts (`@ptrCast`, `@alignCast`, `@constCast`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr` and two more); nothing in Python, JavaScript, Go, Lua or Ruby |
 | number-clay | numeric literals in the focused scope, suffix included (`123u32`, `1.0f`) |
 | dashed underline | a **write that escapes the block**: an assignment, `++`/`--`, or member, subscript or deref write to a binding declared outside it. Declarations, named arguments, defaults and constructor `self`/`this` writes never mark. Needs semantic tokens: the heuristic fallback paints none |
 
@@ -89,16 +89,17 @@ because a colour theme physically cannot express them.
 |---|---|
 | markdown `==highlight==` wash | `getClassNameFromMetadata` emits only `mtk<foreground>` plus four font-style bits. A token `background` is parsed and indexed, then **never rendered** in the DOM editor. See `src/markdown.ts`. |
 | cancelling the link underline | The underline is the `editor.links` contrib decorating each link range with `inlineClassName: "detected-link"`, styled by the workbench stylesheet. It is not a token style, so no theme rule can reach it. |
-| `self` / `this`, and Rust `Self` / `crate` / `super`, at keyword slate | Outside a cargo workspace rust-analyzer types a `self` use as `const`, `Self` as `struct` and `crate` / `super` as `namespace`, and a semantic token outranks the grammar. The three path keywords are painted until rust-analyzer types them as keywords; a cargo package sends the degraded answer too while it loads. ruby-lsp types Ruby's `self` `variable.defaultLibrary`; a Ruby `this` is a plain name, and `x.self` / `self:` are a method and a key. A JavaScript or TypeScript `self` is a plain name too; tsserver types a declaration file's `this` parameter (`f(this: Window)`) `parameter`. Code files only, never inside comments, strings or docstrings. See [docs/runtime.md](docs/runtime.md#rust-path-keywords), [docs/ruby.md](docs/ruby.md#band-1-restores) and [docs/javascript.md](docs/javascript.md#band-1-restores). |
+| `self` / `this`, and Rust `Self` / `crate` / `super`, at keyword slate | Outside a cargo workspace rust-analyzer types a `self` use as `const`, `Self` as `struct` and `crate` / `super` as `namespace`, and a semantic token outranks the grammar. The three path keywords are painted until rust-analyzer types them as keywords; a cargo package sends the degraded answer too while it loads. ruby-lsp types Ruby's `self` `variable.defaultLibrary`; a Ruby `this` is a plain name, and `x.self` / `self:` are a method and a key. A JavaScript or TypeScript `self` is a plain name too; tsserver types a declaration file's `this` parameter (`f(this: Window)`) `parameter`. zls types Zig's `self` `parameter`, so it is painted in every server state; a Zig `this`, a member `.self` and a field or enum member `self` are names. Code files only, never inside comments, strings or docstrings. See [docs/runtime.md](docs/runtime.md#rust-path-keywords), [docs/ruby.md](docs/ruby.md#band-1-restores), [docs/javascript.md](docs/javascript.md#band-1-restores) and [docs/zig.md](docs/zig.md#band-1-restores). |
 | Rust format placeholders | In a detached file, and in a cargo package until its workspace loads, rust-analyzer emits one `string` token over the whole literal, so `meta.interpolation.rust` never applies; a loaded workspace types the holes `formatSpecifier`, which the theme paints the same steel. Outside a raw string a backslash escape is one character, so `\u{2603}` is not a hole. See `src/placeholders.ts`. |
 | Python f-string fields | The grammar gives a field's braces no `string` scope, so bracket-pair colorization paints them bracket grey over the theme. The braces, the `!r` conversion, the `:spec` and a self-documenting `=` are painted; the expression inside keeps its own colour. See `src/placeholders.ts`. |
 | Ruby `#{` and `}` at member steel | Bracket-pair colorization paints the braces of an interpolation over the theme's rule, with or without ruby-lsp. The `#{` and `}` of every closed hole are painted; the expression inside keeps its own colours. See [docs/ruby.md](docs/ruby.md#band-1-restores). |
 | JavaScript `${` and `}` at member steel | JavaScript's language configuration lists `${` `}` as a bracket pair and sets no `colorizedBracketPairs`, so bracket-pair colorization paints a template hole's delimiters over the theme's rule, with or without a server; TypeScript's leaves them out. The `${` and `}` of every closed hole are painted; the expression inside keeps its own colours. See [docs/javascript.md](docs/javascript.md#band-1-restores). |
 | Lua format placeholders | Under `Lua.semantic.keyword`, lua-language-server sends one `string` token over each literal, so the theme's `string.format` placeholders turn string green. Painted while the document's last answer types its literals that way; under the default settings, and with no server, the theme paints them alone. The call shapes are the theme's: `string.format("…")`, the literal opening the line after a `string.format(` that ends its line, and `("…"):format(…)`. See [docs/lua.md](docs/lua.md#band-1-restores). |
+| Zig format placeholders | Under `zig.zls.semanticTokens: full`, zls sends one `string` token over each literal, so the theme's `{d}` / `{s:>8}` placeholders turn string green. Painted while the document's last answer types its literals that way; under the default `partial`, and with no server, the theme paints them alone. The call shape is the theme's: a `"…"` literal right after `(` or `, ` whose `.{` arguments follow on its line. See [docs/zig.md](docs/zig.md#band-1-restores). |
 | Go doc links in comment colour | gopls types `[Name]` in a comment as a code `variable` / `namespace` / `function` with no telling modifier. See [docs/runtime.md](docs/runtime.md#go-doc-links). |
 | JSDoc brackets in comment colour (JavaScript, TypeScript) | Both grammars give a JSDoc type and `[name]` the token type `other`, so bracket-pair colorization paints `@param {string} [name]` at its level colours. Every bracket in a `/**` comment is painted. See [docs/javascript.md](docs/javascript.md#band-1-restores). |
 | brackets in Rust comments in comment colour, and in Rust strings in string colour | After a theme change made while no editor showed the file, VS Code 1.144.1's bracket-pair colorization paints brackets in comments, strings and char literals at their level colour, over any theme rule. A bracket in a string is painted only where its colour at rest is the string colour: never a format placeholder, and a `{…}` the grammar reads as an interpolation only once a provider has answered. See [docs/runtime.md](docs/runtime.md#brackets-in-rust-comments-and-strings). |
-| imported modules and types at type slate (Python, Go, Lua, JavaScript, TypeScript) | A grammar cannot see the import list, so `heapq.heapify`, `sys.argv`, `defaultdict(deque)` and `fmt.Println` read as plain locals until a server sends tokens, and with `python.languageServer: None` or gopls off none arrive. Comes off once a provider answers. In Lua it stays: lua-language-server types a `local json = require "dkjson"` module's uses `variable` or `class`, never `namespace`. tsserver and Deno send no token for a project file's `import * as util from './util.js'`, so its uses are painted in every server state, a name at a time: one whose uses the server typed is left to it. See [docs/import-restore.md](docs/import-restore.md), [docs/lua.md](docs/lua.md#band-1-restores) and [docs/javascript.md](docs/javascript.md#band-1-restores). |
+| imported modules and types at type slate (Python, Go, Lua, JavaScript, TypeScript, Zig) | A grammar cannot see the import list, so `heapq.heapify`, `sys.argv`, `defaultdict(deque)`, `fmt.Println` and Zig's `const mem = std.mem` read as plain locals until a server sends tokens, and with `python.languageServer: None`, gopls off or no zls none arrive. Comes off once a provider answers. In Lua it stays: lua-language-server types a `local json = require "dkjson"` module's uses `variable` or `class`, never `namespace`. tsserver and Deno send no token for a project file's `import * as util from './util.js'`, so its uses are painted in every server state, a name at a time: one whose uses the server typed is left to it. See [docs/import-restore.md](docs/import-restore.md), [docs/lua.md](docs/lua.md#band-1-restores), [docs/javascript.md](docs/javascript.md#band-1-restores) and [docs/zig.md](docs/zig.md#band-1-restores). |
 | shadowed builtins at the page colour (Python, Lua, Ruby) | Both grammars scope `id`, `input`, `type` and 74 more as builtins wherever they stand, so a parameter `id` or a module-level `input = sys.stdin.readline` reads bold call blue. Non-call uses that resolve to a data binding are painted page colour, with the import restore's resolver and lifetime. Go's builtin functions need nothing, since its grammar scopes them only at call sites; a local named after a predeclared type (`string`, `error`, `rune`) stays type slate. Lua's grammar does the same to 28 names (`type`, `next`, `select`, …): a `local type = node.type` reads call blue until lua-language-server answers and paints the name page. Ruby's grammar does it to 44 Kernel names (`p`, `puts`, `format`, …), and ruby-lsp leaves their declarations untyped. In Lua and Ruby the restore stays on with a server, so nothing repaints when it answers. See [docs/shadow-restore.md](docs/shadow-restore.md). |
 
 All of them are **resting register**: they paint in Survey, never blink as
@@ -141,14 +142,14 @@ npm run bench         # performance: one sample, navigation, large files
 ```
 
 `npm run bench` ends with `test/bench-scale.js`, which drives the real decorator
-over generated 2k, 10k and 50k-line TS, Go, Rust, Python, Lua and Ruby files
+over generated 2k, 10k and 50k-line TS, Go, Rust, Python, Lua, Ruby and Zig files
 (`node test/bench-scale.js rs 50000 --no-lsp` runs one input on the heuristic
 path; `js` is there on request). Numbers: [docs/runtime.md](docs/runtime.md#cost-on-large-files).
 `node --expose-gc test/bench-memory.js` reports the heap the decorator retains
 over 8 such files and 100 keystrokes ([docs/runtime.md](docs/runtime.md#memory)).
 
 Press **F5** to launch an Extension Development Host. The `samples/` directory has
-files for twelve languages, markdown included, each written to exercise the classification cases.
+files for thirteen languages, markdown included, each written to exercise the classification cases.
 
 ### Install
 
@@ -186,14 +187,16 @@ Then run **Developer: Reload Window**.
 | `test/lua.test.js` | Lua: the lexer table (long brackets, `\z`, `//`, shebang, numerals), the keyword block scan, bindings and lexical visibility, modules and namespace globals, both classifiers on real lua-language-server tokens, escape marks, no async or comment clay, the module and shadow restores staying on with the server and through typing, half-typed `<const>` attributes, `string.format` placeholders under a keyword-on capture, linear cost ([docs/lua.md](docs/lua.md)) |
 | `test/ruby.test.js` | Ruby: the lexer (`=begin`, `__END__`, holes, %-literals, heredocs, regex versus division, the local-variable table, symbols, labels and sigils, operator method names), relex over random edits, the keyword block scan (endless defs, branches, modifiers, hashes after a ternary `?` or `!` too, `end` in literals), bindings by Ruby's lexical rule, both classifiers on real ruby-lsp tokens, a `name!(` call, escape marks, no async marks, the shadow, `self` and `#{` / `}` restores, an `.erb` file opened as Ruby, linear cost ([docs/ruby.md](docs/ruby.md)) |
 | `test/javascript.test.js` | JavaScript and TypeScript: the lexer against TypeScript's parser on every edge and every regex-or-division position (a `/` after an `if`, `while`, `for` or `with` header and after `of` as a name the documented differences), heuristic declarations and non-data initializers, keys and labels, the module surface, `self`, the namespace restore's statement shapes, uses, JSX tag names and handover on real tsserver and Deno captures, ES5 constructors and a UMD wrapper, focus in patterns, destructured parameters and one-line arrows (other languages unchanged), template-hole and JSDoc restores, declaration files, the React ids, `jsconfig.json` and `deno.json` ([docs/javascript.md](docs/javascript.md)) |
-| `test/perf-golden.test.js` | output equivalence on generated 2k and 10k-line TS, JS, Go, Rust, Python, Lua and Ruby files: lex, blocks, regions, file index, classifications, colourings, plans, traces, risk ranges and a decorator session, each hashed against `test/fixtures/perf-golden.json` |
-| `test/transitions.test.js` | transitions between states: seeded random walks over editor, server, theme and settings events, and walks that delete a docstring's closing quote and type it back, walks over `walk.lua` and walks that delete its long comment's last `]` or an `end`'s `d` and type it back, the same over `walk.rb` with its heredoc terminator, walks over `walk.js` with tsserver- and Deno-shaped answers, every step compared with a fresh Decorator given the same final state, and one or two data files (KDL and ten config formats), in a quarter of them, required to show nothing at all; a code file in Edit switched to each data file and back; the leftovers they found as shrunk walks; how decorations move with edits, forced and unforced, against a port of VS Code's rule. Runs through the `require` at the end of `test/runtime.test.js` ([docs/runtime.md](docs/runtime.md#transitions)) |
+| `test/zig.test.js` | Zig: the lexer against Zig's own tokenizer (comments, `\\` lines, chars, `@"…"`, `@builtins`, numerals), relex over random edits, the brace scan and header kinds (every `fn` prefix, `test`, containers, captures in control flow), the naming rules, the heuristic's facts (labels, fields, type parameters, type and namespace consts across blanks and comments, captures and bars that are none, aliases), both classifiers on real zls `partial` and `full` tokens, escape marks through `.*`, danger marks on the pointer casts, no async marks, clay in code only, the `self` paint, the namespace restore, its scope (a sibling scope's parameter, a field) and its handover, placeholders under `full`, ZON as static content, linear cost ([docs/zig.md](docs/zig.md)) |
+| `test/perf-golden.test.js` | output equivalence on generated 2k and 10k-line TS, JS, Go, Rust, Python, Lua, Ruby and Zig files: lex, blocks, regions, file index, classifications, colourings, plans, traces, risk ranges and a decorator session, each hashed against `test/fixtures/perf-golden.json` |
+| `test/transitions.test.js` | transitions between states: seeded random walks over editor, server, theme and settings events, and walks that delete a docstring's closing quote and type it back, walks over `walk.lua` and walks that delete its long comment's last `]` or an `end`'s `d` and type it back, the same over `walk.rb` with its heredoc terminator, walks over `walk.js` with tsserver- and Deno-shaped answers, walks over `walk.zig` and `walk.zon` with zls-shaped answers and walks that delete a Zig string's `"`, a `\\` line's backslash or a `}` and type it back, every step compared with a fresh Decorator given the same final state, and one or two data files (KDL and ten config formats), in a quarter of them, required to show nothing at all; a code file in Edit switched to each data file, ZON included, and back; the leftovers they found as shrunk walks; how decorations move with edits, forced and unforced, against a port of VS Code's rule. Runs through the `require` at the end of `test/runtime.test.js` ([docs/runtime.md](docs/runtime.md#transitions)) |
 
 How far the suite pins the code (a mutation audit, per mutant in
-[docs/mutation-audit.csv](docs/mutation-audit.csv) and, for Lua, Ruby and JavaScript,
+[docs/mutation-audit.csv](docs/mutation-audit.csv) and, for Lua, Ruby, JavaScript and Zig,
 [docs/mutation-audit-lua.csv](docs/mutation-audit-lua.csv),
-[docs/mutation-audit-ruby.csv](docs/mutation-audit-ruby.csv) and
-[docs/mutation-audit-javascript.csv](docs/mutation-audit-javascript.csv)), how its timing checks hold
+[docs/mutation-audit-ruby.csv](docs/mutation-audit-ruby.csv),
+[docs/mutation-audit-javascript.csv](docs/mutation-audit-javascript.csv) and
+[docs/mutation-audit-zig.csv](docs/mutation-audit-zig.csv)), how its timing checks hold
 under load, and what the perf-golden sessions hash: [docs/testing.md](docs/testing.md).
 
 The golden fixtures are captured from real language servers, which is what catches
@@ -209,6 +212,9 @@ node test/gen-lua-semtok.js samples/sample.lua > test/fixtures/sample.lua.lsp.js
 node test/gen-lua-semtok.js test/fixtures/format.lua > test/fixtures/format.lua.lsp.json
 node test/gen-lua-semtok.js --keyword test/fixtures/format.lua > test/fixtures/format.lua.keyword.lsp.json
 node test/gen-rb-semtok.js samples/sample.rb > test/fixtures/sample.rb.lsp.json
+node test/gen-zig-semtok.js samples/sample.zig > test/fixtures/sample.zig.lsp.json
+node test/gen-zig-semtok.js --full samples/sample.zig > test/fixtures/sample.zig.full.lsp.json
+zig run test/gen-zig-tokens.zig -- samples/sample.zig > test/fixtures/sample.zig.tokens.json
 ```
 
 The JavaScript captures in `test/fixtures/javascript/` come from tsserver with
@@ -236,7 +242,7 @@ own in `test/golden.test.js`.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `okibiDynamic.enabled` | `true` | Master toggle (also the status-bar click / `Okibi Dynamic: Toggle`). |
+| `okibiDynamic.enabled` | `true` | Main toggle (also the status-bar click / `Okibi Dynamic: Toggle`). |
 | `okibiDynamic.showPhaseInStatusBar` | `true` | Show 構/流/異 in the status bar. |
 | `okibiDynamic.debug` | `false` | Log focus/classify/render decisions to an output channel. Needs a reload. |
 | `okibiDynamic.dwell.editToFocus` | `2000` | ms of no typing before Edit → Focus. |
@@ -285,7 +291,9 @@ as a default, but gopls must restart to pick it up.
   `pip-requirements`. Before those three and `ignore` were listed, a click in such a
   file made the whole file one scope: in a real workflow `on`, `env` and
   `concurrency` took identity tints and 36 lines took the stripe, and in a
-  `.dockerignore` a number in a comment turned clay.
+  `.dockerignore` a number in a comment turned clay. A ZON file opens as `zig`,
+  the Zig extension's one id; the layer reads a `.zon` file as `zon`, static
+  content ([docs/zig.md](docs/zig.md#zon)).
 - **Indentation-scoped languages need their own scanner.** Python has no braces, so
   the brace scan found **one** block in 140 lines of `samples/sample.py` — a dict
   literal — and every caret fell through to the synthetic module-level scope. The
@@ -322,6 +330,14 @@ as a default, but gopls must restart to pick it up.
   corpus, so 22,346 of 24,513 carets focused the whole file. Its own lexer family
   and `scanRubyBlocks` find 138,782, keeping modifiers (`x if y`) and hashes out
   ([docs/ruby.md](docs/ruby.md)).
+- **A string can have no closing delimiter.** A Zig multiline string is a run of
+  lines, each opened by `\\` and running to its line end. Read with the default
+  syntax they were code: 2,254 brace pairs the scan found sat inside them, and
+  3,380 numerals in strings turned clay, over 630 files. The Zig lexer family
+  reads each `\\` line as a string, and its regions match Zig's own tokenizer on
+  every character. An unclosed `"…\` ends at its line break too: a Zig backslash
+  escapes no line break, and reading it as one ran the literal over the next line
+  ([docs/zig.md](docs/zig.md)).
 - **f-strings are code, and the lexer used to treat them as text.** The shared
   identifier lexer knew JS templates — backtick plus `${` — but Python f-strings use
   a quote plus a bare `{`, so every name inside one was invisible. That is not

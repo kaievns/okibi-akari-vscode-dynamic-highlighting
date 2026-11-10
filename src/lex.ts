@@ -31,7 +31,7 @@ export interface LexId {
   length: number;
 }
 
-type Family = 'js' | 'go' | 'python' | 'rust' | 'c' | 'java' | 'kotlin' | 'nested' | 'hash' | 'lua' | 'ruby' | 'default';
+type Family = 'js' | 'go' | 'python' | 'rust' | 'c' | 'java' | 'kotlin' | 'nested' | 'hash' | 'lua' | 'ruby' | 'zig' | 'default';
 
 export interface LangSyntax {
   readonly family: Family;
@@ -62,6 +62,7 @@ def(['perl', 'r', 'julia', 'elixir', 'coffeescript', 'powershell'], { ...base, f
 def(['shellscript'], { ...base, family: 'hash', key: 'sh', shellHash: true });
 def(['lua'], { ...base, family: 'lua', key: 'lua' });
 def(['ruby'], { ...base, family: 'ruby', key: 'ruby' });
+def(['zig', 'zon'], { ...base, family: 'zig', key: 'zig' });
 const DEFAULT_SYNTAX: LangSyntax = { ...base, family: 'default', key: 'default' };
 
 export function syntaxFor(languageId?: string): LangSyntax {
@@ -145,7 +146,7 @@ const CH = {
   tab: 9, lf: 10, vt: 11, ff: 12, cr: 13, sp: 32, bang: 33, dq: 34, hash: 35, dollar: 36,
   sq: 39, lparen: 40, rparen: 41, star: 42, plus: 43, comma: 44, minus: 45, dot: 46,
   slash: 47, colon: 58, semi: 59, lt: 60, eq: 61, gt: 62, lbrack: 91, bslash: 92,
-  rbrack: 93, bq: 96, lbrace: 123, rbrace: 125,
+  rbrack: 93, bq: 96, lbrace: 123, rbrace: 125, at: 64,
 } as const;
 
 /** Keywords after which a JS `/` starts a regex and a `<` starts JSX. */
@@ -278,9 +279,16 @@ class Lexer {
       }
       const next = t.charCodeAt(i + 1);
 
-      if (c === CH.slash && this.slashComments && (next === CH.slash || next === CH.star)) {
+      if (c === CH.slash && this.slashComments && (next === CH.slash || (next === CH.star && fam !== 'zig'))) {
         i = next === CH.slash ? this.lineComment(i) : this.blockComment(i);
         continue;
+      }
+      if (fam === 'zig' && (c === CH.at || (c === CH.bslash && next === CH.bslash))) {
+        const r = this.zigAt(i, c, next);
+        if (r >= 0) {
+          i = r;
+          continue;
+        }
       }
       if (fam === 'ruby') {
         const r = this.rubyLiteral(i, c, next);
@@ -464,6 +472,34 @@ class Lexer {
     }
     const end = Math.min(j, n);
     this.span(i, end, 'comment');
+    return end;
+  }
+
+  /**
+   * Zig at `i`: a `\\` multiline string line, to its line end; a `@"…"` quoted
+   * identifier or a `@name` builtin, each one identifier with its `@`. Else -1.
+   */
+  private zigAt(i: number, c: number, next: number): number {
+    const t = this.t;
+    let end: number;
+    if (c === CH.bslash) {
+      end = this.lineEnd(i);
+      this.span(i, end, 'string');
+    } else if (next === CH.dq) {
+      end = i + 2;
+      while (end < this.n && t.charCodeAt(end) !== CH.dq && this.newlineAt(end) === 0) {
+        end += t.charCodeAt(end) === CH.bslash ? this.escapeWidth(end) : 1;
+      }
+      if (t.charCodeAt(end) === CH.dq) end++;
+      this.idents.push({ name: t.slice(i, end), offset: i, length: end - i });
+    } else if (idStartWidth(t, i + 1) > 0) {
+      end = scanIdent(t, i + 1, false);
+      this.idents.push({ name: t.slice(i, end), offset: i, length: end - i });
+    } else {
+      return -1;
+    }
+    this.exprStart = false;
+    this.stmtStart = false;
     return end;
   }
 
@@ -1266,6 +1302,9 @@ class Lexer {
       case 'lua':
         r = c === CH.bq ? -1 : this.luaShort(start, q);
         break;
+      case 'zig':
+        r = c === CH.bq ? -1 : this.plain(start, q, false, true);
+        break;
       case 'ruby':
         r = c === CH.sq ? this.rubyDelimited(start, q + 1, "'", '', false) : this.rubyDelimited(start, q + 1, t[q], '', true);
         break;
@@ -1294,9 +1333,11 @@ class Lexer {
     return 0;
   }
 
-  /** Width of an escape at `j` (a backslash): the backslash plus the escaped char or line break. */
+  /** Width of an escape at `j` (a backslash): the backslash plus the escaped char or line break. A Zig literal ends at its line break, escaped or not. */
   private escapeWidth(j: number): number {
-    return 1 + (this.newlineAt(j + 1) || 1);
+    const nl = this.newlineAt(j + 1);
+    if (nl > 0 && this.fam === 'zig') return 1;
+    return 1 + (nl || 1);
   }
 
   /** A quoted literal closed by the same char. Single-line ones end, unterminated, at a line break. */
@@ -1694,7 +1735,9 @@ class Lexer {
         if (m) {
           i += m[0].length;
           while (i < n && isDigit(t.charCodeAt(i))) i++;
-        } else if (this.fam === 'lua' && t.charCodeAt(i) === CH.dot && t.charCodeAt(i + 1) !== CH.dot) {
+        } else if (t.charCodeAt(i) === CH.dot && (this.fam === 'lua'
+          ? t.charCodeAt(i + 1) !== CH.dot
+          : this.fam === 'zig' && /[0-9a-fA-F]/.test(t[i + 1] ?? ''))) {
           i++;
           while (i < n && /[0-9a-fA-F]/.test(t[i])) i++;
         }

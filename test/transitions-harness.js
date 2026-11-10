@@ -12,6 +12,8 @@ const { lexFor } = require('../out/lex');
 const focus = require('../out/focus');
 const { LUA_KEYWORDS } = require('../out/lua');
 const { RUBY_KEYWORDS } = require('../out/ruby');
+const { isZigReserved } = require('../out/zig');
+const { mayForceMove } = require('../out/tracking');
 const { jsNamespaceNames } = require('../out/imports');
 
 // ── Fake time ─────────────────────────────────────────────────────────────────
@@ -240,11 +242,11 @@ function diffSnapshots(got, want, editors) {
   return null;
 }
 
-/** A data file's editor shows nothing in any state, whatever the fresh Decorator paints. */
+/** A data file's editor shows nothing in any state, whatever the fresh Decorator paints. ZON opens under `zig`. */
 function dataFilePaint(snap, editors) {
   for (let i = 0; i < editors.length; i++) {
     const doc = editors[i].document;
-    if (!DATA_LANGS.has(doc.languageId)) continue;
+    if (!DATA_LANGS.has(doc.languageId) && !doc.fileName.endsWith('.zon')) continue;
     const roles = Object.keys(snap.editors[i].out).map((k) => k.split(' ')[0]);
     if (roles.length) return `editor ${i} (${doc.uri.toString().split('/').pop()} v${doc.version}) is a data file and shows ${roles.join(', ')}`;
   }
@@ -255,7 +257,7 @@ function dataFilePaint(snap, editors) {
 
 const LEGEND = {
   tokenTypes: ['variable', 'parameter', 'property', 'function', 'class', 'struct', 'namespace',
-    'keyword', 'selfKeyword', 'selfTypeKeyword', 'const', 'string'],
+    'keyword', 'selfKeyword', 'selfTypeKeyword', 'const', 'string', 'type', 'typeParameter'],
   tokenModifiers: ['declaration', 'readonly', 'defaultLibrary'],
 };
 const KEYWORDS = new Set(('import from as export class private async await const let var for if return function new ' +
@@ -269,6 +271,7 @@ const KEYWORDS = new Set(('import from as export class private async await const
  */
 function tokensFor(text, languageId, degraded, strings) {
   if (languageId === 'ruby') return encode(text, rubyLspTokens(text));
+  if (languageId === 'zig') return encode(text, zigLspTokens(text, strings));
   const toks = [];
   const declared = new Set();
   const namespaces = languageId === 'javascript' ? jsNamespaceNames(lexFor(text, languageId)) : new Set();
@@ -312,6 +315,33 @@ function tokensFor(text, languageId, degraded, strings) {
     toks.sort((a, b) => a.offset - b.offset);
   }
   return encode(text, toks);
+}
+
+/**
+ * zls 0.17's shape under vscode-zig's `partial` setting: identifiers only, none on
+ * keywords, primitive types or `@builtins`; TitleCase `type`, a member `property`, a
+ * callee `function`, a name before `: type` `typeParameter`, `self` `parameter`, the
+ * rest `variable`, `declaration` after `const`, `var` and `|`. With `strings`, the
+ * `full` setting: one `string` token per literal line as well.
+ */
+function zigLspTokens(text, strings) {
+  const lx = lexFor(text, 'zig');
+  const toks = [];
+  for (const id of lx.idents) {
+    if (isZigReserved(id.name) || (id.name[0] === '@' && id.name[1] !== '"') || id.name === '_') continue;
+    const after = text.slice(id.offset + id.length, id.offset + id.length + 8);
+    const p = lx.prevSignificant(id.offset);
+    const type = text[p] === '.' ? 'property' : /^\s*\(/.test(after) ? 'function' : /^: type\b/.test(after) ? 'typeParameter'
+      : /^[A-Z]/.test(id.name) ? 'type' : id.name === 'self' ? 'parameter' : 'variable';
+    const before = text.slice(Math.max(0, id.offset - 6), id.offset);
+    const mods = /(const |var |\||, )$/.test(before) && type !== 'property' ? ['declaration'] : [];
+    toks.push({ offset: id.offset, length: id.length, type, modifiers: mods });
+  }
+  if (strings) {
+    for (const s of lx.spans) if (s.region === 'string') toks.push({ offset: s.start, length: s.end - s.start, type: 'string', modifiers: [] });
+    toks.sort((a, b) => a.offset - b.offset);
+  }
+  return toks;
 }
 
 /**
@@ -406,6 +436,8 @@ const FIXTURES = {
   doc: { lang: 'python', file: 'reclose.py' },
   lua: { lang: 'lua', file: 'walk.lua' },
   rb: { lang: 'ruby', file: 'walk.rb' },
+  zig: { lang: 'zig', file: 'walk.zig' },
+  zon: { lang: 'zig', file: 'walk.zon' },
 };
 for (const f of Object.values(FIXTURES)) f.text = fs.readFileSync(path.join(FIX, f.file), 'utf8');
 const DATA_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].data);
@@ -792,7 +824,8 @@ const EVENTS = {
     const ed = w.codeEditor();
     if (!ed) return;
     const line = Math.min(ev.line, ed.document.lineCount - 1);
-    setCaret(ed, ed.document.offsetAt(new vs.Position(line, ed.document.lineAt(line).text.length)));
+    const len = ed.document.lineAt(line).text.length;
+    setCaret(ed, ed.document.offsetAt(new vs.Position(line, ev.at === undefined ? len : Math.min(ev.at + 1, len))));
     stub.events.selection.fire({ textEditor: ed, selections: ed.selections, kind: 1 });
     await flush();
     await EVENTS.backspace(w);
@@ -846,11 +879,17 @@ const EVENTS = {
     const op = ev.op ?? (ev.b < 0.3 ? 'rename' : ev.b < 0.5 ? 'dedent' : ev.b < 0.75 ? 'indent' : 'append');
     if (op === 'append') {
       // Text right after a name, a quick fix's `.clone()` or rustfmt's trailing `,`, on
-      // any line; not at the caret, which reads as typing (docs/runtime.md#limits).
-      const caret = ed && ed.document === doc ? caretOf(ed) : -1;
-      const ends = lexFor(doc.getText(), doc.languageId).idents.map((i) => i.offset + i.length).filter((o) => o !== caret);
+      // any line; not where the text would cover a caret, which `mayForceMove` reads as
+      // typing (docs/runtime.md#limits).
+      const text = ev.text ?? pickOf(APPENDED, (ev.a * 7) % 1);
+      const sels = ed && ed.document === doc ? ed.selections : [];
+      const typing = (o) => {
+        const p = doc.positionAt(o);
+        return !mayForceMove({ range: { start: p, end: p }, text }, sels);
+      };
+      const ends = lexFor(doc.getText(), doc.languageId).idents.map((i) => i.offset + i.length).filter((o) => !typing(o));
       const at = ev.line !== undefined ? doc.offsetAt(new vs.Position(ev.line, ev.character ?? 0)) : ends.length ? pickOf(ends, ev.a) : -1;
-      if (at >= 0) await w.edit(doc, at, at, ev.text ?? pickOf(APPENDED, (ev.a * 7) % 1), { force: true });
+      if (at >= 0) await w.edit(doc, at, at, text, { force: true });
       return;
     }
     let line = ev.line ?? Math.floor(ev.a * doc.lineCount);
@@ -996,7 +1035,7 @@ const EVENTS = {
     const lang = ev.lang ?? pickOf(langs, ev.a);
     if (!lang) return;
     w.provider[lang] = {
-      mode: ev.mode ?? pickOf(lang === 'lua' ? ['none', 'empty', 'ok', 'degraded', 'strings'] : ['none', 'empty', 'ok', 'degraded'], ev.b),
+      mode: ev.mode ?? pickOf(lang === 'lua' || lang === 'zig' ? ['none', 'empty', 'ok', 'degraded', 'strings'] : ['none', 'empty', 'ok', 'degraded'], ev.b),
       latency: ev.latency ?? pickOf([0, 0, 90, 300, 'never'], ev.c),
     };
   },
@@ -1171,6 +1210,71 @@ function generateRuby(seed, steps) {
   return { cfg: { docs, split: rnd() < 0.35, provider }, events };
 }
 
+/**
+ * A walk with walk.zig first: the events of `generate(seed)`, its own documents and
+ * servers. In 3 of 10, walk.zon too, under `zig` and answered by the same server.
+ */
+function generateZig(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x7a6967);
+  const second = pickOf(['zig', 'ts', 'py', 'md'], rnd());
+  const docs = second === 'zig' ? ['zig'] : ['zig', second];
+  if (rnd() < 0.3) docs.push('zon');
+  const provider = {};
+  for (const key of docs) {
+    const lang = FIXTURES[key].lang;
+    const modes = lang === 'zig' ? ['ok', 'ok', 'degraded', 'none', 'empty', 'strings'] : ['ok', 'ok', 'degraded', 'none', 'empty'];
+    if (lang !== 'markdown') provider[lang] = { mode: pickOf(modes, rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
+// The Zig reclose walk: walk.zig alone. Nothing in Zig spans lines, so the closers
+// are a string's `"`, a `\\` line's second backslash and a block's `}`.
+const ZIG_LINES = FIXTURES.zig.text.split('\n');
+const zigAt = (needle, tok) => {
+  const line = ZIG_LINES.findIndex((l) => l.includes(needle));
+  return { line, character: ZIG_LINES[line].indexOf(tok, ZIG_LINES[line].indexOf(needle)) };
+};
+const ZIG_UNCLOSE = [
+  { line: ZIG_LINES.findIndex((l) => l.includes('"end")) break')), char: '"', at: ZIG_LINES.find((l) => l.includes('"end")) break')).indexOf('end") ') + 3 },
+  { line: ZIG_LINES.findIndex((l) => l.includes('\\\\draining')), char: '\\', at: ZIG_LINES.find((l) => l.includes('\\\\draining')).indexOf('\\') + 1 },
+  { line: ZIG_LINES.indexOf('    }', ZIG_LINES.findIndex((l) => l.includes('const job ='))), char: '}' },
+];
+const ZIG_TARGETS = [
+  ['pushed += i', 'pushed'], ['self.size += 1', 'self'], ['total.* += job', 'total'], ['const job =', 'job'],
+  ['n += line.len', 'line'], ['not code: total', 'total'], ['pushed_total += pushed', 'pushed_total'], ['break :outer n', 'outer'],
+].map(([needle, tok]) => zigAt(needle, tok));
+
+function generateZigReclose(seed, steps) {
+  const rnd = mulberry32(seed ^ 0x7a6763);
+  const cfg = { docs: ['zig'], provider: { zig: { mode: pickOf(['ok', 'none', 'strings'], rnd()), latency: pickOf([0, 90, 300], rnd()) } } };
+  const events = [{ t: 'caret', ...ZIG_TARGETS[0], kind: 2, dt: 300 }];
+  let which = ZIG_UNCLOSE[0];
+  for (let i = 0; i < steps; i++) {
+    let x = rnd() * RECLOSE_TOTAL;
+    let t = RECLOSE_WEIGHTS[0][0];
+    for (const [k, wt] of RECLOSE_WEIGHTS) {
+      if ((x -= wt) < 0) {
+        t = k;
+        break;
+      }
+    }
+    const u = rnd();
+    const dt = pickOf(DT, rnd());
+    if (t === 'unclose') {
+      which = pickOf(ZIG_UNCLOSE, rnd());
+      events.push({ t, line: which.line, at: which.at, dt });
+    } else if (t === 'closer') events.push({ t: 'type', text: which.char, dt });
+    else if (t === 'caret') events.push({ t, ...pickOf(ZIG_TARGETS, u), kind: pickOf([1, 2, 2, 3], rnd()), dt });
+    else if (t === 'provider') events.push({ t, lang: 'zig', mode: pickOf(['ok', 'ok', 'empty', 'none', 'strings'], u), latency: pickOf([0, 90, 300, 'never'], rnd()), dt });
+    else if (t === 'idle') events.push({ t, dt: pickOf([380, 2100, 3300, 25000], u) });
+    else if (t === 'type') events.push({ t, text: pickOf(['x', ' '], u), dt });
+    else events.push({ t, dt });
+  }
+  return { cfg, events };
+}
+
 // The Ruby reclose walk: walk.rb alone. Deleting the heredoc terminator's last
 // letter makes a string of the rest of the file; deleting an `end`'s `d` unbalances
 // every block below.
@@ -1317,5 +1421,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateLuaReclose, generateRuby, generateRubyReclose, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS,
 };

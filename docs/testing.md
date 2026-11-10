@@ -158,6 +158,36 @@ edge input only                           █████ 5
 - `const v = async` followed by a line break read as an async arrow, so `v`
   was no data.
 
+### Zig
+
+The Zig code (`src/zig.ts`, `zigPlaceholderSpans`, the lexer's `zigAt`, and the
+lines naming Zig in `src/lex.ts`, `src/focus.ts`, `src/classify.ts`,
+`src/classify-lsp.ts`, `src/risk.ts` and `src/decorator.ts`) was sampled the same
+way: 150 of its 760 mutants, each run against `zig.test.js`, then `lexer.test.js`
+with `lexer-render.test.js`, then the Zig walks, then the rest of the fast suite,
+then the Zig perf-golden inputs. Three workers ran side by side; three mutants
+of `src/zig.ts` that JavaScript tests killed under that load passed every stage
+run alone, and count as survivors. With the first version of `test/zig.test.js`,
+81 were killed, 6 hash-only and 63 survived. The survivors were mapped onto the
+final build by file, function, operator and line text and run again with the
+final tests: the tests added for them kill 28, and 4 sit in code the fixes below
+rewrote. Per mutant, with the line of the first build's compiled file, in
+[mutation-audit-zig.csv](mutation-audit-zig.csv).
+
+```
+Left after (37 survived)
+equivalent: no input changes the output   ██████████████ 14
+equivalent for valid Zig                  █████████████ 13
+edge input only                           ███████ 7
+fast path: same output                    ███ 3
+```
+
+**The bug a new test exposed**, fixed in the same change: an enum member named
+`self` (`enum { self, other }`) took the `self` paint over zls's member steel.
+Two checks the audit showed could never fail went too: a `::` after a name,
+which Zig has no token for, and a `const` / `var` before a container field,
+where the word before a field is none or `comptime`.
+
 ## Timing
 
 A test that checks an algorithm stays linear compares the CPU time of an input
@@ -192,8 +222,8 @@ landed one line further down, in a 2-line `if` branch holding one name, and
 `lua-2000` / `lua-10000` hashed `edits` and `editsNoServer` alike. Now they
 focus the whole function, where the server's tokens mark `M.last = …` and the
 heuristic does not. The TS, Go, Rust and Python carets did not move, and their
-hashes stayed byte-identical. `structure` hashes the Rust, Python, Lua and Ruby
-placeholder scans.
+hashes stayed byte-identical. `structure` hashes the Rust, Python, Lua, Ruby
+and Zig placeholder scans.
 
 The TS, Go, Rust and Python inputs bind no builtin names, so the shadow restore
 painted nothing they hash. The Python edit sessions append a few such bindings
@@ -210,6 +240,14 @@ more, not a Kernel name, and not two that would rename alike, such as `fmt2`
 and `fmt3`), and the method symbols come from the capture's document symbols.
 Every Ruby session hashes the `#{` / `}`, `self` and shadow restores: 266, 28
 and 42 ranges at 2k lines, 1,292, 136 and 204 at 10k.
+
+The Zig inputs repeat `samples/sample.zig` with its zls `partial` capture, and
+the function and test symbols come from the capture's document symbols. Their
+`structure` also hashes `zigFacts`, the namespace spans and the placeholder
+scan. Every Zig session hashes the `self` paint, 88 ranges at 2k lines and 407
+at 10k, and `editsNoServer` the namespace restore, 160 and 740 spans. The
+capture holds no `string` token, so the sessions paint no placeholder; the scan
+finds 152 and 703.
 
 `PERF_GOLDEN_DUMP=<dir>` writes each section's lines. Run it once on each build
 into the same directory: the second run prints the labels whose lines moved,

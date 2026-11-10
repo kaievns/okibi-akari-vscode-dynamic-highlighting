@@ -126,7 +126,30 @@ test(`${RUBY_WALKS} random walks over walk.rb leave no leftovers`, async (t) => 
 test(`${RUBY_WALKS} walks that unclose and reclose a Ruby heredoc or an end leave no leftovers`, () =>
   walks(h.generateRubyReclose, RUBY_WALKS, RECLOSE_STEPS, SEED0, 1 / 4));
 
+const ZIG_WALKS = Number(process.env.OKIBI_ZIG_WALKS ?? 120);
+
+test(`${ZIG_WALKS} random walks over walk.zig and walk.zon leave no leftovers`, async (t) => {
+  const shown = { tint: 0, clay: 0, importRestore: 0, riskEscape: 0, riskDanger: 0, self: 0, placeholder: 0, zonActive: 0 };
+  await walks(h.generateZig, ZIG_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    if (w.activeEditor()?.document.fileName.endsWith('.zon')) shown.zonActive++;
+    const zig = r.got.editors.find((e) => e.uri.endsWith('.zig'));
+    const roles = new Set(Object.keys(zig?.out ?? {}).map((k) => k.split(' ')[0]));
+    if ([...roles].some((x) => /^(id|idg)\d$/.test(x))) shown.tint++;
+    if (roles.has('numberEngaged')) shown.clay++;
+    for (const k of ['importRestore', 'riskEscape', 'riskDanger', 'self', 'placeholder']) if (roles.has(k)) shown[k]++;
+    assert.ok(!roles.has('riskAsync'), `step ${i}: no async marks in Zig`);
+  });
+  const seen = Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ');
+  if (DEFAULT_RUN && ZIG_WALKS === 120) for (const [k, n] of Object.entries(shown)) assert.ok(n > 0, `${k}: ${seen}`);
+  t.diagnostic(`walk.zig painted, in steps: ${seen}`);
+});
+
+test(`${ZIG_WALKS} walks that unclose and reclose a Zig string, a \\\\ line or a block leave no leftovers`, () =>
+  walks(h.generateZigReclose, ZIG_WALKS, RECLOSE_STEPS, SEED0, 1 / 4));
+
 // ── Leftovers the walks found, as their shrunk sequences ──────────────────────
+
+const LUA_FORMAT = h.FIXTURES.lua.text.split('\n').findIndex((l) => /string\.format/.test(l));
 
 const REGRESSIONS = [
   [
@@ -195,6 +218,35 @@ const REGRESSIONS = [
     [{ t: 'idle', dt: 500 }, { t: 'foreign', op: 'append', line: 8, character: 12, text: '._x', dt: 3000 }],
   ],
   [
+    'answers that land out of order leave band 1 as the last one says',
+    // Seed 20404: the v3 answer types string literals and renders the placeholders;
+    // the v4 answer does not, but its classify compared with the state it started
+    // from, which also typed none, so nothing took them off.
+    { docs: ['zig'], provider: { zig: { mode: 'strings', latency: 90 } } },
+    [
+      { t: 'provider', lang: 'zig', mode: 'ok', latency: 90, dt: 0 },
+      { t: 'unclose', line: 26, at: 9, dt: 400 },
+      { t: 'provider', lang: 'zig', mode: 'strings', latency: 300, dt: 0 },
+      { t: 'type', text: '\\', dt: 160 },
+      { t: 'provider', lang: 'zig', mode: 'ok', latency: 300, dt: 0 },
+      { t: 'undo', dt: 160 },
+      { t: 'type', text: ' ', dt: 400 },
+    ],
+  ],
+  [
+    'answers that land out of order leave band 1 as the last one says, in Lua',
+    { docs: ['lua'], provider: { lua: { mode: 'strings', latency: 90 } } },
+    [
+      { t: 'provider', lang: 'lua', mode: 'ok', latency: 90, dt: 0 },
+      { t: 'unclose', line: LUA_FORMAT, at: h.FIXTURES.lua.text.split('\n')[LUA_FORMAT].length - 2, dt: 400 },
+      { t: 'provider', lang: 'lua', mode: 'strings', latency: 300, dt: 0 },
+      { t: 'type', text: 'x', dt: 160 },
+      { t: 'provider', lang: 'lua', mode: 'ok', latency: 300, dt: 0 },
+      { t: 'undo', dt: 160 },
+      { t: 'type', text: ' ', dt: 400 },
+    ],
+  ],
+  [
     'a forced insert on the caret line, away from the caret, is not taken for typing',
     // The quick fix runs from the caret's line, which every change touching a caret
     // line would read as typing, and so as unforced.
@@ -218,9 +270,10 @@ for (const [name, cfg, events] of REGRESSIONS) {
   });
 }
 
-for (const key of h.DATA_KEYS) test(`switching between a code file in Edit and a ${key} file leaves nothing on the ${key} file`, async () => {
+// ZON opens under `zig`, whose server answers it.
+for (const key of [...h.DATA_KEYS, 'zon']) test(`switching between a code file in Edit and a ${key} file leaves nothing on the ${key} file`, async () => {
   const lang = h.FIXTURES[key].lang;
-  const cfg = { docs: ['ts', key], split: true, provider: { typescript: { mode: 'ok', latency: 0 }, [lang]: { mode: 'none', latency: 0 } } };
+  const cfg = { docs: ['ts', key], split: true, provider: { typescript: { mode: 'ok', latency: 0 }, [lang]: { mode: key === 'zon' ? 'ok' : 'none', latency: 0 } } };
   const events = [
     { t: 'caret', line: 12, character: 12, kind: 2, dt: 200 },
     { t: 'type', text: 'x', dt: 30 },

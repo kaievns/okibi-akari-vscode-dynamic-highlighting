@@ -1,14 +1,14 @@
 # Import restore
 
-A band-1 mark for Python, Go, Lua, JavaScript and TypeScript. It paints the uses
+A band-1 mark for Python, Go, Lua, JavaScript, TypeScript and Zig. It paints the uses
 of imported modules and types at the theme's type slate (Okibi `#a5b6c8`, Akari
 `#52657a`) in documents that no semantic provider colours, and comes off once
 one answers; in Lua it stays, and in JavaScript and TypeScript it hands over
 per name ([Handover](#handover)). Code: `src/imports.ts`, `src/pystdlib.ts`,
-`src/lua.ts` (`luaRestoreSpans`), `Decorator.renderImports`. Tests: `test/imports.test.js`, and
+`src/lua.ts` (`luaRestoreSpans`), `src/zig.ts` (`zigImportSpans`), `Decorator.renderImports`. Tests: `test/imports.test.js`, and
 `test/shadows.test.js` for the resolver rules the
-[shadow restore](shadow-restore.md) brought, which shares this resolver, and
-`test/javascript.test.js`.
+[shadow restore](shadow-restore.md) brought, which shares this resolver,
+`test/javascript.test.js` and `test/zig.test.js`.
 
 ## Why the theme cannot do it
 
@@ -212,6 +212,19 @@ too, so there a tag name, `NS` right after `<` or `</`, is not painted; the
 grammar paints `NS.Tag` as one component token. A use in the tag's attributes or
 children is.
 
+## Zig
+
+`const x = @import("…")` and `@cImport(…)` bind, as do a lowercase `const`
+bound to a type (`const parking_futex = struct {…}`) and a container-level
+alias of one that some use reads a member of and no use calls
+(`const mem = std.mem;` with `mem.eql(…)`). The declaration and every use are
+painted, never a name after `.`, a callee, a field, an enum member or a label.
+Zig forbids shadowing only an enclosing scope's name, so a namespace binds in
+the scope that declares it (the file, a container body, a block) and a sibling
+scope's parameter of that name is data. TitleCase names are the
+theme's: it paints them type slate as types. Rules and the corpus counts:
+[zig.md](zig.md#band-1-restores).
+
 ## Handover
 
 `Classifier.semanticOk(doc)` is true once a provider has answered the document
@@ -400,6 +413,9 @@ opening the 50k-line Python file moved +1.9 ms with tokens and +0.8 ms without
 - **JavaScript and TypeScript default and named imports**, and a namespace
   under Deno's `variable.readonly`, which stays the page colour
   ([javascript.md](javascript.md#server-states)).
+- **Zig aliases inside a function** (`const testing = std.testing;` in a
+  test): data with no server, and no restore; 1,071 of zls's namespace uses on
+  the Zig corpus ([zig.md](zig.md#band-1-restores)).
 - **Submodule attributes** (`os.path.join`): the right of a dot is never painted,
   and by the model above Pylance types `os.path` as a variable.
 - **Class-body members** (`queues:` in a class) are a member-colour question, not

@@ -26,10 +26,12 @@ block-local names are local bookkeeping and get nothing.
 | Form | Languages |
 |---|---|
 | `x = …` and `= += -= *= /= %= &= \|= ^= <<= >>= >>>= **= //= ??= \|\|= &&= &^= @=` | all |
-| `x++`, `x--` | all but Python, Rust, Lua (`x -- note` is a Lua comment) and Ruby |
-| `++x`, `--x` | all but Python, Rust, Go, Lua and Ruby |
+| `+%= -%= *%= +\|= -\|= *\|= <<\|=` (wrapping and saturating) | all; only Zig has them |
+| `x++`, `x--` | all but Python, Rust, Lua (`x -- note` is a Lua comment), Ruby and Zig (`a ++ b` concatenates arrays) |
+| `++x`, `--x` | all but Python, Rust, Go, Lua, Ruby and Zig |
 | `a, b = …`, `x, y.z, w[0] = …` at statement level | Python, Go, Lua (inside a Lua `{` it is a table constructor), Ruby |
 | `root.a.b`, `root?.a`, `root->a`, `root!!.a`, `root[k]` as the target | all |
+| `root.*`, `root.*.a`, `root.?.a` as the target | Zig |
 | `*root = …` | Rust, C family, Go |
 
 `==`, `===`, `!=`, `<=`, `>=`, `=>` and `:=` are not writes. A call anywhere in a
@@ -40,7 +42,7 @@ target chain (`f().x = 1`) leaves the receiver unknown, so it gets no mark.
 | Target | Marks when |
 |---|---|
 | plain `x` | `x` is `out`; or `fn` and not the focused function's own parameter (proximity 0); or named in the function's Python `global` / `nonlocal`; or a Rust `static` |
-| chained or deref | the root is `self` / `this` (Python: `self`, `cls`; JavaScript and TypeScript: `this` only) outside an initializer; or `fn` at any proximity; or `out` |
+| chained or deref | the root is `self` / `this` (Python: `self`, `cls`; JavaScript and TypeScript: `this` only; Zig: `self` only) outside an initializer; or `fn` at any proximity; or `out` |
 
 A chained write marks `root.member` through the last member name. A pure
 subscript write marks the root.
@@ -88,6 +90,9 @@ caller's object.
   when the local is declared outside the block and not in an earlier branch of
   the same conditional; `@x` and `self.x` outside an initializer, `@@x` in a
   method and `$x` in a method, class body or block mark too.
+- **A Zig write through a local pointer.** `mutable.* = 9` writes through a
+  pointer declared in the block, so the root is local and nothing marks, as
+  for a C `*p = …` with a local `p` ([zig.md](zig.md#escape-marks)).
 
 ### Initializers
 
@@ -211,6 +216,7 @@ is unchanged.
 | `javascript`, `javascriptreact` | none | no casts, no `any` type |
 | `lua` | none | no casts; no async marks either, since Lua has no `async` / `await` keyword |
 | `ruby` | none | no casts; Sorbet's `T.cast`, `T.unsafe` and `T.untyped` are method calls. No async marks: Ruby has no async syntax, so `async: true` and the Async gem's `Async do` are names |
+| `zig` | `@ptrCast`, `@alignCast`, `@constCast`, `@volatileCast`, `@addrSpaceCast`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr` | `@intCast`, `@truncate`, `@bitCast`, `undefined`. No async marks: Zig 0.17 has no `async` / `await` keyword, and `.async(` / `.await(` are `std.Io` methods ([zig.md](zig.md#danger-marks)) |
 | anything else | none | |
 
 ### Go: `any` is not a danger word

@@ -10,9 +10,9 @@
 // server's tokens outside the timed region, and answers instantly, so editor and
 // server time are excluded. Results: docs/runtime.md#cost-on-large-files.
 //
-//   node test/bench-scale.js [ts|js|go|rs|py|lua|rb ...] [lines ...] [--no-lsp] [--stages]
+//   node test/bench-scale.js [ts|js|go|rs|py|lua|rb|zig ...] [lines ...] [--no-lsp] [--stages]
 //
-// Defaults: all six languages at 2000, 10000 and 50000 lines. --no-lsp answers
+// Defaults: all languages but JavaScript at 2000, 10000 and 50000 lines. --no-lsp answers
 // every provider request with nothing, so the heuristic classifier runs.
 // --stages times the pure stages instead (warm, mean of 5 calls each).
 
@@ -23,6 +23,7 @@ const classify = require('../out/classify');
 const { lex } = require('../out/lex');
 const { luaFacts } = require('../out/lua');
 const { rubyFacts } = require('../out/ruby');
+const { zigFacts } = require('../out/zig');
 const { Decorator, editDebounceMs } = require('../out/decorator');
 const { generate } = require('./perf-inputs');
 
@@ -31,7 +32,7 @@ const NO_LSP = args.includes('--no-lsp');
 const STAGES = args.includes('--stages');
 const langs = args.filter((a) => /^[a-z]+$/.test(a));
 const sizes = args.filter((a) => /^\d+$/.test(a)).map(Number);
-const LANGS = langs.length > 0 ? langs : ['ts', 'go', 'rs', 'py', 'lua', 'rb'];
+const LANGS = langs.length > 0 ? langs : ['ts', 'go', 'rs', 'py', 'lua', 'rb', 'zig'];
 const SIZES = sizes.length > 0 ? sizes : [2000, 10000, 50000];
 
 /** A document shaped like VS Code's: getText() joins the lines, positionAt is a binary search. */
@@ -234,6 +235,7 @@ function stages(input, runs = 5) {
   const blocks = focus.scanBlocks(text, L);
   if (L === 'lua') rows.push(['luaFacts', time(() => luaFacts(lex(text, L), blocks)) - rows[0][1]]);
   if (L === 'ruby') rows.push(['rubyFacts', time(() => rubyFacts(lex(text, L), blocks)) - rows[0][1]]);
+  if (L === 'zig') rows.push(['zigFacts', time(() => zigFacts(lex(text, L))) - rows[0][1]]);
   const fnRanges = input.symbols.map((s) => ({ ...s }));
   for (const b of blocks) {
     const r = focus.functionScopeOf(text, b, L);

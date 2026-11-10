@@ -31,8 +31,9 @@
  * that reaches it.
  *
  * LUA under `Lua.semantic.keyword` is the same case: lua-language-server sends one
- * `string` token over each literal, hiding the theme's `string.format` placeholders.
- * The decorator paints `luaPlaceholderSpans` only while the answer does that.
+ * `string` token over each literal, hiding the theme's `string.format` placeholders,
+ * and so is ZIG under `zig.zls.semanticTokens: full`. The decorator paints
+ * `luaPlaceholderSpans` and `zigPlaceholderSpans` only while the answer does that.
  *
  * Phase-independent by design. This is band 1 — the resting register — so it does
  * not wait for Focus or Edit and does not blink when the phase relaxes.
@@ -580,6 +581,50 @@ export function luaPlaceholderSpans(text: string): Span[] {
         if (LUA_PLACEHOLDER.test(text) && LUA_PLACEHOLDER.lastIndex <= to) {
           out.push({ start: i, end: LUA_PLACEHOLDER.lastIndex });
           i = LUA_PLACEHOLDER.lastIndex;
+          continue;
+        }
+      }
+      i++;
+    }
+  }
+  return out;
+}
+
+const ZIG_ARGS = /[ \t]*,[ \t]*\.\{/y;
+const ZIG_UNICODE_ESCAPE = /\\u\{[0-9a-fA-F]+\}/y;
+const ZIG_HOLE = /\{[^{}"]*\}/y;
+
+/**
+ * Zig format placeholders, in the call shape the theme's
+ * `syntaxes/zig-gaps.injection.json` reads: a `"…"` literal right after `(` or
+ * `, ` whose `.{` arguments tuple follows on its line. A backslash escape is not a
+ * hole (`\u{…}` whole, any other two characters), nor are `{{` and `}}`.
+ */
+export function zigPlaceholderSpans(text: string): Span[] {
+  const lx = lexFor(text, 'zig');
+  const out: Span[] = [];
+  for (const s of lx.spans) {
+    if (s.region !== 'string' || text[s.start] !== '"' || s.end - s.start < 2 || text[s.end - 1] !== '"') continue;
+    if (text[s.start - 1] !== '(' && !(text[s.start - 1] === ' ' && text[s.start - 2] === ',')) continue;
+    ZIG_ARGS.lastIndex = s.end;
+    if (!ZIG_ARGS.test(text)) continue;
+    const to = s.end - 1;
+    for (let i = s.start + 1; i < to;) {
+      const c = text[i];
+      if (c === '\\') {
+        ZIG_UNICODE_ESCAPE.lastIndex = i;
+        i = ZIG_UNICODE_ESCAPE.test(text) ? ZIG_UNICODE_ESCAPE.lastIndex : i + 2;
+        continue;
+      }
+      if ((c === '{' || c === '}') && text[i + 1] === c) {
+        i += 2;
+        continue;
+      }
+      if (c === '{') {
+        ZIG_HOLE.lastIndex = i;
+        if (ZIG_HOLE.test(text)) {
+          out.push({ start: i, end: ZIG_HOLE.lastIndex });
+          i = ZIG_HOLE.lastIndex;
           continue;
         }
       }
