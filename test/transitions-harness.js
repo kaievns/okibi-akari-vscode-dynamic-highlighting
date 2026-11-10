@@ -455,6 +455,10 @@ const FIXTURES = {
   gitconfig: { lang: 'properties', file: 'walk.gitconfig', data: true },
   env: { lang: 'dotenv', file: 'walk.env', data: true },
   gitignore: { lang: 'ignore', file: 'walk.gitignore', data: true },
+  dockerfile: { lang: 'dockerfile', file: 'walk.Dockerfile', container: true },
+  bake: { lang: 'dockerbake', file: 'walk.docker-bake.hcl', container: true },
+  helm: { lang: 'helm', file: 'walk.helm.yaml', container: true },
+  k8s: { lang: 'yaml', file: 'walk.k8s.yaml', container: true },
   doc: { lang: 'python', file: 'reclose.py' },
   lua: { lang: 'lua', file: 'walk.lua' },
   rb: { lang: 'ruby', file: 'walk.rb' },
@@ -468,7 +472,8 @@ const FIXTURES = {
 };
 for (const f of Object.values(FIXTURES)) f.text = fs.readFileSync(path.join(FIX, f.file), 'utf8');
 const DATA_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].data);
-const DATA_LANGS = new Set(DATA_KEYS.map((k) => FIXTURES[k].lang));
+const CONTAINER_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].container);
+const DATA_LANGS = new Set([...DATA_KEYS, ...CONTAINER_KEYS].map((k) => FIXTURES[k].lang));
 const PROSE_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].prose && k !== 'md');
 const PROSE_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.prose).map((f) => f.lang));
 const MARKED_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.marks).map((f) => f.lang));
@@ -1280,6 +1285,22 @@ function generateProse(seed, steps) {
   return { cfg: { docs, split: rnd() < 0.35, provider }, events };
 }
 
+/**
+ * A walk with a code file first, then one or two of the Docker and Kubernetes files,
+ * each with no server: the events of `generate(seed)`.
+ */
+function generateContainers(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x6b3873);
+  const code = pickOf(['ts', 'py', 'rs', 'go'], rnd());
+  const first = CONTAINER_KEYS[seed % CONTAINER_KEYS.length];
+  const docs = [code, first];
+  if (rnd() < 0.4) docs.push(pickOf(CONTAINER_KEYS.filter((k) => k !== first), rnd()));
+  const provider = { [FIXTURES[code].lang]: { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) } };
+  for (const key of docs.slice(1)) provider[FIXTURES[key].lang] = { mode: 'none', latency: 0 };
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
 // The Zig reclose walk: walk.zig alone. Nothing in Zig spans lines, so the closers
 // are a string's `"`, a `\\` line's second backslash and a block's `}`.
 const ZIG_LINES = FIXTURES.zig.text.split('\n');
@@ -1472,5 +1493,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, PROSE_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, PROSE_KEYS,
 };

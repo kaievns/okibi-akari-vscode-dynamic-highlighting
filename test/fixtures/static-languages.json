@@ -1,5 +1,5 @@
 {
-  "measured": "2026-11-07, VS Code 1.144.1: contributes.languages of every built-in and installed extension. null: no installed extension registers the id.",
+  "measured": "2026-11-07, VS Code 1.144.1: contributes.languages of every built-in and installed extension; helm and gotmpl 2026-11-10, helm from the theme e2e harness's extensions dir. null: no installed extension registers the id.",
   "registered": {
     "json": "vscode.json",
     "jsonc": "vscode.json",
@@ -44,6 +44,8 @@
     "dynamic csv": "mechatroner.rainbow-csv 3.24.1",
     "dockerfile": "vscode.docker",
     "makefile": "vscode.make",
-    "erb": "shopify.ruby-lsp 0.10.8"
+    "erb": "shopify.ruby-lsp 0.10.8",
+    "helm": "ms-kubernetes-tools.vscode-kubernetes-tools 1.4.1",
+    "gotmpl": "golang.go 0.58.0"
   }
 }

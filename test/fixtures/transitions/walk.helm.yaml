@@ -1,0 +1,25 @@
+{{- /* A Helm template with self, this, async and numbers. */ -}}
+{{- define "self.name" -}}
+{{- default .Chart.Name .Values.self | trunc 63 | trimSuffix "-" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "self.name" . }}
+spec:
+  replicas: {{ .Values.replicas | default 3 }}
+  template:
+    spec:
+      containers:
+        {{- range $i, $this := .Values.containers }}
+        - name: {{ $this.name | quote }}
+          args: ["--async", "{{ $i }}"]
+          {{- with $.Values.self }}
+          env:
+            - name: SELF
+              value: {{ . | toString | quote }}
+          {{- end }}
+          {{- if and (eq $.Values.mode "async") (gt (int $.Values.retries) 0) }}
+          command: ["sh", "-c", "await self; exec app"]
+          {{- end }}
+        {{- end }}

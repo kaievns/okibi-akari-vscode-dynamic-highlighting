@@ -1,0 +1,27 @@
+# Kubernetes manifests with self, this, async and numbers.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: self
+data:
+  run.sh: |
+    #!/bin/sh
+    for i in 1 2 3; do echo "this ${i}"; done
+    exec app --mode async
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: this
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: self
+          args: ["--retries", "3"]
+          resources: {limits: {cpu: 500m}}
+          command:
+            - |
+              await self
+              echo {this}

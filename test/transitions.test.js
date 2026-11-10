@@ -170,6 +170,25 @@ test(`${PROSE_WALKS} random walks over the markdown-derived files leave no lefto
   t.diagnostic(seen);
 });
 
+const CONTAINER_WALKS = Number(process.env.OKIBI_CONTAINER_WALKS ?? 100);
+
+test(`${CONTAINER_WALKS} random walks over the Docker and Kubernetes files beside a code file leave no leftovers`, async (t) => {
+  const active = Object.fromEntries(h.CONTAINER_KEYS.map((k) => [k, 0]));
+  const keyOf = (ed) => ed?.document.uri.toString().split('.').pop();
+  let beside = 0;
+  await walks(h.generateContainers, CONTAINER_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    if (keyOf(w.activeEditor()) in active) active[keyOf(w.activeEditor())]++;
+    const shown = w.visible().map((ed, j) => [keyOf(ed), Object.keys(r.got.editors[j].out).map((k) => k.split(' ')[0])]);
+    if (shown.some(([k]) => k in active) && shown.some(([, roles]) => roles.some((x) => x === 'gutter' || /^id/.test(x)))) beside++;
+  });
+  const seen = `active: ${Object.entries(active).map(([f, n]) => `${f} ${n}`).join(', ')}; beside a painted code editor at ${beside} steps`;
+  if (DEFAULT_RUN && CONTAINER_WALKS === 100) {
+    for (const [f, n] of Object.entries(active)) assert.ok(n > 0, `${f}: ${seen}`);
+    assert.ok(beside > 0, seen);
+  }
+  t.diagnostic(seen);
+});
+
 // ── Leftovers the walks found, as their shrunk sequences ──────────────────────
 
 const LUA_FORMAT = h.FIXTURES.lua.text.split('\n').findIndex((l) => /string\.format/.test(l));
@@ -295,7 +314,7 @@ for (const [name, cfg, events] of REGRESSIONS) {
 
 // ZON opens under `zig`, whose server answers it, and VS Code answers the chat customisation ids.
 const MD_MARKS = ['mdHighlight', 'mdLinkPlain'];
-for (const key of [...h.DATA_KEYS, 'zon', ...h.PROSE_KEYS]) test(`switching between a code file in Edit and a ${key} file leaves ${h.FIXTURES[key].marks ? 'only the markdown marks' : 'nothing'} on the ${key} file`, async () => {
+for (const key of [...h.DATA_KEYS, ...h.CONTAINER_KEYS, 'zon', ...h.PROSE_KEYS]) test(`switching between a code file in Edit and a ${key} file leaves ${h.FIXTURES[key].marks ? 'only the markdown marks' : 'nothing'} on the ${key} file`, async () => {
   const lang = h.FIXTURES[key].lang;
   const shows = h.FIXTURES[key].marks ? MD_MARKS : [];
   const answered = key === 'zon' || shows.length > 0;

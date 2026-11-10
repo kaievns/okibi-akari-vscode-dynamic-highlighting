@@ -732,8 +732,9 @@ export class Decorator implements vscode.Disposable {
     // Typing is unambiguous engagement — it also covers the case where an edit
     // repositions the caret without a separate selection event. An edit the user
     // did not type (format on save, rename, an auto-import) still reclassifies but
-    // neither engages nor enters Edit.
-    if (this.isTypingEdit(editor, e, now)) {
+    // neither engages nor enters Edit. A static content or prose file has no scope to
+    // edit in, and an undo there may report no caret change to drop it back to Survey.
+    if (!isNonFlowLanguage(langOf(e.document)) && this.isTypingEdit(editor, e, now)) {
       this.engaged.add(e.document.uri.toString());
       this.machine.onType(now);
     }

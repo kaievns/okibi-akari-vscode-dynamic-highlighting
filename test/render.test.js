@@ -308,6 +308,22 @@ test('a click and typing in KDL leave the phase in Survey', async () => {
   d.dispose();
 });
 
+// An undo that restores the caret reports no selection change, so the edit alone decides the phase.
+test('an edit in a static file with no caret event after it leaves the phase in Survey', async () => {
+  for (const [lang, text] of [['dockerbake', 'target "app" {\n  tags = ["a"]\n}\n'], ['helm', 'a: {{ .Values.x }}\nb: 2\n'], ['markdown', '# Notes\n\nsome text\n']]) {
+    stub.clearLspResponses();
+    const doc = new stub.TextDocument(text, lang, `file:///render-${docSeq++}.${lang}`);
+    const ed = new stub.TextEditor(doc, 1, 2);
+    vs.window.activeTextEditor = ed;
+    vs.window.visibleTextEditors = [ed];
+    const d = new Decorator();
+    const at = doc.offsetAt(ed.selection.active);
+    d.onEdit(doc.applyEdit(at, at, '0'));
+    assert.equal(d.machine.current, Phase.Survey, `${lang}: an edit alone does not enter Edit`);
+    d.dispose();
+  }
+});
+
 // Config formats by the id VS Code gives them (test/fixtures/static-languages.json);
 // each text holds `self`, `this`, `async`, numbers and nested blocks, which paint in code.
 const WALKS = path.join(__dirname, 'fixtures/transitions');
@@ -316,6 +332,9 @@ const CONFIG_TEXTS = {
   yaml: walkText('walk.yaml'),
   'github-actions-workflow': walkText('walk.workflow.yml'),
   dockercompose: walkText('walk.compose.yaml'),
+  dockerfile: walkText('walk.Dockerfile'),
+  helm: walkText('walk.helm.yaml'),
+  gotmpl: '{{/* self, this, async and numbers */}}\n{{define "row"}}\n  <td>{{.Self | printf "%q"}}</td>\n{{end}}\n{{range $i, $item := .Items}}\n  {{with $item.self}}{{.}} this {{$i}} of 42{{end}}\n  {{$async := index $item.Tags 0}}{{template "row" $async}}\n{{end}}\n',
   toml: walkText('walk.toml'),
   json: walkText('walk.json'),
   jsonc: walkText('walk.jsonc'),
@@ -331,7 +350,7 @@ const CONFIG_TEXTS = {
   'go.mod': 'module example.com/self\n\ngo 1.23\n\nrequire (\n\tgolang.org/x/sync v0.8.0\n\texample.com/this v1.2.3 // indirect\n)\n\nreplace example.com/async => ../async\n',
   'go.sum': 'example.com/this v1.2.3 h1:abc123=\nexample.com/this v1.2.3/go.mod h1:def456=\n',
   'go.work': 'go 1.23\n\nuse (\n\t./self\n\t./this\n)\n',
-  dockerbake: 'variable "TAG" {\n  default = "latest"\n}\ntarget "app" {\n  tags = ["example/self:${TAG}"]\n  args = {\n    RETRIES = 3\n    MODE    = "async"\n  }\n}\n',
+  dockerbake: walkText('walk.docker-bake.hcl'),
   'cmake-cache': '# This is the CMakeCache file.\n//Path to self\nCMAKE_BUILD_TYPE:STRING=Release\nBUILD_ASYNC:BOOL=ON\nRETRIES:STRING=3\n',
   dts: '/ {\n    keymap {\n        compatible = "zmk,keymap";\n        default_layer {\n            bindings = <&kp TAB &kp Q &mo 1 &kp ESC>;\n            self = <0x3c 32>;\n        };\n    };\n};\n',
   'csv (pipe)': 'name|self|this\na|1|2\nb|3|async\n',
@@ -388,6 +407,22 @@ test('every config format paints nothing, band 1 included, asks no server, and s
   assert.ok(tints(control, focus) > 0, 'control: identity tints');
   assert.ok(focus.count(control.decorator.pool.self) > 0, 'control: self paint');
   assert.ok(risks(control, control.paint(Phase.Edit)) > 0, 'control: async risk mark');
+});
+
+test('a Helm template and a Go template paint nothing; read as an unlisted id the same text engages', async () => {
+  for (const [lang, needle, word] of [['helm', '- name: SELF', 'name'], ['gotmpl', '{{with $item.self}}', 'item']]) {
+    const text = CONFIG_TEXTS[lang];
+    const line = text.split('\n').findIndex((l) => l.includes(needle));
+    const character = text.split('\n')[line].indexOf(word);
+    for (const [id, engaged] of [[lang, false], ['unlisted', true]]) {
+      stub.clearLspResponses();
+      const h = await harness(text, id, line, character);
+      const focus = h.paint(Phase.Focus);
+      assert.equal(focus.count(h.decorator.pool.self) > 0, engaged, `${lang} as ${id}: self mark on a .self field`);
+      assert.equal(tints(h, focus) > 0, engaged, `${lang} as ${id}: identity tints`);
+      assert.equal(focus.count(h.decorator.gutterDecoration) > 0, engaged, `${lang} as ${id}: gutter stripe`);
+    }
+  }
 });
 
 // ── the decoration pool's band split ──────────────────────────────────────────

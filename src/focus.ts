@@ -1643,6 +1643,8 @@ const PROSE_LANGUAGES = new Set([
  * meaningless blocks and light up quoted keys as it was navigated.
  *
  * CSS/SCSS/LESS are included: a selector or property name is not a data identity.
+ * Templates (`erb`, `helm`, `gotmpl`) are too: their tags have no lexer family yet
+ * (docs/ruby.md#erb-templates, docs/containers.md#go-template-variables).
  * Each id must be one VS Code or the format's own extension registers, so a made-up
  * id cannot silently disable the layer for a real code file.
  * `test/fixtures/static-languages.json` names the extension (null: none installed).
@@ -1654,7 +1656,7 @@ const STATIC_CONTENT_LANGUAGES = new Set([
   'xml', 'xsl', 'html', 'xhtml', 'vue-html', 'svg',
   'css', 'scss', 'less', 'sass', 'stylus',
   'graphql', 'proto', 'csv', 'tsv', 'csv (pipe)', 'csv (semicolon)', 'csv (whitespace)', 'dynamic csv',
-  'dockerfile', 'makefile', 'erb',
+  'dockerfile', 'makefile', 'erb', 'helm', 'gotmpl',
 ]);
 
 export const staticContentLanguages = (): string[] => [...STATIC_CONTENT_LANGUAGES];

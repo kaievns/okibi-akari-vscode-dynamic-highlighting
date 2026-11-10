@@ -584,8 +584,8 @@ final state. A difference is a leftover. The harness is
 
 The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
-`walk.lua`, `walk.rb`, `walk.js`, `walk.zig` and the markdown-derived files have
-walks of their own, below),
+`walk.lua`, `walk.rb`, `walk.js`, `walk.zig`, the markdown-derived files and the
+Docker and Kubernetes files have walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
 walks (88 of the default 300) a data file goes in as the second document, and in
@@ -757,6 +757,23 @@ seed (`vscode.executeDocumentSymbolProvider` asked about it). Taking
 `juliamarkdown` out fails it at seed 4. Keeping the four prose but taking their
 marks off fails the mark counts. The test takes 1.2 to 1.5 s.
 
+**The container walks** are one more test, 100 walks (`OKIBI_CONTAINER_WALKS`).
+Each opens `walk.ts`, `walk.py`, `walk.rs` or `walk.go`, then one of
+`walk.Dockerfile`, `walk.docker-bake.hcl`, `walk.helm.yaml` and `walk.k8s.yaml`,
+picked by seed, under `dockerfile`, `dockerbake`, `helm` and `yaml`, and in 4 of
+10 a second one; the main walk's events replay with the same seed. The container
+files get no server, the code file a mode drawn from `ok`, `degraded`, `none` and
+`empty`. Each holds `self`, `this`, `async`, numbers and nested blocks;
+`walk.helm.yaml` holds Go template actions with `$` variables and `range`, `with`
+and `if` blocks. They are walks of their own so the main walks' data files, and the
+seeds cited for them, stay as they were. In the default run the four are the
+active editor at 301 (`walk.k8s.yaml`) to 367 (`walk.helm.yaml`) of the 4,000
+steps, and one is visible beside a code editor painted with a stripe or tints at
+541; the test fails if any count is 0. Taking `helm` out of
+`STATIC_CONTENT_LANGUAGES` fails it at seed 2 as the file opens (`self` paints on
+`.Values.self`), `dockerfile` at seed 1 shrunk to 1 event and `dockerbake` at
+seed 1 shrunk to 2. The test takes 1.4 to 1.7 s.
+
 ### The oracle
 
 Once the files are open, and after every step, the harness records what each
@@ -868,7 +885,8 @@ Each is a named test in `test/transitions.test.js` that fails without its fix.
 - The Lua walks' server is the same synthetic one, so lua-language-server's
   shapes (`class` modules, `variable` namespace globals) are covered by
   `test/lua.test.js` on a capture, not here.
-- Eleven data files are walked. The other ids of `STATIC_CONTENT_LANGUAGES`
+- Eleven data files are walked in the main walks and four Docker and Kubernetes
+  files in walks of their own. The other ids of `STATIC_CONTENT_LANGUAGES`
   (`json5`, `jsonl`, `java-properties`, `go.mod` and the rest) take the same
   `isNonFlowLanguage` path; `test/render.test.js` holds the config ones to no
   paint and no server request, but they are not walked.

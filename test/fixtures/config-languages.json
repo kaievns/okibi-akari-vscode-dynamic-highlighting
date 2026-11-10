@@ -1,5 +1,5 @@
 {
- "measured": "2026-11-07, VS Code 1.144.1 with every installed extension: the language id the editor gave each file it opened. ~/ and projects/ are copies of real config files, with directory names replaced; synthetic/ files are written for the names VS Code matches.",
+ "measured": "2026-11-07, VS Code 1.144.1 with every installed extension: the language id the editor gave each file it opened. ~/ and projects/ are copies of real config files, with directory names replaced; synthetic/ files are written for the names VS Code matches. synthetic/chart/, synthetic/k8s/, the Dockerfile variants and docker-bake.json: 2026-11-10, in the theme e2e harness with its Kubernetes, helm-ls, redhat.vscode-yaml, Docker DX and Container Tools clients.",
  "assigned": {
   "~/.config/app1/profile.json": "json",
   "~/.config/app2/config": "plaintext",
@@ -83,6 +83,20 @@
   "synthetic/go.sum": "go.sum",
   "synthetic/go.work": "go.work",
   "synthetic/zmk/board.overlay": "dts",
-  "synthetic/zmk/corne.keymap": "dts"
+  "synthetic/zmk/corne.keymap": "dts",
+  "synthetic/Containerfile": "dockerfile",
+  "synthetic/build.dockerfile": "dockerfile",
+  "synthetic/Dockerfile.dev": "dockerfile",
+  "synthetic/docker-bake.json": "json",
+  "synthetic/chart/templates/deployment.yaml": "helm",
+  "synthetic/chart/templates/_helpers.tpl": "helm",
+  "synthetic/chart/templates/sub/configmap.yml": "helm",
+  "synthetic/chart/templates/NOTES.txt": "plaintext",
+  "synthetic/chart/Chart.yaml": "yaml",
+  "synthetic/chart/values.yaml": "yaml",
+  "synthetic/chart/.helmignore": "ignore",
+  "synthetic/k8s/manifests.yaml": "yaml",
+  "synthetic/k8s/kustomization.yaml": "yaml",
+  "synthetic/k8s/skaffold.yaml": "yaml"
  }
 }
