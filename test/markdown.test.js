@@ -299,6 +299,25 @@ test('markdown still gets its two BAND-1 marks', () => {
   assert.ok(md.linkSpans(text).length > 0, 'the underline cancellation survives');
 });
 
+test('every markdown-derived id VS Code registers is prose, and the ones it serves as markdown take the marks', () => {
+  const focus = require('../out/focus');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { served, languages } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/markdown-languages.json'), 'utf8'));
+  assert.deepEqual(focus.markdownLanguages().sort(), [...served].sort());
+  for (const [id, { extension, grammar, files }] of Object.entries(languages)) {
+    assert.ok(extension, `${id} names the extension that registers it`);
+    const opens = files.length > 0;
+    assert.equal(focus.isProseLanguage(id), opens, `${id} (${extension}) is prose exactly when a file opens as it`);
+    assert.equal(focus.isNonFlowLanguage(id), opens, `${id}: non-flow`);
+    assert.equal(focus.scanBlocks('f(a) {\n  return a;\n}\n', id).length, opens ? 0 : 1, `${id}: blocks`);
+    assert.equal(focus.isMarkdownLanguage(id), served.includes(id), `${id}: the markdown marks`);
+    if (served.includes(id)) assert.match(grammar, /^text\.html\.markdown(\.|$)/, `${id}: the theme's markdown injections reach its grammar`);
+  }
+  for (const id of served) assert.ok(id in languages, `${id} is registered`);
+  assert.equal(focus.isMarkdownLanguage('quarto'), false, 'control: prose that VS Code does not serve as markdown');
+});
+
 test('code languages still resolve blocks normally', () => {
   const focus = require('../out/focus');
   const fs = require('node:fs');

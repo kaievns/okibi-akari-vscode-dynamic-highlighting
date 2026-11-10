@@ -1,0 +1,51 @@
+{
+  "measured": "2026-11-10, VS Code 1.144.1: contributes.languages and grammars of every built-in and installed extension, each id whose grammar is markdown's or whose name says markdown. `served`: markdown-language-features' own list of the ids it serves as markdown (dist/extension.js). `extension`: every extension that registers the id. `files`: the extensions, filenames and filenamePatterns their manifests give the id; none means no document opens as it.",
+  "served": ["markdown", "prompt", "instructions", "chatagent", "skill"],
+  "languages": {
+    "markdown": {
+      "extension": "vscode.markdown; GitHub.copilot-chat 0.72.0, built-in as copilot, for .copilotmd",
+      "grammar": "text.html.markdown",
+      "files": [".md", ".mkd", ".mkdn", ".mdwn", ".mdown", ".markdown", ".markdn", ".mdtxt", ".mdtext", ".litcoffee", ".ron", ".ronn", ".workbook", "**/.cursor/**/*.mdc", ".copilotmd"]
+    },
+    "prompt": {
+      "extension": "vscode.prompt",
+      "grammar": "text.html.markdown.prompt",
+      "files": [".prompt.md"]
+    },
+    "instructions": {
+      "extension": "vscode.prompt",
+      "grammar": "text.html.markdown.prompt",
+      "files": [".instructions.md", "copilot-instructions.md", "**/.claude/rules/**/*.md"]
+    },
+    "chatagent": {
+      "extension": "vscode.prompt",
+      "grammar": "text.html.markdown.prompt",
+      "files": [".agent.md", ".chatmode.md", "**/.github/agents/*.md", "**/.claude/agents/*.md"]
+    },
+    "skill": {
+      "extension": "vscode.prompt",
+      "grammar": "text.html.markdown.prompt",
+      "files": ["SKILL.md"]
+    },
+    "juliamarkdown": {
+      "extension": "vscode.julia",
+      "grammar": null,
+      "files": [".jmd"]
+    },
+    "mdx": {
+      "extension": "unifiedjs.vscode-mdx 1.8.18; xyc.vscode-mdx-preview 0.3.3, for mdx",
+      "grammar": "source.mdx",
+      "files": [".mdx", "mdx"]
+    },
+    "markdown-math": {
+      "extension": "vscode.markdown-math",
+      "grammar": "text.html.markdown.math",
+      "files": []
+    },
+    "markdown_latex_combined": {
+      "extension": "vscode.latex",
+      "grammar": "text.tex.markdown_latex_combined",
+      "files": []
+    }
+  }
+}

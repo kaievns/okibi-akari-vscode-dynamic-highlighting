@@ -147,6 +147,29 @@ test(`${ZIG_WALKS} random walks over walk.zig and walk.zon leave no leftovers`, 
 test(`${ZIG_WALKS} walks that unclose and reclose a Zig string, a \\\\ line or a block leave no leftovers`, () =>
   walks(h.generateZigReclose, ZIG_WALKS, RECLOSE_STEPS, SEED0, 1 / 4));
 
+const PROSE_WALKS = Number(process.env.OKIBI_PROSE_WALKS ?? 100);
+
+test(`${PROSE_WALKS} random walks over the markdown-derived files leave no leftovers`, async (t) => {
+  // Steps on which each id was the active editor, and on which its editor showed a markdown mark.
+  const active = Object.fromEntries(h.PROSE_KEYS.map((k) => [h.FIXTURES[k].lang, 0]));
+  const marked = Object.fromEntries(h.PROSE_KEYS.filter((k) => h.FIXTURES[k].marks).map((k) => [h.FIXTURES[k].lang, 0]));
+  let beside = 0;
+  await walks(h.generateProse, PROSE_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    const lang = w.activeEditor()?.document.languageId;
+    if (lang in active) active[lang]++;
+    const shown = w.visible().map((ed, j) => [ed.document.languageId, Object.keys(r.got.editors[j].out).map((k) => k.split(' ')[0])]);
+    for (const [l, roles] of shown) if (l in marked && roles.some((x) => x.startsWith('md'))) marked[l]++;
+    if (shown.some(([l]) => l in active) && shown.some(([, roles]) => roles.some((x) => x === 'gutter' || /^id/.test(x)))) beside++;
+  });
+  const seen = `active: ${Object.entries(active).map(([l, n]) => `${l} ${n}`).join(', ')}; ` +
+    `marked: ${Object.entries(marked).map(([l, n]) => `${l} ${n}`).join(', ')}; beside a painted code editor at ${beside} steps`;
+  if (DEFAULT_RUN && PROSE_WALKS === 100) {
+    for (const [l, n] of [...Object.entries(active), ...Object.entries(marked)]) assert.ok(n > 0, `${l}: ${seen}`);
+    assert.ok(beside > 0, seen);
+  }
+  t.diagnostic(seen);
+});
+
 // ── Leftovers the walks found, as their shrunk sequences ──────────────────────
 
 const LUA_FORMAT = h.FIXTURES.lua.text.split('\n').findIndex((l) => /string\.format/.test(l));
@@ -270,10 +293,13 @@ for (const [name, cfg, events] of REGRESSIONS) {
   });
 }
 
-// ZON opens under `zig`, whose server answers it.
-for (const key of [...h.DATA_KEYS, 'zon']) test(`switching between a code file in Edit and a ${key} file leaves nothing on the ${key} file`, async () => {
+// ZON opens under `zig`, whose server answers it, and VS Code answers the chat customisation ids.
+const MD_MARKS = ['mdHighlight', 'mdLinkPlain'];
+for (const key of [...h.DATA_KEYS, 'zon', ...h.PROSE_KEYS]) test(`switching between a code file in Edit and a ${key} file leaves ${h.FIXTURES[key].marks ? 'only the markdown marks' : 'nothing'} on the ${key} file`, async () => {
   const lang = h.FIXTURES[key].lang;
-  const cfg = { docs: ['ts', key], split: true, provider: { typescript: { mode: 'ok', latency: 0 }, [lang]: { mode: key === 'zon' ? 'ok' : 'none', latency: 0 } } };
+  const shows = h.FIXTURES[key].marks ? MD_MARKS : [];
+  const answered = key === 'zon' || shows.length > 0;
+  const cfg = { docs: ['ts', key], split: true, provider: { typescript: { mode: 'ok', latency: 0 }, [lang]: { mode: answered ? 'ok' : 'none', latency: 0 } } };
   const events = [
     { t: 'caret', line: 12, character: 12, kind: 2, dt: 200 },
     { t: 'type', text: 'x', dt: 30 },
@@ -299,9 +325,11 @@ for (const key of [...h.DATA_KEYS, 'zon']) test(`switching between a code file i
   const tinted = (roles) => roles.includes('gutter') && roles.some((x) => /^id/.test(x));
   assert.ok(seen[0].phase === Phase.Focus && tinted(seen[0].ts), `control: the TS file paints a stripe and tints, ${JSON.stringify(seen[0])}`);
   assert.equal(seen[1].phase, Phase.Edit, 'control: typing reaches Edit before the switch');
+  // The paste can open a fence, which takes the marks below it off.
   for (const i of [2, 3, 4, 6]) {
-    assert.deepEqual([seen[i].active, seen[i].phase, seen[i].data], [lang, Phase.Survey, []], `step ${i}: ${events[i].t}`);
+    assert.deepEqual([seen[i].active, seen[i].phase, seen[i].data.filter((x) => !shows.includes(x))], [lang, Phase.Survey, []], `step ${i}: ${events[i].t}`);
   }
+  assert.deepEqual([...new Set(seen[2].data)].sort(), shows, `the ${key} file's marks on the switch`);
   assert.ok(tinted(seen[7].ts), `closing the ${key} tab paints the TS file again, ${JSON.stringify(seen[7])}`);
 });
 

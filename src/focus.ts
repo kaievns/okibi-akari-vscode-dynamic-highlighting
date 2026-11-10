@@ -1599,13 +1599,23 @@ export function scanRubyBlocks(text: string): BraceBlock[] {
 }
 
 /**
+ * The ids markdown-language-features serves as markdown, so its links carry the
+ * underline the cancellation removes. vscode.prompt gives the four chat
+ * customisation ids a grammar that is markdown's alone
+ * (test/fixtures/markdown-languages.json).
+ */
+const MARKDOWN_LANGUAGES = new Set(['markdown', 'prompt', 'instructions', 'chatagent', 'skill']);
+
+export const markdownLanguages = (): string[] => [...MARKDOWN_LANGUAGES];
+
+/**
  * Languages that are PROSE, not data flow: they have no scopes to focus, so bands
  * 2–3 must never paint in them and the phase stays Survey while the caret moves.
  *
  * This is not an optimisation, it is the register. `samples/sample.md` states the
  * contract in its own text — "there are no identity tints here and the phase stays
  * Survey 構 while the caret moves through text. That is deliberate: prose is not
- * data flow." Markdown gets exactly two marks from this extension (the
+ * data flow." The MARKDOWN_LANGUAGES get exactly two marks from this extension (the
  * `==highlight==` wash and the link-underline cancellation) and both are band 1.
  *
  * The bug this closes: a markdown file DOES contain braces — every fenced Go, TS or
@@ -1615,8 +1625,8 @@ export function scanRubyBlocks(text: string): BraceBlock[] {
  * cheerfully tinted English articles as data identities.
  */
 const PROSE_LANGUAGES = new Set([
-  'markdown', 'plaintext', 'restructuredtext', 'asciidoc', 'latex', 'tex', 'bibtex',
-  'quarto', 'rmarkdown', 'mdx', 'git-commit', 'log',
+  ...MARKDOWN_LANGUAGES, 'plaintext', 'restructuredtext', 'asciidoc', 'latex', 'tex', 'bibtex',
+  'quarto', 'rmarkdown', 'mdx', 'juliamarkdown', 'git-commit', 'log',
 ]);
 
 /**
@@ -1684,6 +1694,11 @@ export function effectiveLanguageId(languageId: string, fileName: string): strin
 /** True when a document is prose, so bands 2–3 must not paint in it. */
 export function isProseLanguage(languageId?: string): boolean {
   return languageId !== undefined && PROSE_LANGUAGES.has(languageId);
+}
+
+/** True when a document takes the two markdown marks. */
+export function isMarkdownLanguage(languageId?: string): boolean {
+  return languageId !== undefined && MARKDOWN_LANGUAGES.has(languageId);
 }
 
 /**

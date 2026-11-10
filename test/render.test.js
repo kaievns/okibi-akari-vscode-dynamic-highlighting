@@ -903,3 +903,82 @@ test('markdown marks paint on a .md editor and come off when a .ts editor takes 
   assert.equal(after.count(h.decorator.pool.mdHighlight) + after.count(h.decorator.pool.mdLinkPlain), 0);
   h.decorator.dispose();
 });
+
+// Markdown-derived files by the id VS Code gives them (test/fixtures/markdown-languages.json).
+// Each fence holds nested braces, `self` or `this` and numbers, which paint in code.
+const MARKDOWN_DERIVED = {
+  prompt: walkText('walk.prompt.md'),
+  instructions: walkText('walk.instructions.md'),
+  chatagent: walkText('walk.agent.md'),
+  skill: walkText('walk.skill.md'),
+  juliamarkdown: walkText('walk.jmd'),
+};
+
+/** The most deeply indented line of the first fence, and the first word of the first `==` mark. */
+function markdownCarets(text) {
+  const lines = text.split('\n');
+  const open = lines.findIndex((l) => l.startsWith('```'));
+  let fence = null;
+  for (let i = open + 1; !lines[i].startsWith('```'); i++) {
+    const ind = lines[i].replace(/\t/g, '    ').search(/\S/);
+    if (ind > (fence?.ind ?? -1)) fence = { line: i, character: lines[i].search(/\S/), ind };
+  }
+  const at = text.indexOf('==') + 2;
+  const line = text.slice(0, at).split('\n').length - 1;
+  return [fence, { line, character: at - text.lastIndexOf('\n', at - 1) - 1 }];
+}
+
+test('a markdown-derived file paints at most the markdown marks, in any phase and through typing, and asks no server', async () => {
+  const { highlightSpans, linkSpans } = require('../out/markdown');
+  const { isMarkdownLanguage } = require('../out/focus');
+  const isMark = (d, t) => t === d.pool.mdHighlight || t === d.pool.mdLinkPlain;
+  const unmarked = (d) => [...d.pool.all(), d.gutterDecoration].filter((t) => !isMark(d, t));
+  const spans = (lang, fn, text) => (isMarkdownLanguage(lang) ? fn(text).map((s) => text.slice(s.start, s.end)) : []);
+  for (const [lang, text] of Object.entries(MARKDOWN_DERIVED)) {
+    const want = (fn) => spans(lang, fn, text);
+    if (lang !== 'juliamarkdown') assert.ok(want(highlightSpans).length > 0 && want(linkSpans).length > 0, `${lang}: positive control`);
+    for (const { line, character } of markdownCarets(text)) {
+      const where = `${lang} at ${line}:${character}`;
+      stub.clearLspResponses();
+      const h = await harness(text, lang, line, character);
+      for (const phase of PHASES) {
+        const snap = h.paint(phase);
+        assert.equal(unmarked(h.decorator).reduce((n, t) => n + snap.count(t), 0), 0, `${where} paints nothing but the marks in ${phase}`);
+        assert.deepEqual(snap.ranges(h.decorator.pool.mdHighlight).map(sliceOf(h.doc)), want(highlightSpans), `${where}: the wash in ${phase}`);
+        assert.deepEqual(snap.ranges(h.decorator.pool.mdLinkPlain).map(sliceOf(h.doc)), want(linkSpans), `${where}: the link cancellation in ${phase}`);
+      }
+      h.decorator.dispose();
+      // Real input: a click there, then typing `self `.
+      const doc = new stub.TextDocument(text, lang, `file:///render-${docSeq++}.md`);
+      const ed = new stub.TextEditor(doc, line, character);
+      const live = new Map();
+      ed.setDecorations = (type, ranges) => live.set(type, ranges);
+      vs.window.activeTextEditor = ed;
+      vs.window.visibleTextEditors = [ed];
+      const d = new Decorator();
+      d.onSelection({ textEditor: ed, selections: ed.selections, kind: 2 });
+      assert.equal(d.machine.current, Phase.Survey, `${where}: a click focuses nothing`);
+      const at = doc.offsetAt(ed.selection.active);
+      d.onEdit(doc.applyEdit(at, at, 'self '));
+      ed.selection = new stub.Selection(line, character + 5, line, character + 5);
+      d.onSelection({ textEditor: ed, selections: ed.selections, kind: 1 });
+      await d.runClassify(doc);
+      d.render();
+      assert.equal(d.machine.current, Phase.Survey, `${where}: typing ends in Survey`);
+      assert.equal(unmarked(d).reduce((n, t) => n + (live.get(t) ?? []).length, 0), 0, `${where}: nothing but the marks after typing`);
+      const shown = (t) => (live.get(t) ?? []).map(sliceOf(doc));
+      assert.deepEqual(shown(d.pool.mdHighlight), spans(lang, highlightSpans, doc.getText()), `${where}: the wash after typing`);
+      assert.deepEqual(shown(d.pool.mdLinkPlain), spans(lang, linkSpans, doc.getText()), `${where}: the link cancellation after typing`);
+      assert.deepEqual(stub.lspCalls.map(([cmd]) => cmd), [], `${where} asks the language server nothing`);
+      d.dispose();
+    }
+  }
+  // The same prompt file under an unlisted id: the default lexer, a whole-file scope, every band.
+  const text = MARKDOWN_DERIVED.prompt;
+  const [fence] = markdownCarets(text);
+  const control = await harness(text, 'unlisted', fence.line, fence.character);
+  const focus = control.paint(Phase.Focus);
+  assert.ok(focus.count(control.decorator.gutterDecoration) > 0, 'control: gutter stripe');
+  assert.ok(tints(control, focus) > 0, 'control: identity tints');
+  assert.equal(focus.count(control.decorator.pool.mdHighlight), 0, 'control: no wash outside the markdown ids');
+});

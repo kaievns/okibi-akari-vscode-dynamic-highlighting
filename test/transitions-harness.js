@@ -242,15 +242,37 @@ function diffSnapshots(got, want, editors) {
   return null;
 }
 
-/** A data file's editor shows nothing in any state, whatever the fresh Decorator paints. ZON opens under `zig`. */
-function dataFilePaint(snap, editors) {
+const MD_MARKS = new Set(['mdHighlight', 'mdLinkPlain']);
+const NO_MARKS = new Set();
+const isDataDoc = (doc) => DATA_LANGS.has(doc.languageId) || doc.fileName.endsWith('.zon');
+
+/**
+ * A data file's editor shows nothing in any state, whatever the fresh Decorator
+ * paints, and a prose file's only the markdown marks, if its id takes them. ZON
+ * opens under `zig`.
+ */
+function nonFlowPaint(snap, editors) {
   for (let i = 0; i < editors.length; i++) {
     const doc = editors[i].document;
-    if (!DATA_LANGS.has(doc.languageId) && !doc.fileName.endsWith('.zon')) continue;
-    const roles = Object.keys(snap.editors[i].out).map((k) => k.split(' ')[0]);
-    if (roles.length) return `editor ${i} (${doc.uri.toString().split('/').pop()} v${doc.version}) is a data file and shows ${roles.join(', ')}`;
+    const kind = isDataDoc(doc) ? 'data' : PROSE_LANGS.has(doc.languageId) ? 'prose' : null;
+    if (!kind) continue;
+    const allowed = MARKED_LANGS.has(doc.languageId) ? MD_MARKS : NO_MARKS;
+    const roles = Object.keys(snap.editors[i].out).map((k) => k.split(' ')[0]).filter((r) => !allowed.has(r));
+    if (roles.length) return `editor ${i} (${doc.uri.toString().split('/').pop()} v${doc.version}) is a ${kind} file and shows ${roles.join(', ')}`;
   }
   return null;
+}
+
+/** A request for a data or prose document, which the layer never asks a server about. ZON's go to zls. */
+function nonFlowAsked(docs) {
+  const kinds = new Map();
+  for (const d of docs) {
+    if (d.fileName.endsWith('.zon')) continue;
+    if (isDataDoc(d)) kinds.set(d.uri.toString(), 'data');
+    else if (PROSE_LANGS.has(d.languageId)) kinds.set(d.uri.toString(), 'prose');
+  }
+  const hit = stub.lspCalls.find(([, uri]) => uri && kinds.has(uri.toString()));
+  return hit ? `${hit[0]} asked about ${hit[1].toString().split('/').pop()}, a ${kinds.get(hit[1].toString())} file` : null;
 }
 
 // ── The language server ───────────────────────────────────────────────────────
@@ -421,7 +443,7 @@ const FIXTURES = {
   py: { lang: 'python', file: 'walk.py' },
   rs: { lang: 'rust', file: 'walk.rs' },
   go: { lang: 'go', file: 'walk.go' },
-  md: { lang: 'markdown', file: 'walk.md' },
+  md: { lang: 'markdown', file: 'walk.md', prose: true, marks: true },
   kdl: { lang: 'kdl', file: 'walk.kdl', data: true },
   yaml: { lang: 'yaml', file: 'walk.yaml', data: true },
   workflow: { lang: 'github-actions-workflow', file: 'walk.workflow.yml', data: true },
@@ -438,10 +460,18 @@ const FIXTURES = {
   rb: { lang: 'ruby', file: 'walk.rb' },
   zig: { lang: 'zig', file: 'walk.zig' },
   zon: { lang: 'zig', file: 'walk.zon' },
+  prompt: { lang: 'prompt', file: 'walk.prompt.md', prose: true, marks: true },
+  instructions: { lang: 'instructions', file: 'walk.instructions.md', prose: true, marks: true },
+  chatagent: { lang: 'chatagent', file: 'walk.agent.md', prose: true, marks: true },
+  skill: { lang: 'skill', file: 'walk.skill.md', prose: true, marks: true },
+  jmd: { lang: 'juliamarkdown', file: 'walk.jmd', prose: true },
 };
 for (const f of Object.values(FIXTURES)) f.text = fs.readFileSync(path.join(FIX, f.file), 'utf8');
 const DATA_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].data);
 const DATA_LANGS = new Set(DATA_KEYS.map((k) => FIXTURES[k].lang));
+const PROSE_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].prose && k !== 'md');
+const PROSE_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.prose).map((f) => f.lang));
+const MARKED_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.marks).map((f) => f.lang));
 
 // ── The world ─────────────────────────────────────────────────────────────────
 
@@ -743,8 +773,9 @@ class World {
     const q = this.quiet();
     const visible = this.visible();
     const got = snapshot(this.d, visible);
-    const data = dataFilePaint(got, visible);
+    const nonFlow = nonFlowPaint(got, visible);
     const want = await this.oracle();
+    const asked = nonFlowAsked(this.docs);
     if (!q.band2) {
       mask(got, BAND2_ROLE);
       mask(want, BAND2_ROLE);
@@ -753,7 +784,7 @@ class World {
       mask(got, IMPORT_ROLE);
       mask(want, IMPORT_ROLE);
     }
-    return { diff: data ?? diffSnapshots(got, want, visible), quiet: q.band2 && q.imports, got };
+    return { diff: nonFlow ?? asked ?? diffSnapshots(got, want, visible), quiet: q.band2 && q.imports, got };
   }
 
   dispose() {
@@ -1031,7 +1062,7 @@ const EVENTS = {
     w.fireEditors();
   },
   async provider(w, ev) {
-    const langs = [...new Set(w.entries.map((e) => e.lang))].filter((l) => l !== 'markdown' && !DATA_LANGS.has(l));
+    const langs = [...new Set(w.entries.map((e) => e.lang))].filter((l) => !PROSE_LANGS.has(l) && !DATA_LANGS.has(l));
     const lang = ev.lang ?? pickOf(langs, ev.a);
     if (!lang) return;
     w.provider[lang] = {
@@ -1229,6 +1260,26 @@ function generateZig(seed, steps) {
   return { cfg: { docs, split: rnd() < 0.35, provider }, events };
 }
 
+/**
+ * A walk with a markdown-derived file first, then a code file, and in half of them
+ * another prose file: the events of `generate(seed)`. VS Code registers a semantic
+ * tokens provider for the four chat customisation ids, so they get a server.
+ */
+function generateProse(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x6d64);
+  const first = PROSE_KEYS[seed % PROSE_KEYS.length];
+  const docs = [first, pickOf(['ts', 'py', 'rs', 'go'], rnd())];
+  if (rnd() < 0.5) docs.push(pickOf(['md', ...PROSE_KEYS.filter((k) => k !== first)], rnd()));
+  const provider = {};
+  for (const key of docs) {
+    const lang = FIXTURES[key].lang;
+    if (FIXTURES[key].marks) provider[lang] = { mode: 'ok', latency: 0 };
+    else if (!FIXTURES[key].prose) provider[lang] = { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
 // The Zig reclose walk: walk.zig alone. Nothing in Zig spans lines, so the closers
 // are a string's `"`, a `\\` line's second backslash and a block's `}`.
 const ZIG_LINES = FIXTURES.zig.text.split('\n');
@@ -1421,5 +1472,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, PROSE_KEYS,
 };

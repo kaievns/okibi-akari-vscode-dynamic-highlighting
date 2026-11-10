@@ -1,0 +1,22 @@
+---
+title: Queue latency
+---
+
+# Queue latency
+
+This report measures ==p99 latency== for self-hosted workers; see https://example.com/bench.
+
+```julia
+function drain!(self::Dict{Symbol, Vector{Int}}, limit::Int = 8)
+    total = 0
+    for q in values(self)
+        for i in 1:limit
+            isempty(q) && break
+            total += popfirst!(q)
+        end
+    end
+    return total
+end
+```
+
+The mean is taken over 1_000 runs, and this is the [method](https://example.com/method).

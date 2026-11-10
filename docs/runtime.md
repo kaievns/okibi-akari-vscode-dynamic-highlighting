@@ -584,7 +584,8 @@ final state. A difference is a leftover. The harness is
 
 The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
-`walk.lua`, `walk.rb`, `walk.js` and `walk.zig` have walks of their own, below),
+`walk.lua`, `walk.rb`, `walk.js`, `walk.zig` and the markdown-derived files have
+walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
 walks (88 of the default 300) a data file goes in as the second document, and in
@@ -736,6 +737,26 @@ closing `"`, a `\\` line's second backslash or a block's `}` and typing it
 back; carets go to 8 identifiers in code and in the `\\` line. 600 walks of
 each from seed 1000 found nothing.
 
+**The prose walks** are one more test, 100 walks (`OKIBI_PROSE_WALKS`). Each
+opens a markdown-derived file first, picked by seed: `walk.prompt.md`,
+`walk.instructions.md`, `walk.agent.md`, `walk.skill.md` or `walk.jmd`, under
+`prompt`, `instructions`, `chatagent`, `skill` and `juliamarkdown`. Then
+`walk.ts`, `walk.py`, `walk.rs` or `walk.go`, and in half of them `walk.md` or
+another of the five. The main walk's events replay with the same seed. VS Code
+registers a semantic tokens provider for the four chat customisation ids, so they
+get a server that answers `ok` at once; the code file's mode is drawn from `ok`,
+`degraded`, `none` and `empty`. Each file holds frontmatter, a `==mark==`, links
+and a fence with nested braces, numbers and `self` or `this`. In the default run the
+five ids are the active editor at 381 (`prompt`) to 460 (`skill`) of the 4,000
+steps, the four chat ids show a mark at 381 to 551, and a prose file is visible
+beside a code editor painted with a stripe or tints at 253; the test fails if any
+count is 0. Taking the four chat ids out of `MARKDOWN_LANGUAGES`, and so out of
+`PROSE_LANGUAGES`, fails it at seed 1 as the files open, `self` painted on the
+`instructions` file. With the paint check off, the request check fails the same
+seed (`vscode.executeDocumentSymbolProvider` asked about it). Taking
+`juliamarkdown` out fails it at seed 4. Keeping the four prose but taking their
+marks off fails the mark counts. The test takes 1.2 to 1.5 s.
+
 ### The oracle
 
 Once the files are open, and after every step, the harness records what each
@@ -773,6 +794,12 @@ and between two data files 13 times. A run with other `OKIBI_WALKS`,
 `OKIBI_STEPS` or `OKIBI_SEED` values prints the counts and asserts no floor: 19 of
 the default run's 88 data walks never make a data file active (seed 7 is the
 first), so a rerun of a few seeds would fail one.
+
+In the same way a prose file's editor may show the two markdown marks and
+nothing else, and only under an id that takes them, `markdown` and the four chat
+customisation ids; a `walk.jmd` editor shows nothing. And no step may have asked
+a server anything about a data or prose document, whichever decorator asked; a
+`walk.zon` is exempt, since zls answers it.
 
 A failure is shrunk by delta debugging over the event list, then by zeroing the
 pauses, and printed as the seed, the world and the remaining events.
@@ -845,5 +872,8 @@ Each is a named test in `test/transitions.test.js` that fails without its fix.
   (`json5`, `jsonl`, `java-properties`, `go.mod` and the rest) take the same
   `isNonFlowLanguage` path; `test/render.test.js` holds the config ones to no
   paint and no server request, but they are not walked.
+- Six prose files are walked, `walk.md` and the five markdown-derived ones. The
+  other ids of `PROSE_LANGUAGES` (`plaintext`, `restructuredtext`, `quarto`, `mdx`
+  and the rest) take the same `isNonFlowLanguage` path and are not walked.
 - A dwell or `enabled` change resets the phase to Survey (`refresh()`), so the
   walks reach Edit again only through more typing.

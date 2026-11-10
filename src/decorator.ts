@@ -33,6 +33,7 @@ import {
   focusKeyOf,
   lexRegionFor,
   isNonFlowLanguage,
+  isMarkdownLanguage,
   effectiveLanguageId,
   band1LanguageId,
   isTopLevelBlock,
@@ -1447,11 +1448,11 @@ export class Decorator implements vscode.Disposable {
    *
    * Band 1, so no phase or engagement check — but still cached per document
    * version, because both scanners walk the whole document and this runs on every
-   * render (i.e. every caret move). Non-markdown documents clear and return, so a
-   * `.ts` file never carries a stale wash from a previously active `.md`.
+   * render (i.e. every caret move). Documents outside `isMarkdownLanguage` clear and
+   * return, so a `.ts` file never carries a stale wash from a previously active `.md`.
    */
   private renderMarkdownMarks(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
-    if (langOf(doc) !== 'markdown') {
+    if (!isMarkdownLanguage(langOf(doc))) {
       this.applyType(editor, this.pool.mdHighlight, []);
       this.applyType(editor, this.pool.mdLinkPlain, []);
       return;
