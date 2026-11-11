@@ -190,6 +190,9 @@ for the next relaxation, up to 24 s.
 | Band 1: the import restore (Python, Go, Zig), the shadow restore (Python) | every visible source editor, until a provider answers for the document |
 | Gutter, band 2, clay numbers, band 3 | the active editor only |
 
+In an HTML document every mark lands inside a script: the markup is blanked
+before any scanner reads it ([html.md](html.md#the-script-view)).
+
 An edit repaints band 1 in every visible editor showing the document, the active
 one or not: a rename, a formatter or a reload can change the text of a split
 that does not have focus.
@@ -584,8 +587,8 @@ final state. A difference is a leftover. The harness is
 
 The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
-`walk.lua`, `walk.rb`, `walk.js`, `walk.zig`, the markdown-derived files and the
-Docker and Kubernetes files have walks of their own, below),
+`walk.lua`, `walk.rb`, `walk.js`, `walk.html`, `walk.zig`, the markdown-derived
+files and the Docker and Kubernetes files have walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
 walks (88 of the default 300) a data file goes in as the second document, and in
@@ -715,6 +718,29 @@ the JSDoc brackets on 2,663; the test fails if any is never shown. 600 walks
 from seed 1000 found nothing. An import recompute pending in any document, a
 `walk.ts` edit's included, keeps every editor's import and shadow restores out
 of that step's comparison and its counts.
+
+**The HTML walks** are one more test, 120 walks (`OKIBI_HTML_WALKS`). It opens
+`walk.html`, alone or with `walk.js`, `walk.ts`, `walk.md`, `walk.xml`,
+`walk.hbs` or `walk.css`, the last under `css` or under Tailwind's
+`tailwindcss`, and replays the main walk's events with the same seed; a fifth of
+the typed keys are a script boundary or markup instead (`</script>`,
+`<script>`, half of either, `<`, `>`, `<!--`, `-->`, `` ` ``, `/*`,
+`<p onclick="x()">`). The HTML server answers in its shape: tsserver's on the
+scripts, a token on every name in a handler attribute, none on an `import * as`
+binding or its uses. `walk.html` holds a classic and a module script, a JSON
+script, a `<style>`, an `onclick` and the words `self`, `this` and `42` in
+markup. `walk.css`, `walk.xml` and the Handlebars page `walk.hbs` get no server
+and, like a data file, must show nothing and be asked nothing; they are walked here so the
+main walks' data files, and the seeds cited for them, stay as they were. At
+every step each `walk.html` editor must paint inside the scripts of its current
+text only, a stripe line holding script text. In the default run `walk.html`
+showed identity tints on 92 steps, clay on 224, the namespace restore on 2,061,
+escape marks on 7, `this` paint on 2,657, async marks on 64 and the stripe on
+293, and `walk.css` was the active editor at 111 steps as `css` and 314 as
+`tailwindcss`, `walk.xml` at 128 and `walk.hbs` at 149; the test fails if any is
+never shown. Taking `tailwindcss` out of `STATIC_CONTENT_LANGUAGES` fails it at
+seed 13 and `handlebars` at seed 2, each as the file opens (`self` paints), and
+leaving the markup in the top level fails the paint-inside check.
 
 **The Zig walks** are two more tests, 120 walks each (`OKIBI_ZIG_WALKS`). The
 first opens `walk.zig`, alone or with `walk.ts`, `walk.py` or `walk.md`, and in
@@ -885,8 +911,9 @@ Each is a named test in `test/transitions.test.js` that fails without its fix.
 - The Lua walks' server is the same synthetic one, so lua-language-server's
   shapes (`class` modules, `variable` namespace globals) are covered by
   `test/lua.test.js` on a capture, not here.
-- Eleven data files are walked in the main walks and four Docker and Kubernetes
-  files in walks of their own. The other ids of `STATIC_CONTENT_LANGUAGES`
+- Eleven data files are walked in the main walks, four Docker and Kubernetes
+  files in walks of their own, and `walk.css` (as `css` and `tailwindcss`),
+  `walk.xml` and `walk.hbs` beside `walk.html`. The other ids of `STATIC_CONTENT_LANGUAGES`
   (`json5`, `jsonl`, `java-properties`, `go.mod` and the rest) take the same
   `isNonFlowLanguage` path; `test/render.test.js` holds the config ones to no
   paint and no server request, but they are not walked.

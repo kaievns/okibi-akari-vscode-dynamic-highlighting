@@ -24,6 +24,7 @@
  */
 
 import * as vscode from 'vscode';
+import { flowText, regionAt, viewRegions } from './html';
 import {
   scanBlocks,
   innermostBlock,
@@ -118,7 +119,7 @@ interface Band1Inputs {
 }
 
 /** The `import * as` restore (docs/import-restore.md#javascript-and-typescript); the React ids wait for their JSX tag positions. */
-const NAMESPACE_RESTORE_LANGUAGES = new Set(['javascript', 'typescript']);
+const NAMESPACE_RESTORE_LANGUAGES = new Set(['javascript', 'typescript', 'html']);
 
 /** The document URIs a tab shows: a text tab's, or both sides of a diff. */
 function tabUris(tab: { input: unknown }): string[] {
@@ -459,7 +460,7 @@ export class Decorator implements vscode.Disposable {
     if (cached) {
       forgetLex(cached.text);
     }
-    const text = doc.getText();
+    const text = flowText(doc.getText(), langOf(doc));
     const from = this.relexFrom.get(doc);
     this.relexFrom.delete(doc);
     const lx = from && from.version === doc.version && from.lex.syntax === syntaxFor(langOf(doc))
@@ -535,6 +536,8 @@ export class Decorator implements vscode.Disposable {
     // paint. See `isProseLanguage`.
     const fallback = isNonFlowLanguage(lang) ? undefined : text;
     const offset = doc.offsetAt(caret);
+    // In HTML only a script is code: a caret in the markup has no scope.
+    if (lang === 'html' && !regionAt(viewRegions(text), offset)) return null;
     if (state.lex.syntax.family !== 'js') {
       return innermostBlock(blocks, caret.line, offset, fallback);
     }
@@ -734,7 +737,8 @@ export class Decorator implements vscode.Disposable {
     // did not type (format on save, rename, an auto-import) still reclassifies but
     // neither engages nor enters Edit. A static content or prose file has no scope to
     // edit in, and an undo there may report no caret change to drop it back to Survey.
-    if (!isNonFlowLanguage(langOf(e.document)) && this.isTypingEdit(editor, e, now)) {
+    if (!isNonFlowLanguage(langOf(e.document)) && this.isTypingEdit(editor, e, now)
+      && (langOf(e.document) !== 'html' || this.focusedBlock(editor) !== null)) {
       this.engaged.add(e.document.uri.toString());
       this.machine.onType(now);
     }

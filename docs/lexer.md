@@ -44,6 +44,7 @@ from that layout.
 |---|---|---|---|---|
 | `typescript`, `typescript-declaration` | `//`, `/* */`, `#!` at offset 0 | `'` `"` single-line; `` ` `` multi-line with nested `${}` | string | regex literals in expression position; `#name` is an identifier |
 | `javascript`, `javascriptreact`, `typescriptreact` | same | same | string | same, plus JSX: text children and attribute strings are `string`, `{…}` is code |
+| `html` | each script as `javascript` | same | string | lexes the script view: the markup is blanked, a form feed marks each script's start and end, and each script is lexed on its own and shifted to the document ([html.md](html.md#the-script-view)) |
 | `go` | `//`, `/* */` | `"` single-line; `` ` `` raw, multi-line, no escapes | rune | — |
 | `python` | `#` | prefixes `[rRbBuUfFtT]{1,2}`; `'` `"` single-line; `'''` `"""` multi-line; `f`/`t` holes with `!conv` and `:spec` (nested fields), `{{` literal, `\N{…}` named escape | string | a triple-quoted, non-f string in statement position is `doc`; `\` + newline in code continues the line |
 | `rust` | `//`, `///`, `//!`, nested `/* */` | `"` `b"` `c"` multi-line with escapes; `r#*"…"#*`, `br`, `cr` raw | char or lifetime | `'x'`, `'\''`, `'\u{…}'`, `'\x41'`, `b'x'` are chars; `'a`, `'static`, `'outer` are lifetimes (code, not identifiers); `r#ident` is one identifier |
@@ -97,7 +98,10 @@ classifier's file-wide occurrence and declaration maps per `LexResult`, the
 semantic `FileIndex` (which carries `lex`) per LSP bundle, block headers per
 `LexResult` and block, and the top-level excludes and the open-sorted block list
 per block list. `bundleFor` takes the cached blocks instead of rescanning, and
-token decoding reuses the lex's `lineStarts`.
+token decoding reuses the lex's `lineStarts`. An HTML script view's lex keeps
+each script's own lex beside it (`scriptLexes`); the block scan hands each one to
+the memo (`rememberLex`) for that script's scan and drops it after, so a page
+lexes each script once per version.
 
 Region queries are binary searches, so their cost is the region's size, not its
 offset. Before the shared lexer every region lex rescanned from offset 0, and

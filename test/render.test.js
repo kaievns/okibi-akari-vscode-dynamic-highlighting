@@ -354,6 +354,14 @@ const CONFIG_TEXTS = {
   'cmake-cache': '# This is the CMakeCache file.\n//Path to self\nCMAKE_BUILD_TYPE:STRING=Release\nBUILD_ASYNC:BOOL=ON\nRETRIES:STRING=3\n',
   dts: '/ {\n    keymap {\n        compatible = "zmk,keymap";\n        default_layer {\n            bindings = <&kp TAB &kp Q &mo 1 &kp ESC>;\n            self = <0x3c 32>;\n        };\n    };\n};\n',
   'csv (pipe)': 'name|self|this\na|1|2\nb|3|async\n',
+  css: walkText('walk.css'),
+  tailwindcss: walkText('walk.css'),
+  handlebars: walkText('walk.hbs'),
+  xml: walkText('walk.xml'),
+  xsl: '<?xml version="1.0"?>\n<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">\n  <xsl:template match="/">\n    <xsl:if test="self &gt; 42"><p>{this}</p></xsl:if>\n  </xsl:template>\n</xsl:stylesheet>\n',
+  'html-template': '<% const self = this; %>\n<script>\n  function f(async) { const n = 42; return { self: async + n }; }\n</script>\n<p><%= self %></p>\n',
+  dtd: '<!ELEMENT note (to, from, body)>\n<!ATTLIST note self CDATA #IMPLIED>\n<!ENTITY async "this">\n<!-- 42 notes { self } -->\n',
+  rnc: 'default namespace = "http://example.com/note"\nstart = element note {\n  attribute self { text },\n  element body { xsd:integer { minInclusive = "42" } }\n}\n',
 };
 
 /** The caret on the most deeply indented word: the most nested block. */

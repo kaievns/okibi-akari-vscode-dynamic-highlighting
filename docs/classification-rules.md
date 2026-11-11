@@ -702,7 +702,8 @@ The fix: engagement requires an **attributed input kind**. `decorator.ts` keeps 
   content or prose file, which has no scope: a typed character there used to enter Edit
   and drop back to Survey on the caret event after it, but an undo that restores the
   caret where it was reports none, and the theme repo's real-editor `dockerbake` cell
-  showed 異 for 10 s after Cmd+Shift+K and an undo (2026-11-10).
+  showed 異 for 10 s after Cmd+Shift+K and an undo (2026-11-10). An edit in an HTML
+  document's markup, outside every script, is the same ([html.md](html.md#blocks-and-focus)).
 
 `kind` is absent precisely when VS Code cannot attribute the change to input, which
 is exactly the restored-caret case.
@@ -717,6 +718,8 @@ is exactly the restored-caret case.
 | go-to-definition, find | `Command` | yes | Focus |
 | typing | — | yes | Edit |
 | typing or an undo in a static content or prose file (`isNonFlowLanguage`) | — | no | **Survey** |
+| a click or arrow key in an HTML document's markup, outside every script | `Mouse`, `Keyboard` | yes | **Survey**: no scope |
+| typing or an undo in an HTML document's markup | — | no | **Survey** |
 | format on save, rename, auto-import | — | unchanged | unchanged |
 | return to a tab you had worked in | `undefined` | yes (already) | Focus |
 | reopen a file after closing its last tab | `undefined` | no | **Survey** |

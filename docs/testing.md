@@ -188,6 +188,31 @@ Two checks the audit showed could never fail went too: a `::` after a name,
 which Zig has no token for, and a `const` / `var` before a container field,
 where the word before a field is none or `comptime`.
 
+### HTML
+
+The HTML code (`src/html.ts`, `lexScripts`, `scanScriptBlocks`, the top-level
+carve-out and the lines naming `html`, `html-template`, `tailwindcss`, `dtd`,
+`rnc` and `handlebars` in `src/focus.ts`, `src/decorator.ts` and
+`src/classify-lsp.ts`) was audited by hand rather than sampled: 33 source
+mutants, one per rule, each a
+change that keeps the build compiling. Each ran against `html.test.js`,
+`rust.test.js`, `render.test.js` and `transitions.test.js` with the main walks
+cut to 10 and the HTML walks at their default 120. The first run, of the first
+32, killed 28;
+2 did not compile and were rewritten, and 2 survived: the region end read as
+exclusive, and a form feed kept inside a script. The two tests added for them, a
+caret right before `</script>` and a form feed in a script, kill both. Mutant 33,
+`handlebars` read as code, came with that id and ran on its own, killed by the
+static-id fixture test, the config test in `render.test.js` and the HTML walks.
+All 33 are killed. Per mutant in [mutation-audit-html.csv](mutation-audit-html.csv).
+
+```
+Final (33 mutants), by the killing test the CSV lists
+test/html.test.js                    █████████████████████ 21
+the HTML walks                       █████████ 9
+the static-id fixture test           ███ 3
+```
+
 ## Timing
 
 A test that checks an algorithm stays linear compares the CPU time of an input

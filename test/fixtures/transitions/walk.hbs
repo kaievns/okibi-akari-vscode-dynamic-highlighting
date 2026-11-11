@@ -1,0 +1,16 @@
+{{!-- self, this, async and 42 in a Handlebars page --}}
+<div class="entry">
+  {{#if author}}
+    <h1>{{firstName}} {{lastName}}</h1>
+    <p>Posted by {{author.self}} on the first day, 42 times</p>
+    {{#each comments as |comment index|}}
+      <li data-index="{{index}}">{{comment.body}} {{> commentFooter this}}</li>
+    {{/each}}
+  {{else}}
+    <p>{{{rawHtml}}}</p>
+  {{/if}}
+  <style>.entry { margin: 4px; } .entry:hover { color: red; }</style>
+  <script>
+    function tally(async) { const n = 42; if (async) { return { self: this, n }; } return n; }
+  </script>
+</div>

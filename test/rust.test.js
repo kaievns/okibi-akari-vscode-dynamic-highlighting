@@ -468,15 +468,15 @@ test('a braceless closure ends at a line comment, mid-file and at the end of the
 // ── static content / data-format files get no focus ───────────────────────────
 
 test('static content languages produce no focusable blocks', () => {
-  // json/yaml/toml/kdl/html/css have braces and identifiers but no data flow — nothing
+  // json/yaml/toml/kdl/css have braces and identifiers but no data flow — nothing
   // to trace — so the layer must stay in Survey and never tint. Returning no blocks
   // is the check: focusedBlock finds nothing, runClassify returns early.
   const cases = {
     json: '{ "a": { "b": 1 }, "c": [1, 2, 3] }',
     yaml: 'a:\n  b: 1\n  c: 2',
     toml: '[section]\nkey = "value"',
-    html: '<div class="x"><span>hi</span></div>',
     css: '.selector { color: red; margin: 0; }',
+    tailwindcss: '@layer base { .btn { @apply px-4; } }',
     xml: '<root><child a="1"/></root>',
     kdl: 'node "arg" key=1 {\n    child #true\n}',
   };
@@ -484,6 +484,8 @@ test('static content languages produce no focusable blocks', () => {
     assert.equal(focus.scanBlocks(text, lang).length, 0, `${lang} must yield no blocks`);
     assert.equal(focus.isNonFlowLanguage(lang), true, `${lang} is a non-flow language`);
   }
+  // HTML is markup around scripts: no script, no block (test/html.test.js).
+  assert.equal(focus.scanBlocks('<div class="x"><span>{ a }</span></div>', 'html').length, 0, 'html without a script');
   // The control: a real code language still produces blocks.
   assert.ok(focus.scanBlocks('fn f() { let x = 1; }', 'rust').length > 0, 'rust still scans');
   assert.equal(focus.isNonFlowLanguage('rust'), false, 'rust is a flow language');

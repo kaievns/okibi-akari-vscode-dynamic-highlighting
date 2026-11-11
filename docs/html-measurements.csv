@@ -1,0 +1,32 @@
+corpus,files,measure,reference,value
+VS Code 1.145.2 out/**/*.html,7,non-space script characters both read as JavaScript,text.html.derivative (VS Code 1.145.2),70462
+third-party node_modules packages,10,non-space script characters both read as JavaScript,text.html.derivative (VS Code 1.145.2),1391
+/opt/homebrew HTML,1802,non-space script characters both read as JavaScript,text.html.derivative (VS Code 1.145.2),2644711
+all public HTML,1819,non-space script characters both read as JavaScript,text.html.derivative (VS Code 1.145.2),2716564
+all public HTML,1819,non-space characters JavaScript to the grammar only ('</script>' inside a string),text.html.derivative (VS Code 1.145.2),23
+all public HTML,1819,files where the grammar and the finder differ,text.html.derivative (VS Code 1.145.2),1
+all public HTML,1819,non-space characters JavaScript to the finder only,text.html.derivative (VS Code 1.145.2),0
+all public HTML,1819,files with an inline JavaScript script,-,327
+all public HTML,1819,distinct inline scripts,-,18
+all public HTML,1819,distinct inline scripts over 20 lines,-,8
+all public HTML,1819,distinct inline script lines,-,9791
+Go 1.27.1 trace_viewer_full.html,1,distinct inline script lines,-,6741
+all public HTML,1819,event-handler attributes,-,6
+all public HTML,1819,import * as in a script,-,0
+public pages with scripts (one per distinct script),18,carets focused (up to 40 blocks per page and the top level),-,273
+public pages with scripts,18,tints with no server: page / its script view as javascript,-,2061 / 2061
+public pages with scripts,18,tints on non-data names with no server: page / javascript,TypeScript 5.9.3 checker,8 / 8
+public pages with scripts,18,tints on names with no symbol with no server: page / javascript,TypeScript 5.9.3 checker,14 / 14
+public pages with scripts,18,tints with the HTML server's tokens: page / javascript,vscode-langservers-extracted 4.10.0,9503 / 9503
+public pages with scripts,18,tints on non-data names with the HTML server's tokens: page / javascript,TypeScript 5.9.3 checker,8 / 8
+public pages with scripts,18,escape marks with the HTML server's tokens: page / javascript,vscode-langservers-extracted 4.10.0,1084 / 1084
+public pages with scripts,18,paints outside every script (any type; Edit; both server modes),-,0
+public stylesheets (VS Code; its extensions; node_modules; Homebrew),-,var() uses,-,54961
+public stylesheets,-,var() uses in a rule that declares the property,-,756
+public stylesheets,-,var() uses whose property is declared only on :root / html / body / *,-,2607
+public stylesheets,-,var() uses whose property the file declares nowhere,-,45076
+Go 1.27.1 trace_viewer_full.html (2619 kB; one 2488 kB script),1,ms per version (median of 9; load average 7 to 8): static before,-,25 to 30
+Go 1.27.1 trace_viewer_full.html (2619 kB; one 2488 kB script),1,ms per version: view + per-script lex + block scan now,-,7.5 to 8 + 48 to 54 + 12 to 15
+Go 1.27.1 trace_viewer_full.html (2619 kB; one 2488 kB script),1,ms per version: the view as one javascript file (lex + block scan),-,33 to 36 + 8 to 11
+Zig 0.17.1 langref.html (985 kB; no script),1,ms per version: static before,-,8 to 13
+Zig 0.17.1 langref.html (985 kB; no script),1,ms per version: view + lex + block scan now,-,8 + 0.5 + 0

@@ -21,8 +21,9 @@ Which files open as what, in VS Code 1.144.1 with denoland.vscode-deno 3.53.1:
 | `jsonc` | `jsconfig.json`, `tsconfig.json`, `jsconfig.*.json`, `deno.jsonc` | static content |
 | `json` | `deno.json`, `deno.lock` (the Deno extension's) | static content |
 
-A ```` ```js ```` fence in markdown is prose, and a `<script>` block in HTML
-is static content: the layer paints neither.
+A ```` ```js ```` fence in markdown is prose: the layer paints none of it. A
+`<script>` element in an HTML document is JavaScript by every rule here, read on
+its own with the markup blanked around it ([html.md](html.md)).
 
 ## Measurements
 

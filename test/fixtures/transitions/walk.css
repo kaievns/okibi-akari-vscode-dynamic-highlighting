@@ -1,0 +1,9 @@
+/* self, this, async and 42 in a stylesheet */
+:root { --gap: 4px; --accent: #3a7bd5; }
+@media (min-width: 40em) {
+  .card:is(.self, .this) > .async {
+    margin: var(--gap, 2px) calc(1rem + 42px);
+    & .child { padding: 0 !important; color: color-mix(in oklch, var(--accent) 60%, white); }
+  }
+}
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }

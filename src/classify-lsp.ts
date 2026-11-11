@@ -14,6 +14,7 @@
  */
 
 import * as vscode from 'vscode';
+import { flowText } from './html';
 import {
   Classification,
   OffsetRange,
@@ -264,7 +265,7 @@ export class Classifier implements vscode.Disposable {
     cached?: { text: string; blocks: BraceBlock[]; version?: number },
   ): Promise<{ focused: Classification; coloring: ScopeColoring; semantic: SemanticState } | null> {
     const version = cached?.version ?? doc.version;
-    const text = cached?.text ?? doc.getText();
+    const text = cached?.text ?? flowText(doc.getText(), doc.languageId);
     const allBlocks = cached?.blocks ?? scanBlocks(text, doc.languageId);
     const bundle = await this.bundleFor(doc, text, version, allBlocks);
     if (token.isCancellationRequested || doc.version !== version) {

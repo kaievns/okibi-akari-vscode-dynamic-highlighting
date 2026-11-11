@@ -10,6 +10,7 @@ const vs = stub.install();
 const { Decorator, isDecoratable } = require('../out/decorator');
 const { lexFor } = require('../out/lex');
 const focus = require('../out/focus');
+const html = require('../out/html');
 const { LUA_KEYWORDS } = require('../out/lua');
 const { RUBY_KEYWORDS } = require('../out/ruby');
 const { isZigReserved } = require('../out/zig');
@@ -293,6 +294,7 @@ const KEYWORDS = new Set(('import from as export class private async await const
  */
 function tokensFor(text, languageId, degraded, strings) {
   if (languageId === 'ruby') return encode(text, rubyLspTokens(text));
+  if (languageId === 'html') return encode(text, htmlServerTokens(text, degraded));
   if (languageId === 'zig') return encode(text, zigLspTokens(text, strings));
   const toks = [];
   const declared = new Set();
@@ -337,6 +339,30 @@ function tokensFor(text, languageId, degraded, strings) {
     toks.sort((a, b) => a.offset - b.offset);
   }
   return encode(text, toks);
+}
+
+/**
+ * The HTML server's shape: its JavaScript service types every script name and the
+ * names in event-handler attributes, and sends nothing for `import * as`'s binding.
+ */
+function htmlServerTokens(text, degraded) {
+  const view = html.scriptView(text);
+  const lx = lexFor(view, 'html');
+  const namespaces = jsNamespaceNames(lx);
+  const ids = lx.idents.filter((id) => !KEYWORDS.has(id.name) && !(namespaces.has(id.name) && view[id.offset - 1] !== '.'));
+  for (const m of text.matchAll(/\son\w+="([^"]*)"/g)) {
+    const at = m.index + m[0].indexOf('"') + 1;
+    for (const w of m[1].matchAll(/[A-Za-z_$][\w$]*/g)) ids.push({ name: w[0], offset: at + w.index, length: w[0].length });
+  }
+  ids.sort((a, b) => a.offset - b.offset);
+  const declared = new Set();
+  return ids.map((id) => {
+    const next = text[id.offset + id.length];
+    const type = next === '(' ? 'function' : text[id.offset - 1] === '.' ? 'property' : /^[A-Z]/.test(id.name) && !degraded ? 'class' : 'variable';
+    const mods = type === 'variable' && !declared.has(id.name) ? ['declaration'] : [];
+    if (type === 'variable') declared.add(id.name);
+    return { offset: id.offset, length: id.length, type, modifiers: mods };
+  });
 }
 
 /**
@@ -440,6 +466,7 @@ const FIX = path.join(__dirname, 'fixtures/transitions');
 const FIXTURES = {
   ts: { lang: 'typescript', file: 'walk.ts' },
   js: { lang: 'javascript', file: 'walk.js' },
+  html: { lang: 'html', file: 'walk.html' },
   py: { lang: 'python', file: 'walk.py' },
   rs: { lang: 'rust', file: 'walk.rs' },
   go: { lang: 'go', file: 'walk.go' },
@@ -455,6 +482,10 @@ const FIXTURES = {
   gitconfig: { lang: 'properties', file: 'walk.gitconfig', data: true },
   env: { lang: 'dotenv', file: 'walk.env', data: true },
   gitignore: { lang: 'ignore', file: 'walk.gitignore', data: true },
+  css: { lang: 'css', file: 'walk.css', web: true },
+  tailwind: { lang: 'tailwindcss', file: 'walk.css', web: true },
+  xml: { lang: 'xml', file: 'walk.xml', web: true },
+  hbs: { lang: 'handlebars', file: 'walk.hbs', web: true },
   dockerfile: { lang: 'dockerfile', file: 'walk.Dockerfile', container: true },
   bake: { lang: 'dockerbake', file: 'walk.docker-bake.hcl', container: true },
   helm: { lang: 'helm', file: 'walk.helm.yaml', container: true },
@@ -473,7 +504,9 @@ const FIXTURES = {
 for (const f of Object.values(FIXTURES)) f.text = fs.readFileSync(path.join(FIX, f.file), 'utf8');
 const DATA_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].data);
 const CONTAINER_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].container);
-const DATA_LANGS = new Set([...DATA_KEYS, ...CONTAINER_KEYS].map((k) => FIXTURES[k].lang));
+/** Static files walked beside walk.html only, so the main walks' data files and seeds stay as they were. */
+const WEB_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].web);
+const DATA_LANGS = new Set([...DATA_KEYS, ...CONTAINER_KEYS, ...WEB_KEYS].map((k) => FIXTURES[k].lang));
 const PROSE_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].prose && k !== 'md');
 const PROSE_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.prose).map((f) => f.lang));
 const MARKED_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.marks).map((f) => f.lang));
@@ -1232,6 +1265,29 @@ function generateJs(seed, steps) {
   return { cfg: { docs, split: rnd() < 0.35, provider }, events };
 }
 
+/** Typed into walk.html besides the usual keys: a script's end and start tag, half of each, and markup. */
+const HTML_TYPED = ['</script>', '<script>', '</scr', '<scr', '<', '>', '<!--', '-->', '`', '/*', '<p onclick="x()">'];
+
+/**
+ * A walk with walk.html first: the events of `generate(seed)`, a fifth of the typed
+ * keys a script boundary or markup, and beside it walk.js, walk.ts, walk.md, walk.xml,
+ * walk.hbs or walk.css, as `css` or as Tailwind's `tailwindcss`, or nothing.
+ */
+function generateHtml(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x68746d);
+  for (const ev of events) if (ev.t === 'type' && rnd() < 0.2) ev.text = pickOf(HTML_TYPED, rnd());
+  const second = pickOf(['html', 'js', 'ts', 'md', ...WEB_KEYS], rnd());
+  const docs = second === 'html' ? ['html'] : ['html', second];
+  const provider = {};
+  for (const key of docs) {
+    const lang = FIXTURES[key].lang;
+    if (FIXTURES[key].web) provider[lang] = { mode: 'none', latency: 0 };
+    else if (lang !== 'markdown') provider[lang] = { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
 /** A walk with walk.rb first: the events of `generate(seed)`, its own documents and servers. */
 function generateRuby(seed, steps) {
   const { events } = generate(seed, steps);
@@ -1493,5 +1549,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, PROSE_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, PROSE_KEYS,
 };

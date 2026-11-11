@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!--[if lt IE 9]><script src="html5shiv.js"></script><![endif]-->
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tally &amp; friends</title>
+  <link rel="manifest" href="/app.webmanifest">
+  <style>
+    :root { --gap: 4px; --accent: oklch(70% 0.1 250); }
+    .card > .title + p ~ span, #main:is(.a, .b):has(> img) { margin: var(--gap, 2px) calc(1rem + 2vw); }
+    @media (min-width: 40em) and (prefers-color-scheme: dark) {
+      .card { color: color-mix(in oklch, var(--accent) 60%, #fff); }
+      .card:hover::before { content: "\201C"; }
+    }
+    .nest { & .child { padding: 0 !important; } }
+  </style>
+  <script>
+    'use strict';
+    const LIMIT = 10;
+    let total = 0;
+    /** @param {number} n the step */
+    function bump(n) {
+      if (n > LIMIT) return false;
+      for (const k of [1, 2]) {
+        total += n * k;
+      }
+      return true;
+    }
+    const label = `total ${total} of ${LIMIT}`;
+    const self = this;
+  </script>
+  <script type="module">
+    import * as util from './util.js';
+    const rows = await util.load('rows');
+    export function render(list) {
+      const out = list.map((r) => r.name);
+      return out.join(', ');
+    }
+  </script>
+  <script type="application/json" id="data">{ "self": "this", "n": 42 }</script>
+  <script type="text/template" id="row"><li class="row">{{ name }}</li></script>
+</head>
+<body>
+  <my-el some-prop="x" hidden></my-el>
+  <template id="tpl"><slot name="title">Default &nbsp; title</slot></template>
+  <button type="button" onclick="bump(1); console.log(total)" style="color: red; margin: 0 4px">+1</button>
+  <input type=checkbox checked disabled aria-label='Done &#x27;now&#x27;'>
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">
+    <use xlink:href="#dot" fill="currentColor"/>
+  </svg>
+  <math><mi>x</mi><mo>=</mo><mn>2</mn></math>
+  <iframe srcdoc="<p>hi &amp; bye</p>"></iframe>
+  <pre>  function notCode(a) { return a; }  </pre>
+  <textarea>let self = this;</textarea>
+</body>
+</html>

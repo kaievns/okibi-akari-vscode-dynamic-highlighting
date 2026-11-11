@@ -17,8 +17,9 @@
  * this scanner computes — no special-casing of control-flow headers.
  */
 
-import { LexId, LexResult, blankOrHashLine, lexFor } from './lex';
+import { LexId, LexResult, blankOrHashLine, forgetLex, lexFor, rememberLex, scriptLexes } from './lex';
 import { bestAt, buildIntervalIndex } from './intervals';
+import { viewRegions } from './html';
 
 export type { LexId } from './lex';
 
@@ -119,7 +120,7 @@ function withSlots(blocks: BraceBlock[]): BraceBlock[] {
  * Languages whose `=>` is a JS arrow. In Rust, C# and Scala `=>` also ends a match
  * or switch arm, which the arrow scanner would read as a one-arm scope.
  */
-const ARROW_LANGUAGES = new Set(['javascript', 'typescript', 'javascriptreact', 'typescriptreact']);
+const ARROW_LANGUAGES = new Set(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'html']);
 
 /** Languages where `(a): T => …` puts a return-type annotation between `)` and `=>`. */
 const TYPED_ARROW_LANGUAGES = new Set(['typescript', 'typescriptreact']);
@@ -1633,18 +1634,22 @@ const PROSE_LANGUAGES = new Set([
  * STATIC CONTENT / DATA-FORMAT languages: config, markup and data files that have
  * braces and identifiers but no DATA FLOW — nothing moves through them, so there is
  * no binding to trace and bands 2–3 have nothing to say. A JSON object's keys are
- * schema, not locals; an HTML tag is structure, not a variable.
+ * schema, not locals; an XML tag is structure, not a variable. HTML is not here: its
+ * scripts are code and its markup is outside every scope (docs/html.md).
  *
  * They are kept SEPARATE from PROSE_LANGUAGES because the two are different claims —
  * prose is "not code", this is "code-shaped but not imperative" — but they take the
  * same action: no focusable scope, so the phase stays Survey and the layer never
- * tints. The difference matters for the block scanner: a JSON/YAML/HTML file is full
+ * tints. The difference matters for the block scanner: a JSON/YAML/XML file is full
  * of braces or tags, so unlike prose it would otherwise produce a dense forest of
  * meaningless blocks and light up quoted keys as it was navigated.
  *
- * CSS/SCSS/LESS are included: a selector or property name is not a data identity.
- * Templates (`erb`, `helm`, `gotmpl`) are too: their tags have no lexer family yet
- * (docs/ruby.md#erb-templates, docs/containers.md#go-template-variables).
+ * CSS/SCSS/LESS and Tailwind's `tailwindcss` mode are included: a selector, a
+ * property name or a custom property is not a data identity
+ * (docs/html.md#data-identities-and-marks).
+ * Templates (`erb`, `helm`, `gotmpl`, `handlebars`) are too: their tags have no lexer
+ * family yet (docs/ruby.md#erb-templates, docs/containers.md#go-template-variables,
+ * docs/html.md#ids).
  * Each id must be one VS Code or the format's own extension registers, so a made-up
  * id cannot silently disable the layer for a real code file.
  * `test/fixtures/static-languages.json` names the extension (null: none installed).
@@ -1653,10 +1658,10 @@ const STATIC_CONTENT_LANGUAGES = new Set([
   'json', 'jsonc', 'json5', 'jsonl', 'snippets', 'yaml', 'github-actions-workflow', 'dockercompose',
   'toml', 'kdl', 'ini', 'properties', 'java-properties', 'dotenv', 'ignore', 'pip-requirements',
   'go.mod', 'go.sum', 'go.work', 'dockerbake', 'cmake-cache', 'dts',
-  'xml', 'xsl', 'html', 'xhtml', 'vue-html', 'svg',
-  'css', 'scss', 'less', 'sass', 'stylus',
+  'xml', 'xsl', 'dtd', 'rnc', 'xhtml', 'vue-html', 'svg',
+  'css', 'scss', 'less', 'sass', 'stylus', 'tailwindcss',
   'graphql', 'proto', 'csv', 'tsv', 'csv (pipe)', 'csv (semicolon)', 'csv (whitespace)', 'dynamic csv',
-  'dockerfile', 'makefile', 'erb', 'helm', 'gotmpl',
+  'dockerfile', 'makefile', 'erb', 'helm', 'gotmpl', 'handlebars',
 ]);
 
 export const staticContentLanguages = (): string[] => [...STATIC_CONTENT_LANGUAGES];
@@ -1668,7 +1673,7 @@ export const staticContentLanguages = (): string[] => [...STATIC_CONTENT_LANGUAG
  * restores it as TypeScript (docs/javascript.md#declaration-files). ZON is data,
  * and band 1 restores nothing in it (docs/zig.md#zon).
  */
-const DERIVED_STATIC_LANGUAGES = new Map([['typescript-declaration', 'typescript'], ['zon', 'zon']]);
+const DERIVED_STATIC_LANGUAGES = new Map([['typescript-declaration', 'typescript'], ['zon', 'zon'], ['html-template', 'html-template']]);
 
 /** The language band 1 restores a document as: a derived static id's grammar language, else the id itself. */
 export function band1LanguageId(languageId: string): string {
@@ -1677,6 +1682,8 @@ export function band1LanguageId(languageId: string): string {
 
 const RUBY_TEMPLATE = /\.(erb|rhtml|rhtm)$/i;
 const TS_DECLARATION = /\.d\.(?:[cm]?ts|[^./\\]+\.ts)$/i;
+/** The `html` extensions that hold a server template language, whose tags the grammar paints as text (docs/html.md#ids). */
+const HTML_TEMPLATE = /\.(?:jsp|asp|aspx|ejs|volt|jshtm|rhtml|mdoc)$/i;
 
 /**
  * The language id the layer reads a document as. VS Code's built-in Ruby extension
@@ -1690,6 +1697,7 @@ export function effectiveLanguageId(languageId: string, fileName: string): strin
   if (languageId === 'ruby' && RUBY_TEMPLATE.test(fileName)) return 'erb';
   if (languageId === 'typescript' && TS_DECLARATION.test(fileName)) return 'typescript-declaration';
   if (languageId === 'zig' && /\.zon$/i.test(fileName)) return 'zon';
+  if (languageId === 'html' && HTML_TEMPLATE.test(fileName)) return 'html-template';
   return languageId;
 }
 
@@ -1731,6 +1739,9 @@ export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
   if (isNonFlowLanguage(languageId)) {
     return [];
   }
+  if (languageId === 'html') {
+    return scanScriptBlocks(text);
+  }
   if (languageId === 'lua') {
     return scanLuaBlocks(text);
   }
@@ -1754,6 +1765,27 @@ export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
     }
   }
   return braced;
+}
+
+/** An HTML script view's blocks: each script scanned as JavaScript on its own, so a brace never pairs across scripts. */
+function scanScriptBlocks(view: string): BraceBlock[] {
+  const lx = lexFor(view, 'html');
+  const parts = scriptLexes(lx);
+  const out: BraceBlock[] = [];
+  viewRegions(view).forEach((r, k) => {
+    const d = r.start;
+    const l = lx.lineOf(d);
+    // Remembered just before the scan reads it, so each script is lexed once.
+    rememberLex(parts[k].text, parts[k]);
+    for (const b of scanBlocks(parts[k].text, 'javascript')) {
+      out.push({
+        openLine: b.openLine + l, closeLine: b.closeLine + l, depth: b.depth,
+        openOffset: b.openOffset + d, closeOffset: b.closeOffset + d, headerStart: b.headerStart + d,
+      });
+    }
+    forgetLex(parts[k].text);
+  });
+  return withSlots(out);
 }
 
 /**
@@ -1846,6 +1878,16 @@ function computeTopLevelExcludes(
     if (signature) {
       ranges.push({ start: h.start, end: b.openOffset });
     }
+  }
+  if (languageId === 'html') {
+    // The top level of an HTML document is its scripts' top level: the markup is outside it.
+    let at = 0;
+    for (const r of viewRegions(text)) {
+      if (r.start > at) ranges.push({ start: at, end: r.start });
+      at = r.end;
+    }
+    // One past the end, so the empty line after a final line break is outside too.
+    ranges.push({ start: at, end: text.length + 1 });
   }
   ranges.sort((a, b) => a.start - b.start);
   const out: { start: number; end: number }[] = [];

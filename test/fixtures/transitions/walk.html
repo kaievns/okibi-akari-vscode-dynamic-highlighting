@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Walk &amp; tally</title>
+  <style>.a { --gap: 4px; margin: var(--gap); } .b:hover { color: red; }</style>
+  <script>
+    const LIMIT = 10;
+    let total = 0;
+    function bump(n) {
+      if (n > LIMIT) return false;
+      for (const k of [1, 2]) {
+        total += n * k;
+      }
+      return `total ${total}`;
+    }
+    const owner = this;
+  </script>
+</head>
+<body>
+  <p class="self" data-this="async">self, this and 42 in markup</p>
+  <button onclick="bump(1); total = 0">+1</button>
+  <script type="module">
+    import * as util from './util.js';
+    const rows = await util.load('rows');
+    export function render(list) {
+      const out = list.map((r) => r.name);
+      return out.join(', ');
+    }
+  </script>
+  <script type="application/json">{ "self": "this", "n": 42 }</script>
+</body>
+</html>

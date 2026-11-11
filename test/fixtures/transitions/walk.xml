@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE feed [ <!ENTITY self "this"> ]>
+<!-- self, this, async and 42 in a feed -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <entry id="42">
+    <dc:creator>&self; { async }</dc:creator>
+    <content type="html"><![CDATA[<p>function f(a) { return this; }</p>]]></content>
+    <svg xmlns="http://www.w3.org/2000/svg"><script>function self() { const n = 42; return this; }</script></svg>
+  </entry>
+</feed>

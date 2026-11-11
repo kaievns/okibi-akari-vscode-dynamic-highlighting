@@ -8,6 +8,7 @@
  */
 
 import { IntervalIndex, bestAt, buildIntervalIndex } from './intervals';
+import { viewRegions } from './html';
 
 export type Region = 'code' | 'comment' | 'doc' | 'string';
 
@@ -50,6 +51,8 @@ const def = (ids: string[], s: LangSyntax): void => {
 const base = { jsx: false, cppRaw: false, shellHash: false };
 def(['typescript', 'typescript-declaration'], { ...base, family: 'js', key: 'ts' });
 def(['javascript', 'javascriptreact', 'typescriptreact'], { ...base, family: 'js', key: 'jsx', jsx: true });
+/** An HTML document's script view (src/html.ts): each script lexed as `javascript` on its own. */
+def(['html'], { ...base, family: 'js', key: 'html', jsx: true });
 def(['go'], { ...base, family: 'go', key: 'go' });
 def(['python'], { ...base, family: 'python', key: 'python' });
 def(['rust'], { ...base, family: 'rust', key: 'rust' });
@@ -2078,10 +2081,45 @@ function lineStartsOf(text: string): number[] {
 /** Lex `text` as `languageId`. Pure; prefer `lexFor`, which memoises. */
 export function lex(text: string, languageId?: string): LexResult {
   const syntax = syntaxFor(languageId);
+  if (syntax.key === 'html') return lexScripts(text, syntax);
   const lx = new Lexer(text, syntax);
   lx.run();
   return new Lexed(syntax, text, lineStartsOf(text), lx.spans, lx.holes, lx.idents, lx.numbers, lx.punct, lx.cpOff, lx.cpState, lx.longReads,
     lx.localOffsets, lx.localNames, lx.defStarts);
+}
+
+/** A script view lexed region by region, so no string, comment or brace runs from one script into the next. */
+function lexScripts(view: string, syntax: LangSyntax): LexResult {
+  const js = syntaxFor('javascript');
+  const spans: LexSpan[] = [];
+  const holes: LexRange[] = [];
+  const idents: LexId[] = [];
+  const numbers: LexRange[] = [];
+  const punct: number[] = [];
+  const parts: LexResult[] = [];
+  for (const r of viewRegions(view)) {
+    const slice = view.slice(r.start, r.end);
+    const lx = new Lexer(slice, js);
+    lx.run();
+    parts.push(new Lexed(js, slice, lineStartsOf(slice), lx.spans, lx.holes, lx.idents, lx.numbers, lx.punct, lx.cpOff, lx.cpState, lx.longReads,
+      lx.localOffsets, lx.localNames, lx.defStarts));
+    const d = r.start;
+    for (const x of lx.spans) spans.push({ start: x.start + d, end: x.end + d, region: x.region });
+    for (const x of lx.holes) holes.push({ start: x.start + d, end: x.end + d });
+    for (const x of lx.idents) idents.push({ name: x.name, offset: x.offset + d, length: x.length });
+    for (const x of lx.numbers) numbers.push({ start: x.start + d, end: x.end + d });
+    for (const x of lx.punct) punct.push(x + d);
+  }
+  const merged = new Lexed(syntax, view, lineStartsOf(view), spans, holes, idents, numbers, punct);
+  scriptParts.set(merged, parts);
+  return merged;
+}
+
+const scriptParts = new WeakMap<LexResult, LexResult[]>();
+
+/** The lex of each script of a script view, in order, each over its own text (`lex(view, 'html')`). */
+export function scriptLexes(lx: LexResult): readonly LexResult[] {
+  return scriptParts.get(lx) ?? [];
 }
 
 /**

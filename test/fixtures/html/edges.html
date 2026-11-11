@@ -1,0 +1,25 @@
+<!-- <script>const inComment = 1;</script> -->
+<SCRIPT>const upper = 1;</SCRIPT>
+<script-x>notScript = 1;</script-x>
+<script >const spaced = 2;</script >
+<script type=text/javascript>const unquoted = 3;</script>
+<script type="text/babel">const babel = 4;</script>
+<script type='application/json'>{"json": 5}</script>
+<script type="importmap">{"imports": {}}</script>
+<script type="text/template"><div><script>const inTemplate = 6;</script></div></script>
+<script src="a.js">const withSrc = 7;</script>
+<template><script>const inTemplateEl = 8;</script></template>
+<textarea><script>const inTextarea = 9;</script></textarea>
+<title><script>const inTitle = 10;</script></title>
+<noscript><script>const inNoscript = 11;</script></noscript>
+<script>const s = '</script>'; const after = 12;</script>
+<script><!-- const legacy = 13; --></script>
+<script type="module" async>import { x } from './x.js'; const mod = 14;</script>
+<script language="javascript">const lang = 15;</script>
+<script type="">const emptyType = 16;</script>
+<script type="text/x-handlebars-template"><p>{{name}}</p></script>
+<div onclick="handler = 17">x</div>
+<style>.a { color: red; }</style>
+<script>
+  // a comment to </script> the end
+  const unclosed = 18;

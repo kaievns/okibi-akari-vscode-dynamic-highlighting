@@ -1,0 +1,22 @@
+<style>/* <script>const inStyle = 1;</script> */ .a { content: "<script>"; }</style>
+<p>after style</p>
+<STYLE type="text/css">.b::after { content: '<script>x = 2</script>'; }</STYLE>
+<style-x><script>const styleX = 3;</script></style-x>
+<svg viewBox="0 0 10 10"><script>const inSvg = 4;</script><circle r="1"/></svg>
+<svg>
+  <script type="text/javascript">
+    function inSvgBlock(a) { return a; }
+  </script>
+</svg>
+<math><mi>x</mi><script>const inMath = 5;</script></math>
+<script>const afterSvg = 6;</script>
+<SVG><foreignObject><div><script>const inForeign = 7;</script></div></foreignObject></SVG>
+<svg><svg></svg><script>const nested = 9;</script></svg>
+<svg><!-- </svg> --><script>const commented = 10;</script></svg >
+<svg><svg/><script>const innerClosed = 11;</script></svg>
+<mathx><script>const mathX = 12;</script></mathx>
+<svg/><script>const selfClosed = 8;</script>
+<p>an svg start tag ending in /> stays open to its close tag</p>
+</svg>
+<script>const last = 13;</script>
+<script type="module"

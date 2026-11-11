@@ -8,6 +8,8 @@ const assert = require('node:assert/strict');
 const h = require('./transitions-harness');
 const { mayForceMove, positionMovedBy, rangesMovedBy } = require('../out/tracking');
 const { Phase } = require('../out/phases');
+const html = require('../out/html');
+const { Position } = require('./vscode-stub');
 
 const WALKS = Number(process.env.OKIBI_WALKS ?? 300);
 const STEPS = Number(process.env.OKIBI_STEPS ?? 40);
@@ -105,6 +107,53 @@ test(`${JS_WALKS} random walks over walk.js leave no leftovers`, async (t) => {
   const seen = Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ');
   if (DEFAULT_RUN && JS_WALKS === 120) for (const [k, n] of Object.entries(shown)) assert.ok(n > 0, `${k}: ${seen}`);
   t.diagnostic(`walk.js painted, in steps: ${seen}`);
+});
+
+const HTML_WALKS = Number(process.env.OKIBI_HTML_WALKS ?? 120);
+
+/** The first paint of an HTML editor outside every script of its text, else null: a stripe line must hold script text. */
+function paintOutsideScripts(doc, out) {
+  const regions = html.scriptRegions(doc.getText());
+  const inside = (o) => regions.some((r) => o >= r.start && o <= r.end);
+  for (const [key, ranges] of Object.entries(out)) {
+    const role = key.split(' ')[0];
+    for (const [s, e] of ranges) {
+      if (role !== 'gutter' && inside(s) && inside(e)) continue;
+      if (role === 'gutter') {
+        const ls = doc.offsetAt(new Position(s, 0));
+        const le = ls + doc.lineAt(s).text.length;
+        if (regions.some((r) => r.start <= le && r.end >= ls)) continue;
+      }
+      return `${role} at ${s}-${e}`;
+    }
+  }
+  return null;
+}
+
+test(`${HTML_WALKS} random walks over walk.html leave no leftovers and paint nothing outside a script`, async (t) => {
+  const shown = { tint: 0, clay: 0, importRestore: 0, riskEscape: 0, self: 0, riskAsync: 0, gutter: 0 };
+  const active = Object.fromEntries(h.WEB_KEYS.map((k) => [h.FIXTURES[k].lang, 0]));
+  const outside = [];
+  await walks(h.generateHtml, HTML_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    const lang = w.activeEditor()?.document.languageId;
+    if (lang in active) active[lang]++;
+    const roles = new Set();
+    w.visible().forEach((ed, j) => {
+      if (ed.document.languageId !== 'html') return;
+      const out = r.got.editors[j].out;
+      const bad = paintOutsideScripts(ed.document, out);
+      if (bad) outside.push(`step ${i}, v${ed.document.version}: ${bad}`);
+      for (const k of Object.keys(out)) roles.add(k.split(' ')[0]);
+    });
+    if ([...roles].some((x) => /^(id|idg)\d$/.test(x))) shown.tint++;
+    if (roles.has('numberEngaged')) shown.clay++;
+    if (roles.has('gutter')) shown.gutter++;
+    for (const k of ['importRestore', 'riskEscape', 'self', 'riskAsync']) if (roles.has(k)) shown[k]++;
+  });
+  assert.deepEqual(outside.slice(0, 5), []);
+  const seen = `${Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ')}; active: ${Object.entries(active).map(([l, n]) => `${l} ${n}`).join(', ')}`;
+  if (DEFAULT_RUN && HTML_WALKS === 120) for (const [k, n] of [...Object.entries(shown), ...Object.entries(active)]) assert.ok(n > 0, `${k}: ${seen}`);
+  t.diagnostic(`walk.html painted, in steps: ${seen}`);
 });
 
 const RUBY_WALKS = Number(process.env.OKIBI_RUBY_WALKS ?? 120);
@@ -314,7 +363,7 @@ for (const [name, cfg, events] of REGRESSIONS) {
 
 // ZON opens under `zig`, whose server answers it, and VS Code answers the chat customisation ids.
 const MD_MARKS = ['mdHighlight', 'mdLinkPlain'];
-for (const key of [...h.DATA_KEYS, ...h.CONTAINER_KEYS, 'zon', ...h.PROSE_KEYS]) test(`switching between a code file in Edit and a ${key} file leaves ${h.FIXTURES[key].marks ? 'only the markdown marks' : 'nothing'} on the ${key} file`, async () => {
+for (const key of [...h.DATA_KEYS, ...h.CONTAINER_KEYS, ...h.WEB_KEYS, 'zon', ...h.PROSE_KEYS]) test(`switching between a code file in Edit and a ${key} file leaves ${h.FIXTURES[key].marks ? 'only the markdown marks' : 'nothing'} on the ${key} file`, async () => {
   const lang = h.FIXTURES[key].lang;
   const shows = h.FIXTURES[key].marks ? MD_MARKS : [];
   const answered = key === 'zon' || shows.length > 0;
