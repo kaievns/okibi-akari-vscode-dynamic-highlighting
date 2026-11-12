@@ -101,6 +101,10 @@ reads as a space. The lexer splits the view at the marks and lexes each script
 as `javascript` on its own (`lexScripts`), so no string, comment, template or
 brace runs from one script into the next. The view's lex has no incremental
 re-lex, as `javascript`'s has none ([javascript.md](javascript.md#known-limits)).
+`scriptView` is `codeView` over the scripts; a Vue, Svelte or Astro component is
+read through `codeView` too, over its scripts and template expressions, with two
+more marks, for a pattern region and a template block's ends
+([components.md](components.md#the-code-view)).
 
 ## Blocks and focus
 

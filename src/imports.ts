@@ -1093,7 +1093,7 @@ function jsNamespaceResolve(lx: LexResult): Resolved {
     if (at === undefined || at < 0 || id.offset === at || inSorted(stmts, id.offset)) continue;
     const p = lx.prevSignificant(id.offset);
     if (p >= 0 && text[p] === '.' && text[p - 1] !== '.') continue;
-    // A JSX tag name waits for the React step; the lexer reads one from the character right after `<` or `</`.
+    // A closed element's tag names are no identifiers (`jsxTags`); this keeps an unclosed one's while it is typed.
     if (lx.syntax.jsx && (text[id.offset - 1] === '<' || (text[id.offset - 1] === '/' && text[id.offset - 2] === '<'))) continue;
     const n = id.offset + id.length;
     const c = nextCode(lx, n);

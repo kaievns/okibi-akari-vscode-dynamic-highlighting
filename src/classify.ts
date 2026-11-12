@@ -25,7 +25,8 @@
  * definition-provider round trips).
  */
 
-import { LexId, LexResult, bangCalls, blankGap, commaGap, lexFor } from './lex';
+import { LexId, LexResult, bangCalls, blankGap, commaGap, jsxTags, lexFor } from './lex';
+import { MODULE_OPEN, REGION_MARK, viewRegions } from './html';
 import { jsNamespaceNames, pyImportOffsets } from './imports';
 import { BraceBlock, functionScopeOf, inSortedRanges, isPatternBrace, scanBlocks, scopeRegionFor, typeArrowsOf } from './focus';
 import { IntervalIndex, bestAt, buildIntervalIndex } from './intervals';
@@ -65,6 +66,8 @@ export interface NameInfo {
   isCapture: boolean;
   /** For a capture, the home function range its declaration sits in. */
   homeFn?: OffsetRange;
+  /** Declared at the top level of a module block (an Astro client script) and seen from below it: a global there. */
+  moduleTop?: boolean;
   /**
    * Attention proximity — how directly this name belongs to the FOCUSED block,
    * used to prioritise hue slots when a block has more locals than hues (the
@@ -135,15 +138,80 @@ const SELF_NAMES = new Set(['this', 'self']);
 const JS_MODULE_SURFACE = new Set(['module', 'exports', 'require', 'process', 'Buffer', 'global', '__dirname', '__filename']);
 
 /** JS / TS names that are never data in this file: the module surface it does not declare, and its `import * as` namespaces. */
-function jsNonData(lx: LexResult, tokens: readonly DecodedToken[]): Set<string> {
+function jsNonData(lx: LexResult, tokens: readonly DecodedToken[], languageId?: string): Set<string> {
   const declared = new Set<string>();
+  const surface = languageId === 'astro' ? ASTRO_SURFACE : JS_MODULE_SURFACE;
   for (const t of tokens) {
-    if (JS_MODULE_SURFACE.has(t.name) && t.modifiers.includes('declaration')) declared.add(t.name);
+    if (surface.has(t.name) && t.modifiers.includes('declaration')) declared.add(t.name);
   }
   const out = new Set(jsNamespaceNames(lx));
-  for (const name of JS_MODULE_SURFACE) if (!declared.has(name)) out.add(name);
+  for (const name of surface) if (!declared.has(name)) out.add(name);
+  for (const name of jsxComponentNames(lx)) out.add(name);
   return out;
 }
+
+/** Astro's frontmatter global joins Node's module surface. */
+const ASTRO_SURFACE = new Set([...JS_MODULE_SURFACE, 'Astro']);
+
+/**
+ * The components a JSX tag names: a capitalised tag, or the capitalised root of a
+ * member tag (`<UI.Button>`). A component is a function or a class, not data, wherever
+ * the file names it. A lowercase root (`<item.Icon>`) is an object and stays data.
+ */
+export function jsxComponentNames(lx: LexResult): Set<string> {
+  const out = new Set<string>();
+  const text = lx.text;
+  for (const t of jsxTags(lx)) {
+    const c = text.charCodeAt(t.offset - 1);
+    if (c === 0x2e || c === 0x3a || c === 0x2d) continue;
+    if (/^[A-Z]/.test(t.name)) out.add(t.name);
+  }
+  return out;
+}
+
+/**
+ * The names a component's pattern regions bind: an each alias, `v-for`'s alias, a
+ * slot's props, a snippet's parameters (src/sfc.ts). A key (`{ a: b }` binds `b`), a
+ * default's value and a type annotation bind nothing.
+ */
+function patternDeclarations(lx: LexResult, declare: (id: LexId) => void): void {
+  const text = lx.text;
+  for (const r of viewRegions(text)) {
+    if (r.kind !== 'pattern') continue;
+    const opens: string[] = [];
+    // The bracket depth of the `=` or `:` that opened a default value or a type annotation; it ends at a `,` or bracket there.
+    let skipFrom = -1;
+    let k = 0;
+    const ids = lx.identsIn(r.start, r.end);
+    for (let i = r.start; i < r.end && k < ids.length; i++) {
+      if (i === ids[k].offset) {
+        const id = ids[k++];
+        i += id.length - 1;
+        const n = nextNonBlank(text, id.offset + id.length);
+        const p = lx.prevSignificant(id.offset);
+        const inBrace = opens[opens.length - 1] === '{';
+        const member = text[p] === '.' && text[p - 1] !== '.';
+        if (skipFrom >= 0 || text[n] === '(' || text[n] === '.' || (text[n] === ':' && inBrace) || member) continue;
+        declare(id);
+        continue;
+      }
+      if (!lx.isCode(i)) continue;
+      const c = text[i];
+      if (c === '(' || c === '[' || c === '{') opens.push(c);
+      else if (c === ')' || c === ']' || c === '}') {
+        opens.pop();
+        if (opens.length < skipFrom) skipFrom = -1;
+      } else if (c === ',') {
+        if (opens.length <= skipFrom) skipFrom = -1;
+      } else if (skipFrom < 0 && ((c === '=' && text[i + 1] !== '>') || (c === ':' && opens[opens.length - 1] !== '{'))) skipFrom = opens.length;
+    }
+  }
+}
+
+const nextNonBlank = (text: string, i: number): number => {
+  while (i < text.length && (text[i] === ' ' || text[i] === '\t' || text[i] === '\n' || text[i] === '\r')) i++;
+  return i;
+};
 
 /**
  * File-wide analysis, computed ONCE per document version and shared by every
@@ -395,7 +463,9 @@ export function buildFileIndex(
   const stringReads: LexId[] = [];
   const pyRebinding = lx.syntax.family === 'python' ? pythonRebindingFilter(lx) : undefined;
   const lua = lx.syntax.family === 'lua' ? luaFacts(lx) : undefined;
-  const jsSurface = lx.syntax.family === 'js' ? jsNonData(lx, tokens) : undefined;
+  const jsSurface = lx.syntax.family === 'js' ? jsNonData(lx, tokens, languageId) : undefined;
+  // A Svelte or Astro `<C {open}>` or value-less `bind:open` is the region alone: the servers type it `property`.
+  const shorthandRegions = languageId === 'svelte' || languageId === 'astro';
   // ruby-lsp types reads only; declarations and writes come from the bindings (docs/ruby.md).
   if (lx.syntax.family === 'ruby') tokens = rubyTokens(lx, tokens);
 
@@ -428,7 +498,7 @@ export function buildFileIndex(
     // object-shorthand (`{ name }`) is a real read of a binding and tints like it.
     const tintable =
       TINTABLE_TYPES.has(tok.type) ||
-      (tok.type === 'property' && lx.syntax.family !== 'zig' && isShorthandPropertyRead(text, tok.offset, tok.length, tok.modifiers));
+      (tok.type === 'property' && lx.syntax.family !== 'zig' && isShorthandPropertyRead(text, tok.offset, tok.length, tok.modifiers, shorthandRegions));
     if (!tintable) {
       continue;
     }
@@ -1331,6 +1401,7 @@ function isShorthandPropertyRead(
   offset: number,
   length: number,
   modifiers: string[],
+  wholeRegion = false,
 ): boolean {
   // A field/member DEFINITION is band-1, never a data read (Go struct fields).
   if (modifiers.includes('definition')) {
@@ -1360,6 +1431,7 @@ function isShorthandPropertyRead(
   //   `private seen = 0`          → prev `e`      next `=`      → declaration ✗
   //   `interface I { field: … }`  → prev `{`      next `:`      → key literal  ✗
   //   `cfg.name`                  → prev `.`                    → field access ✗
+  if (wholeRegion && prev === REGION_MARK && next === REGION_MARK) return true;
   return (prev === '{' || prev === ',') && (next === ',' || next === '}');
 }
 
@@ -1573,6 +1645,7 @@ export function classifyFromSemantic(
       isCapture,
       homeFn,
       proximity,
+      ...(isModuleTop(text, cls, enclosingFn, homeFn) && { moduleTop: true }),
     });
   }
 
@@ -1625,6 +1698,12 @@ function firstReadAt(ids: LexId[], offset: number): number {
     else hi = mid;
   }
   return lo;
+}
+
+/** Whether a name's binding sits at the top level of a module block that holds the focused block, but not in that block. */
+function isModuleTop(text: string, cls: Cls, enclosingFn: OffsetRange | undefined, homeFn: OffsetRange | undefined): boolean {
+  const home = cls === 'fn' ? enclosingFn : cls === 'out' ? homeFn : undefined;
+  return home !== undefined && text[home.start] === MODULE_OPEN;
 }
 
 /**
@@ -1962,6 +2041,9 @@ function heuristicCandidate(lx: LexResult, id: LexId, nonData: Set<string>): boo
   if (c === '(' || (c === ':' && text[n + 1] === ':') || (c === '!' && /[([{]/.test(text[n + 1] ?? ''))) {
     return false;
   }
+  if (lx.syntax.family === 'js' && c === '?' && text[n + 1] === '.' && text[n + 2] === '(') {
+    return false;
+  }
   if (lx.syntax.family === 'js' && isBraceKey(lx, id, n)) {
     return false;
   }
@@ -2073,6 +2155,8 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
     }
   }
 
+  if (family === 'js') for (const name of jsxComponentNames(lx)) nonData.add(name);
+  if (languageId === 'astro') nonData.add('Astro');
   const zig = family === 'zig' ? zigFacts(lx) : undefined;
   const lua = family === 'lua' ? luaFacts(lx, blocks) : undefined;
   if (lua) {
@@ -2184,6 +2268,7 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
     return base;
   }
   declareShapes(lx, keywords, declare);
+  if (lx.syntax.key === 'view') patternDeclarations(lx, declare);
   if (zig) {
     for (const id of zig.captures) declare(id);
   }
@@ -2843,6 +2928,7 @@ export function classifyFromHeuristic(
       isCapture,
       homeFn,
       proximity,
+      ...(isModuleTop(text, cls, enclosingFn, homeFn) && { moduleTop: true }),
     });
   }
 

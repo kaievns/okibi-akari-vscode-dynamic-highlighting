@@ -24,7 +24,7 @@
  */
 
 import * as vscode from 'vscode';
-import { flowText, regionAt, viewRegions } from './html';
+import { flowText, isViewLanguage, regionAt, viewRegions } from './html';
 import {
   scanBlocks,
   innermostBlock,
@@ -56,8 +56,9 @@ import { lexicalRisk, escapeRisk } from './risk';
 import { highlightSpans, linkSpans } from './markdown';
 import {
   Span, jsPlaceholderSpans, luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans, rustStringBracketSpans,
-  zigPlaceholderSpans,
+  sveltePlaceholderSpans, zigPlaceholderSpans,
 } from './placeholders';
+import { COMPONENT_LANGUAGES } from './sfc';
 import { commentBracketSpans, goDocLinkSpans } from './doclinks';
 import { importUseNames, importUseSpans, shadowUseSpans } from './imports';
 import { luaRestoreSpans } from './lua';
@@ -118,8 +119,8 @@ interface Band1Inputs {
   readonly typed: string;
 }
 
-/** The `import * as` restore (docs/import-restore.md#javascript-and-typescript); the React ids wait for their JSX tag positions. */
-const NAMESPACE_RESTORE_LANGUAGES = new Set(['javascript', 'typescript', 'html']);
+/** The `import * as` restore (docs/import-restore.md#javascript-and-typescript). A JSX tag is not a use: the theme paints tags. */
+const NAMESPACE_RESTORE_LANGUAGES = new Set(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'html', 'vue', 'svelte', 'astro']);
 
 /** The document URIs a tab shows: a text tab's, or both sides of a diff. */
 function tabUris(tab: { input: unknown }): string[] {
@@ -135,6 +136,8 @@ const PLACEHOLDER_SCANS: Record<string, ((text: string) => Span[]) | undefined> 
   lua: luaPlaceholderSpans,
   ruby: rubyPlaceholderSpans,
   javascript: jsPlaceholderSpans,
+  javascriptreact: jsPlaceholderSpans,
+  svelte: sveltePlaceholderSpans,
   zig: zigPlaceholderSpans,
 };
 /** Languages whose theme paints the placeholders unless the server's answer types string literals. */
@@ -145,6 +148,9 @@ const COMMENT_RESTORE_SCANS: Record<string, ((text: string, lex: LexResult) => S
   rust: (text, lex) => commentBracketSpans(text, lex),
   javascript: (text, lex) => commentBracketSpans(text, lex, true),
   typescript: (text, lex) => commentBracketSpans(text, lex, true),
+  javascriptreact: (text, lex) => commentBracketSpans(text, lex, true),
+  typescriptreact: (text, lex) => commentBracketSpans(text, lex, true),
+  svelte: (text, lex) => commentBracketSpans(text, lex, true),
 };
 
 interface CacheEntry {
@@ -536,8 +542,8 @@ export class Decorator implements vscode.Disposable {
     // paint. See `isProseLanguage`.
     const fallback = isNonFlowLanguage(lang) ? undefined : text;
     const offset = doc.offsetAt(caret);
-    // In HTML only a script is code: a caret in the markup has no scope.
-    if (lang === 'html' && !regionAt(viewRegions(text), offset)) return null;
+    // In HTML and a component only a code region is code: a caret in the markup has no scope.
+    if (isViewLanguage(lang) && !regionAt(viewRegions(text), offset)) return null;
     if (state.lex.syntax.family !== 'js') {
       return innermostBlock(blocks, caret.line, offset, fallback);
     }
@@ -738,7 +744,7 @@ export class Decorator implements vscode.Disposable {
     // neither engages nor enters Edit. A static content or prose file has no scope to
     // edit in, and an undo there may report no caret change to drop it back to Survey.
     if (!isNonFlowLanguage(langOf(e.document)) && this.isTypingEdit(editor, e, now)
-      && (langOf(e.document) !== 'html' || this.focusedBlock(editor) !== null)) {
+      && (!isViewLanguage(langOf(e.document)) || this.focusedBlock(editor) !== null)) {
       this.engaged.add(e.document.uri.toString());
       this.machine.onType(now);
     }
@@ -1310,7 +1316,8 @@ export class Decorator implements vscode.Disposable {
     if (cached && cached.version === doc.version) {
       ranges = cached.ranges;
     } else {
-      ranges = scan(this.textFor(doc)).map((s) => this.toRange(doc, s));
+      // A component's scan reads its scripts' languages off the document itself.
+      ranges = scan(COMPONENT_LANGUAGES.has(langOf(doc)) ? doc.getText() : this.textFor(doc)).map((s) => this.toRange(doc, s));
       this.placeholderCache.set(doc, { version: doc.version, ranges });
     }
     this.dbg(`  band1 placeholders: ${ranges.length} ranges (${langOf(doc)})`);

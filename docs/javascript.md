@@ -9,8 +9,9 @@ semantic tokens come from tsserver (built into VS Code) or, with
 brace and arrow scans, `src/imports.ts` the namespace restore. Tests:
 `test/javascript.test.js`, plus JavaScript in the perf-golden inputs and the
 transition walks. `javascriptreact` and `typescriptreact` share the family and
-every rule here, except the template, JSDoc and namespace restores
-([Band-1 restores](#band-1-restores)).
+every rule here; their JSX tags are markup inside the code
+([components.md](components.md#jsx)), and the template-hole restore is
+`javascriptreact`'s only ([Band-1 restores](#band-1-restores)).
 
 Which files open as what, in VS Code 1.144.1 with denoland.vscode-deno 3.53.1:
 
@@ -97,12 +98,16 @@ literal, `)`, `]`, `++` or `--`. A line break changes nothing, so `a` then
 `/2/1` on the next line divides, as JavaScript reads it. Numerals take
 separators, BigInt and exponents (`1_000_000n`, `0xff_ff`, `1e-3`, `.5`).
 `javascript` also runs the JSX lookahead, which TypeScript files do not; the
-cost is in [Cost](#cost).
+cost is in [Cost](#cost). A JSX tag's name segments (`div`, `UI` and `Button`
+of `<UI.Button>`) are tags, not identifiers (`jsxTags`), and the `{` `}` of a
+JSX expression are kept apart (`jsxBraces`).
 
 ## Blocks and focus
 
 Every `{…}` is a block, an object literal and a class body included, and a
-concise arrow body (`x => x + 1`) is a synthetic one. Two rules are JavaScript
+concise arrow body (`x => x + 1`) is a synthetic one. A JSX expression's braces
+(`<p>{count}</p>`) are not: they delimit markup, so a caret in `{count}`
+focuses the component function around it. Two rules are JavaScript
 and TypeScript only:
 
 - A caret in a destructuring pattern (`const { a, b } = o`, `for (const { a }
@@ -133,6 +138,9 @@ these for the `js` family:
 - An `import * as NS` name is not data on either path, so Deno's
   `variable.readonly` on `path.join` tints nothing. A namespace the file also
   uses as a bare word is left to the server (below).
+- **A component is not data**: a name a JSX tag uses capitalised
+  (`<Message>`), or as the capitalised root of a member tag (`<UI.Button>`), on
+  both paths. A lowercase root (`<item.Icon>`) is an object and stays data.
 
 Without a server, these declare a name: a bare arrow parameter (`args =>`), the
 names of a destructured parameter (`({ name, size = 1 }, [a, b]) =>`), and the
@@ -165,7 +173,7 @@ tokens; the heuristic path makes no claim. JavaScript specifics:
 | Restore | Spans | Why |
 |---|---|---|
 | `this`, keyword grey | every code `this`, `this` parameters of a declaration file included (`f(this: Window)`, which tsserver types `parameter`) | as in every language ([runtime.md](runtime.md#rust-path-keywords)); `self` is not painted |
-| template holes, member steel | the `${` and `}` of every closed hole, nested ones included; `javascript` only | JavaScript's language configuration lists `${` `}` as a bracket pair and sets no `colorizedBracketPairs`, so bracket-pair colorization paints both over the theme's rule. TypeScript's sets `colorizedBracketPairs` without it, and the theme reaches them |
+| template holes, member steel | the `${` and `}` of every closed hole, nested ones included; `javascript` and `javascriptreact` only | JavaScript's language configuration lists `${` `}` as a bracket pair and sets no `colorizedBracketPairs`, so bracket-pair colorization paints both over the theme's rule. TypeScript's sets `colorizedBracketPairs` without it, and the theme reaches them |
 | JSDoc brackets, comment colour | every `(` `)` `[` `]` `{` `}` in a `/**` comment: `@param {string} [name]` | both grammars give a JSDoc type and variable the token type `other`, so bracket-pair colorization reaches them; `//` and `/*` comments are left alone |
 | `import * as NS` uses, type slate | `NS.x` and `NS?.x`, a line break before the `.` included, after `import * as NS from "…"`, `import type * as NS` and `import d, * as NS` | tsserver and Deno send no token for a project file's namespace (`import * as util from './util.js'`), so `util.read` stays page colour ([import-restore.md](import-restore.md#javascript-and-typescript)) |
 
@@ -174,13 +182,13 @@ parameter, a local, `f(NS)`, `NS[k]`, `...NS`), and one imported twice, so it
 needs no shadow rules. It hands over per name: a name whose uses got a token in
 the last answer with tokens is left to the server.
 
-`javascriptreact` and `typescriptreact` get none of the three new restores yet;
-their JSX tag positions (`<NS.Tag>`) need checking first. In `javascript`, which
-VS Code opens with the JSX-capable `source.js`, the namespace restore skips a tag
-name: a use right after `<` or `</` (`<UI.Button>`, `</UI.Button>`), which the
-grammar paints as one component token, call blue. A use in the tag's attributes
-or children is restored. A comparison written without a space, `a<ns.max`, is
-skipped too.
+`javascriptreact` shares `javascript`'s language configuration and grammar
+token types, so it takes all three restores; `typescriptreact` shares
+`typescript`'s and takes the JSDoc and namespace ones. A tag name is no use:
+`<UI.Button>` and `</UI.Button>` are tags, which the grammar paints as one
+component token, call blue, so the namespace restore leaves them. A use in the
+tag's attributes or children is restored. A comparison written without a space,
+`a<ns.max`, is skipped too.
 
 ## Server states
 

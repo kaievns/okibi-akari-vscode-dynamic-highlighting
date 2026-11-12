@@ -17,9 +17,10 @@
  * this scanner computes — no special-casing of control-flow headers.
  */
 
-import { LexId, LexResult, blankOrHashLine, forgetLex, lexFor, rememberLex, scriptLexes } from './lex';
+import { LexId, LexResult, blankOrHashLine, forgetLex, jsxBraces, lexFor, rememberLex, scriptLexes } from './lex';
 import { bestAt, buildIntervalIndex } from './intervals';
-import { viewRegions } from './html';
+import { BLOCK_OPEN, MODULE_OPEN, isViewLanguage, viewBlocks, viewRegions } from './html';
+import type { TemplateBlock } from './sfc';
 
 export type { LexId } from './lex';
 
@@ -64,10 +65,12 @@ export function scanBraceBlocks(text: string, languageId?: string): BraceBlock[]
   const blocks: BraceBlock[] = [];
   const stack: { openLine: number; openOffset: number; headerStart: number }[] = [];
   const starts = lx.lineStarts;
+  // A JSX expression's braces delimit markup, so a caret in `{total}` focuses the component.
+  const jsx = jsxBraces(lx);
   let line = 0;
   for (const i of lx.punct) {
     const c = text.charCodeAt(i);
-    if (c !== 123 && c !== 125) continue;
+    if ((c !== 123 && c !== 125) || jsx.has(i)) continue;
     while (line + 1 < starts.length && starts[line + 1] <= i) line++;
     if (c === 123) {
       stack.push({ openLine: line, openOffset: i, headerStart: starts[line] });
@@ -120,10 +123,10 @@ function withSlots(blocks: BraceBlock[]): BraceBlock[] {
  * Languages whose `=>` is a JS arrow. In Rust, C# and Scala `=>` also ends a match
  * or switch arm, which the arrow scanner would read as a one-arm scope.
  */
-const ARROW_LANGUAGES = new Set(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'html']);
+const ARROW_LANGUAGES = new Set(['javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'html', 'vue', 'svelte', 'astro']);
 
 /** Languages where `(a): T => …` puts a return-type annotation between `)` and `=>`. */
-const TYPED_ARROW_LANGUAGES = new Set(['typescript', 'typescriptreact']);
+const TYPED_ARROW_LANGUAGES = new Set(['typescript', 'typescriptreact', 'vue', 'svelte', 'astro']);
 
 /**
  * Blocks for CONCISE ARROW BODIES — `(acc, x) => expr` with no braces.
@@ -1739,8 +1742,8 @@ export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
   if (isNonFlowLanguage(languageId)) {
     return [];
   }
-  if (languageId === 'html') {
-    return scanScriptBlocks(text);
+  if (isViewLanguage(languageId)) {
+    return scanScriptBlocks(text, languageId!);
   }
   if (languageId === 'lua') {
     return scanLuaBlocks(text);
@@ -1767,24 +1770,59 @@ export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
   return braced;
 }
 
-/** An HTML script view's blocks: each script scanned as JavaScript on its own, so a brace never pairs across scripts. */
-function scanScriptBlocks(view: string): BraceBlock[] {
-  const lx = lexFor(view, 'html');
+/**
+ * How many of `blocks` (sorted by open, nested as the template's tags and block
+ * tags nest them) hold each offset of a rising sequence.
+ */
+function nestingSweep(blocks: readonly TemplateBlock[]): (offset: number) => number {
+  const closes: number[] = [];
+  let k = 0;
+  return (o) => {
+    for (; k < blocks.length && blocks[k].open < o; k++) {
+      while (closes.length && closes[closes.length - 1] <= blocks[k].open) closes.pop();
+      closes.push(blocks[k].close);
+    }
+    while (closes.length && closes[closes.length - 1] <= o) closes.pop();
+    return closes.length;
+  };
+}
+
+/**
+ * A view's blocks: each code region scanned on its own, so a brace never pairs
+ * across regions, and a component's template blocks (`{#each}`, a `v-for` element)
+ * around them, each region block one level deeper per template block that holds it.
+ * A pattern region's braces destructure, so they are no block.
+ */
+function scanScriptBlocks(view: string, languageId: string): BraceBlock[] {
+  const lx = lexFor(view, languageId);
   const parts = scriptLexes(lx);
   const out: BraceBlock[] = [];
+  const templates = languageId === 'html' ? [] : viewBlocks(view);
+  const around = nestingSweep(templates);
+  const partLanguage = languageId === 'html' ? 'javascript' : 'typescriptreact';
   viewRegions(view).forEach((r, k) => {
+    if (r.kind === 'pattern') return;
     const d = r.start;
     const l = lx.lineOf(d);
+    const deeper = templates.length ? around(d) : 0;
     // Remembered just before the scan reads it, so each script is lexed once.
     rememberLex(parts[k].text, parts[k]);
-    for (const b of scanBlocks(parts[k].text, 'javascript')) {
+    for (const b of scanBlocks(parts[k].text, partLanguage)) {
       out.push({
-        openLine: b.openLine + l, closeLine: b.closeLine + l, depth: b.depth,
+        openLine: b.openLine + l, closeLine: b.closeLine + l, depth: b.depth + deeper,
         openOffset: b.openOffset + d, closeOffset: b.closeOffset + d, headerStart: b.headerStart + d,
       });
     }
     forgetLex(parts[k].text);
   });
+  const outer = nestingSweep(templates);
+  for (const t of templates) {
+    out.push({
+      openLine: lx.lineOf(t.open), closeLine: lx.lineOf(t.close), depth: outer(t.open),
+      openOffset: t.open, closeOffset: t.close, headerStart: t.open,
+    });
+  }
+  if (templates.length) out.sort((a, b) => a.openOffset - b.openOffset);
   return withSlots(out);
 }
 
@@ -1879,8 +1917,8 @@ function computeTopLevelExcludes(
       ranges.push({ start: h.start, end: b.openOffset });
     }
   }
-  if (languageId === 'html') {
-    // The top level of an HTML document is its scripts' top level: the markup is outside it.
+  if (isViewLanguage(languageId)) {
+    // The top level of an HTML document or a component is its regions' top level: the markup is outside it.
     let at = 0;
     for (const r of viewRegions(text)) {
       if (r.start > at) ranges.push({ start: at, end: r.start });
@@ -2449,6 +2487,8 @@ function rubyParamStart(text: string, h: Header): number {
  * statement block.
  */
 export function functionScopeOf(text: string, block: BraceBlock, languageId?: string): { start: number; end: number } | null {
+  // A component's template block (`{#each}`, a `v-for` element, an Astro script) scopes the names it binds, as a function does.
+  if (text[block.openOffset] === BLOCK_OPEN || text[block.openOffset] === MODULE_OPEN) return { start: block.openOffset, end: block.closeOffset + 1 };
   if (block.headerStart === block.openOffset && !isBraceBlock(text, block, languageId)) {
     // Synthetic: a lambda, a Rust closure, or a JS concise arrow (`(c) => …`, `c => …`).
     const arrow = languageId === undefined || ARROW_LANGUAGES.has(languageId);
@@ -2645,9 +2685,15 @@ function keywordParamOpen(lx: LexResult, start: number, end: number): number {
     return -1;
   }
   const text = lx.text;
+  // An object type's `}` in type parameters (`function f<T extends { id: number }>(`) closes no block.
   let after = start;
-  for (let k = lx.punctFrom(start); k < lx.punct.length && lx.punct[k] < end; k++) {
-    if (text[lx.punct[k]] === '}') after = lx.punct[k] + 1;
+  let generic = 0;
+  for (let i = start; i < end; i++) {
+    if (!lx.isCode(i)) continue;
+    const c = text[i];
+    if (c === '<' && /[\p{ID_Continue}$]/u.test(text[i - 1] ?? '')) generic++;
+    else if (c === '>' && generic > 0 && text[i - 1] !== '=' && text[i - 1] !== '-') generic--;
+    else if (c === '}' && generic === 0) after = i + 1;
   }
   const kw = lx.identsIn(after, end).find((id) => words.has(id.name));
   if (!kw) {

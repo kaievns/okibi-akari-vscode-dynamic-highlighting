@@ -1,0 +1,47 @@
+---
+import Layout from './Layout.astro';
+import * as fmt from './fmt';
+import Counter from './Counter.svelte';
+
+interface Props { title: string; items?: { id: number; name: string }[] }
+
+const { title, items = [] } = Astro.props;
+const LIMIT = 10;
+let total = 0;
+for (const item of items) {
+  const step = item.id * 2;
+  total += step;
+}
+const label = `${title}: ${total}`;
+const html = '<b>bold</b>';
+---
+
+<Layout title={title}>
+  <!-- Don't paint this comment; 42 is not a number -->
+  <h1 class:list={['card', { hot: total > LIMIT }]}>{label} ({fmt.twice(total)})</h1>
+  {items.length === 0 && <p>Nothing yet, it's 0.</p>}
+  <ul>
+    {items.map((item, i) => (
+      <li data-id={item.id}>{i}: {item.name}</li>
+    ))}
+  </ul>
+  <Counter client:load start={total} label={title} />
+  <div set:html={html} />
+  <p>Total is {total > LIMIT ? 'big' : 'small'} of 10.</p>
+</Layout>
+
+<script>
+  const button = document.querySelector('h1');
+  let clicks = 0;
+  button?.addEventListener('click', () => {
+    clicks += 1;
+    console.log(`clicks ${clicks}`);
+  });
+  button?.addEventListener('blur', function () {
+    this.title = `left after ${clicks}`;
+  });
+</script>
+
+<style>
+  h1 { color: #3a7bd5; margin: 4px; } /* a note */
+</style>

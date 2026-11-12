@@ -53,6 +53,8 @@ Band 2 is about **data flow**, so only bindings you can trace get a hue.
 | `this`, `self`, `@…` | painted by band 1 only (`--id-self` = `--syn-keyword`), so no weight flip on focus change. In JavaScript and TypeScript only `this`: `self` is an ordinary name (`var self = this`) |
 | `module`, `exports`, `require`, `process`, `Buffer`, `global`, `__dirname`, `__filename` (JS / TS) | Node's module surface: tsserver types them plain `variable`, since `@types/node` is no default library. Data again when a token in the file declares the name ([javascript.md](javascript.md#data-identities)) |
 | an `import * as NS` name (JS / TS) | a module, whatever the server types it: Deno says `variable.readonly` |
+| a JSX component, a capitalised tag (`<Message>`) or a member tag's capitalised root (`<UI.Button>`) | a function or a class wherever the file names it; tags themselves are not identifiers ([components.md](components.md#data-identities)) |
+| `Astro` (`astro`) | the frontmatter's global joins the module surface: the Astro server types it `variable.readonly` without `defaultLibrary` |
 
 ### Position exclusions
 
@@ -123,6 +125,13 @@ object literal, so it is bracketed — preceded by `{` or `,`, followed by `,` o
 
 Note that a setter's **parameter** (`val`) and a constructor parameter property
 (`private readonly name`) *do* tint — they are parameters, i.e. real data.
+
+In `svelte` and `astro` a `property` token that fills a code region alone, a
+shorthand attribute `<C {open}>` or a value-less `bind:open`, reads `open` too:
+the servers type both `property [declaration]`, and in the code view a form feed
+stands on each side where the braces were. `vue` keeps the rule above: Volar
+types a prop read in a template (`{{ title }}`) `property`, and it has no
+binding in the script.
 
 ---
 
@@ -247,7 +256,11 @@ a method call, and the pass made the label in
 `verbose` declared in another method.
 
 `out` non-captures render **bold** (weight = reaches beyond the local frame);
-captures render like locals. A capture's home is the innermost function that
+captures render like locals. A module block (an Astro client `<script>`,
+[components.md](components.md#blocks-and-focus)) scopes like a function but
+weighs like a file: a name declared at its top level and seen from a block
+below it renders bold, as in the same script opened as a `.js` file
+(`NameInfo.moduleTop`). A capture's home is the innermost function that
 declares the name **and encloses the block**. Taking the first declaring function
 instead traced a callback's `name` across an unrelated `loadConfig(name)` on
 `samples/sample.js`, and a top-level `cfgs` across `summarize(cfgs)`; a name whose
@@ -540,6 +553,7 @@ found:
 | the leading names of each line of `var ( … )` / `const ( … )` | Go |
 | bracketed, starred and nested targets: `(a, b) = o`, `a, *rest = o`, `for i, (k, v) in …` | Python |
 | `$name =` at statement start; `as $v`, `as $k => $v` | the default syntax (PHP) |
+| a template's pattern region: `{#each xs as { id }, i}`, `{:then v}`, `{#snippet row(a, b)}`, `let:x`, `v-for="(item, i) in xs"`, `#header="{ title }"` (`patternDeclarations`) | Vue, Svelte (pattern regions, [components.md](components.md#code-regions)) |
 
 Inside a pattern a key before `:` in `{…}`, a type after `:` in `(…)`, a default
 value after `=`, a type or variant before `{` / `(` / `::`, a subscript or
@@ -571,7 +585,7 @@ parameter, `self`, and a `const` bound to a type, namespace or function (or a
 container-level alias of one) are not candidates (`zigFacts`,
 [zig.md](zig.md#data-identities)). Elsewhere a candidate occurrence is
 a code identifier that is not a keyword, self, `_` or Python `cls`; not a member (`item.size`), path segment (`Config::new`), callee
-(`fetch(`), macro (`println!(`) or argument label; and not a name declared by
+(`fetch(`, an optional call's `cb?.(`), macro (`println!(`) or argument label; and not a name declared by
 `function`, `class`, `def`, `fn`, `type`, `struct`, `import` and similar. Python
 imports are the exception to that last rule: they are resolved per occurrence,
 not per name. No identifier inside an import statement is a candidate, nor is a

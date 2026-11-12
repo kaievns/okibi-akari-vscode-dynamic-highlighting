@@ -9,6 +9,7 @@ const h = require('./transitions-harness');
 const { mayForceMove, positionMovedBy, rangesMovedBy } = require('../out/tracking');
 const { Phase } = require('../out/phases');
 const html = require('../out/html');
+const sfc = require('../out/sfc');
 const { Position } = require('./vscode-stub');
 
 const WALKS = Number(process.env.OKIBI_WALKS ?? 300);
@@ -154,6 +155,95 @@ test(`${HTML_WALKS} random walks over walk.html leave no leftovers and paint not
   const seen = `${Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ')}; active: ${Object.entries(active).map(([l, n]) => `${l} ${n}`).join(', ')}`;
   if (DEFAULT_RUN && HTML_WALKS === 120) for (const [k, n] of [...Object.entries(shown), ...Object.entries(active)]) assert.ok(n > 0, `${k}: ${seen}`);
   t.diagnostic(`walk.html painted, in steps: ${seen}`);
+});
+
+const COMPONENT_WALKS = Number(process.env.OKIBI_COMPONENT_WALKS ?? 120);
+
+/**
+ * The first paint of a component editor outside every code region of its text, else
+ * null. A stripe line may hold markup only inside a template block around the region
+ * that holds the caret: the block is focused whole (docs/components.md § Blocks and focus).
+ */
+function paintOutsideRegions(doc, out, caret) {
+  const view = html.flowText(doc.getText(), doc.languageId);
+  const component = sfc.COMPONENT_LANGUAGES.has(doc.languageId);
+  const regions = component ? html.viewRegions(view) : [{ start: 0, end: view.length }];
+  const inside = (o) => regions.some((r) => o >= r.start && o <= r.end);
+  const home = regions.find((r) => caret >= r.start && caret <= r.end);
+  const blockLines = !component || !home ? [] : html.viewBlocks(view)
+    .filter((b) => b.open <= home.start && home.end <= b.close + 1)
+    .map((b) => [doc.positionAt(b.open).line, doc.positionAt(b.close).line]);
+  for (const [key, ranges] of Object.entries(out)) {
+    const role = key.split(' ')[0];
+    for (const [s, e] of ranges) {
+      if (role !== 'gutter' && inside(s) && inside(e)) continue;
+      if (role === 'gutter') {
+        const ls = doc.offsetAt(new Position(s, 0));
+        const le = ls + doc.lineAt(s).text.length;
+        if (regions.some((r) => r.start <= le && r.end >= ls)) continue;
+        if (blockLines.some(([a, z]) => s >= a && s <= z)) continue;
+      }
+      return `${role} at ${s}-${e}`;
+    }
+  }
+  return null;
+}
+
+test(`${COMPONENT_WALKS} random walks over walk.vue, walk.svelte, walk.astro, walk.tsx and walk.jsx leave no leftovers and paint nothing outside a code region`, async (t) => {
+  const shown = { tint: 0, clay: 0, importRestore: 0, riskEscape: 0, self: 0, gutter: 0, jsxPlaceholder: 0, jsxCommentRestore: 0 };
+  const active = Object.fromEntries(h.COMPONENT_KEYS.map((k) => [h.FIXTURES[k].lang, 0]));
+  const outside = [];
+  await walks(h.generateComponents, COMPONENT_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    const lang = w.activeEditor()?.document.languageId;
+    if (lang in active) active[lang]++;
+    const roles = new Set();
+    w.visible().forEach((ed, j) => {
+      if (!(ed.document.languageId in active)) return;
+      const out = r.got.editors[j].out;
+      const bad = paintOutsideRegions(ed.document, out, ed.document.offsetAt(ed.selection.active));
+      if (bad) outside.push(`step ${i}, ${ed.document.languageId} v${ed.document.version}: ${bad}`);
+      for (const k of Object.keys(out)) roles.add(k.split(' ')[0]);
+      if (ed.document.languageId !== 'javascriptreact') return;
+      for (const k of ['placeholder', 'commentRestore']) if (Object.keys(out).some((x) => x.split(' ')[0] === k)) roles.add(`jsx:${k}`);
+    });
+    if ([...roles].some((x) => /^(id|idg)\d$/.test(x))) shown.tint++;
+    if (roles.has('numberEngaged')) shown.clay++;
+    if (roles.has('gutter')) shown.gutter++;
+    if (roles.has('jsx:placeholder')) shown.jsxPlaceholder++;
+    if (roles.has('jsx:commentRestore')) shown.jsxCommentRestore++;
+    for (const k of ['importRestore', 'riskEscape', 'self']) if (roles.has(k)) shown[k]++;
+  });
+  assert.deepEqual(outside.slice(0, 5), []);
+  const seen = `${Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ')}; active: ${Object.entries(active).map(([l, n]) => `${l} ${n}`).join(', ')}`;
+  if (DEFAULT_RUN && COMPONENT_WALKS === 120) for (const [k, n] of [...Object.entries(shown), ...Object.entries(active)]) assert.ok(n > 0, `${k}: ${seen}`);
+  t.diagnostic(`components painted, in steps: ${seen}`);
+});
+
+/** The stripe lines of a component editor that touch no code region. */
+function markupStripeLines(doc, out) {
+  const regions = html.viewRegions(html.flowText(doc.getText(), doc.languageId));
+  return Object.entries(out).filter(([k]) => k.split(' ')[0] === 'gutter').flatMap(([, v]) => v).filter(([s]) => {
+    const ls = doc.offsetAt(new Position(s, 0));
+    const le = ls + doc.lineAt(s).text.length;
+    return !regions.some((r) => r.start <= le && r.end >= ls);
+  }).length;
+}
+
+test('a stripe over a focused {#await} block\'s markup lines is the block\'s: seed 4753 of the walks over the first four components', async () => {
+  const outside = [];
+  let markupLines = 0;
+  const firstFour = (seed, steps) => h.generateComponents(seed, steps, ['vue', 'svelte', 'astro', 'tsx']);
+  await walks(firstFour, 1, 60, 4753, 0, (i, ev, r, w) => {
+    w.visible().forEach((ed, j) => {
+      if (!sfc.COMPONENT_LANGUAGES.has(ed.document.languageId)) return;
+      const out = r.got.editors[j].out;
+      const bad = paintOutsideRegions(ed.document, out, ed.document.offsetAt(ed.selection.active));
+      if (bad) outside.push(`step ${i}, ${ed.document.languageId} v${ed.document.version}: ${bad}`);
+      markupLines += markupStripeLines(ed.document, out);
+    });
+  });
+  assert.deepEqual(outside, []);
+  assert.ok(markupLines > 0, 'the walk stripes a markup-only line of the focused block');
 });
 
 const RUBY_WALKS = Number(process.env.OKIBI_RUBY_WALKS ?? 120);

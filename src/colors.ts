@@ -24,7 +24,7 @@ export type ColorPlan = Map<string, ColorPlanEntry>;
  *
  *   - Which names paint: the block's visible set (pass 1, attention budget).
  *   - What hue: the co-visibility graph colour (pass 2, per colour scope).
- *   - Which tier: out-of-fn non-captures render bold (`idg`), everything else
+ *   - Which tier: out-of-fn non-captures and a module block's top level render bold (`idg`), everything else
  *     normal (`id`) — weight carries the local/global distinction now that both
  *     tiers share one tint set. self is never painted (band 1 owns it).
  *
@@ -69,8 +69,8 @@ export function planFromColoring(
       plan.set(name, { kind: 'neutral' });
       continue;
     }
-    // out-of-fn true globals are bold; captures are locals for weight purposes.
-    const bold = info.cls === 'out' && !info.isCapture;
+    // out-of-fn true globals are bold, and so is a module block's top level; captures are locals for weight purposes.
+    const bold = (info.cls === 'out' && !info.isCapture) || info.moduleTop === true;
     plan.set(name, bold ? { kind: 'idg', poolIndex } : { kind: 'id', poolIndex });
   }
 

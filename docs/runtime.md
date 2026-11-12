@@ -190,8 +190,10 @@ for the next relaxation, up to 24 s.
 | Band 1: the import restore (Python, Go, Zig), the shadow restore (Python) | every visible source editor, until a provider answers for the document |
 | Gutter, band 2, clay numbers, band 3 | the active editor only |
 
-In an HTML document every mark lands inside a script: the markup is blanked
-before any scanner reads it ([html.md](html.md#the-script-view)).
+In an HTML document every mark lands inside a script, and in a Vue, Svelte or
+Astro component inside a code region: the markup is blanked before any scanner
+reads it ([html.md](html.md#the-script-view),
+[components.md](components.md#the-code-view)).
 
 An edit repaints band 1 in every visible editor showing the document, the active
 one or not: a rename, a formatter or a reload can change the text of a split
@@ -587,8 +589,9 @@ final state. A difference is a leftover. The harness is
 
 The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
-`walk.lua`, `walk.rb`, `walk.js`, `walk.html`, `walk.zig`, the markdown-derived
-files and the Docker and Kubernetes files have walks of their own, below),
+`walk.lua`, `walk.rb`, `walk.js`, `walk.html`, `walk.vue`, `walk.svelte`,
+`walk.astro`, `walk.tsx`, `walk.jsx`, `walk.zig`, the markdown-derived files and the Docker
+and Kubernetes files have walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
 walks (88 of the default 300) a data file goes in as the second document, and in
@@ -741,6 +744,35 @@ escape marks on 7, `this` paint on 2,657, async marks on 64 and the stripe on
 never shown. Taking `tailwindcss` out of `STATIC_CONTENT_LANGUAGES` fails it at
 seed 13 and `handlebars` at seed 2, each as the file opens (`self` paints), and
 leaving the markup in the top level fails the paint-inside check.
+
+**The component walks** are one more test, 120 walks (`OKIBI_COMPONENT_WALKS`).
+Each opens `walk.vue`, `walk.svelte`, `walk.astro`, `walk.tsx` or `walk.jsx` by
+seed, alone or beside another of them, `walk.ts`, `walk.html`, `walk.md` or `walk.css`, and
+replays the main walk's events with the same seed; a fifth of the typed keys are
+a region boundary, a template block or markup instead (`{{`, `}}`, `{`, `}`,
+`<script>`, `</script>`, `---`, `{#each items as item}`, `{/each}`,
+` v-for="x in xs"`, `"`, `<Child />`, `<>`, `</>`, `<!--`, `-->`, `` ` ``). The
+servers answer in their shape: a token on every name in a script or a template
+expression, none on an `import * as` binding or its uses, and Vue's `component`
+on a capitalised tag in the markup; `javascriptreact` gets tsserver's JavaScript
+shape, no token on an `import * as` binding. At every step each component editor
+must paint inside the code regions of its current text only, a stripe line holding
+code or lying inside a template block around the region that holds the caret,
+which is focused whole ([components.md](components.md#blocks-and-focus));
+`walk.tsx` and `walk.jsx` are one region each. `walk.jsx` holds a namespace
+import, a JSDoc type, template literals in an effect and in JSX, a fragment, a
+class component on `this` and spread props. In the default run the components
+showed identity tints on 322 steps, clay on 858, the namespace restore on 1,310,
+escape marks on 42, `this` paint on 2,175 and the stripe on 1,063, and in
+`walk.jsx` the `${` `}` restore on 769 and the JSDoc brackets on 776; `vue` was
+the active editor at 576 steps, `svelte` at 543, `astro` at 642,
+`typescriptreact` at 670 and `javascriptreact` at 687; the test fails if any is
+never shown. Taking `javascriptreact` out of the placeholder scans fails it.
+A second test replays seed 4753 over the first four components (`vue`, `svelte`,
+`astro`, `tsx`, the walks before `walk.jsx` joined): a caret in `{#await
+promise}` focuses the await block, whose stripe covers `<p>waiting</p>`; the
+check that every stripe line holds code failed it, and 800 walks from seed 4242
+under that check failed at seeds 4753 and 4909.
 
 **The Zig walks** are two more tests, 120 walks each (`OKIBI_ZIG_WALKS`). The
 first opens `walk.zig`, alone or with `walk.ts`, `walk.py` or `walk.md`, and in

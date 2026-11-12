@@ -51,8 +51,8 @@ const def = (ids: string[], s: LangSyntax): void => {
 const base = { jsx: false, cppRaw: false, shellHash: false };
 def(['typescript', 'typescript-declaration'], { ...base, family: 'js', key: 'ts' });
 def(['javascript', 'javascriptreact', 'typescriptreact'], { ...base, family: 'js', key: 'jsx', jsx: true });
-/** An HTML document's script view (src/html.ts): each script lexed as `javascript` on its own. */
-def(['html'], { ...base, family: 'js', key: 'html', jsx: true });
+/** An HTML document's script view or a component's code view (src/html.ts): each region lexed as `javascript` on its own. */
+def(['html', 'vue', 'svelte', 'astro'], { ...base, family: 'js', key: 'view', jsx: true });
 def(['go'], { ...base, family: 'go', key: 'go' });
 def(['python'], { ...base, family: 'python', key: 'python' });
 def(['rust'], { ...base, family: 'rust', key: 'rust' });
@@ -190,6 +190,10 @@ class Lexer {
   readonly idents: LexId[] = [];
   readonly numbers: LexRange[] = [];
   readonly punct: number[] = [];
+  /** JSX tag-name segments: `div`, `UI` and `Button` of `<UI.Button>`. Not identifiers: a tag is markup. */
+  readonly tags: LexId[] = [];
+  /** The `{` and `}` of every JSX expression: markup delimiters, not a block. */
+  readonly jsxBraces: number[] = [];
   /** Line starts the top-level loop reached, with its state there: 3 numbers each. */
   readonly cpOff: number[] = [];
   readonly cpState: number[] = [];
@@ -1812,7 +1816,7 @@ class Lexer {
   }
 
   private mark(): number[] {
-    return [this.spans.length, this.holes.length, this.idents.length, this.numbers.length, this.punct.length];
+    return [this.spans.length, this.holes.length, this.idents.length, this.numbers.length, this.punct.length, this.tags.length, this.jsxBraces.length];
   }
 
   private reset(m: number[]): void {
@@ -1821,6 +1825,19 @@ class Lexer {
     this.idents.length = m[2];
     this.numbers.length = m[3];
     this.punct.length = m[4];
+    this.tags.length = m[5];
+    this.jsxBraces.length = m[6];
+  }
+
+  /** Offset of the `}` that ends a `{…}` expression whose content starts at `from`, else the text's length. */
+  expressionEnd(from: number): number {
+    return this.code(from, Stop.JsxExpr);
+  }
+
+  /** Offset after the template literal whose backtick is at `at`, else the text's length. */
+  templateEnd(at: number): number {
+    const r = this.quote(at, at);
+    return r < 0 ? this.n : r;
   }
 
   private tryJsx(i: number): number {
@@ -1842,7 +1859,7 @@ class Lexer {
     while (j < this.n) {
       const c = t.charCodeAt(j);
       if (c === CH.dot || c === CH.colon || c === CH.minus) {
-        if (j > seg) this.idents.push({ name: t.slice(seg, j), offset: seg, length: j - seg });
+        if (j > seg) this.tags.push({ name: t.slice(seg, j), offset: seg, length: j - seg });
         j++;
         seg = j;
         continue;
@@ -1851,7 +1868,7 @@ class Lexer {
       if (w === 0) break;
       j += w;
     }
-    if (j > seg) this.idents.push({ name: t.slice(seg, j), offset: seg, length: j - seg });
+    if (j > seg) this.tags.push({ name: t.slice(seg, j), offset: seg, length: j - seg });
     return j;
   }
 
@@ -1912,6 +1929,7 @@ class Lexer {
     this.exprStart = saved;
     if (k >= this.n) return -1;
     this.punct.push(k);
+    this.jsxBraces.push(j, k);
     return k + 1;
   }
 
@@ -2081,11 +2099,43 @@ function lineStartsOf(text: string): number[] {
 /** Lex `text` as `languageId`. Pure; prefer `lexFor`, which memoises. */
 export function lex(text: string, languageId?: string): LexResult {
   const syntax = syntaxFor(languageId);
-  if (syntax.key === 'html') return lexScripts(text, syntax);
+  if (syntax.key === 'view') return lexScripts(text, syntax);
   const lx = new Lexer(text, syntax);
   lx.run();
-  return new Lexed(syntax, text, lineStartsOf(text), lx.spans, lx.holes, lx.idents, lx.numbers, lx.punct, lx.cpOff, lx.cpState, lx.longReads,
+  const out = new Lexed(syntax, text, lineStartsOf(text), lx.spans, lx.holes, lx.idents, lx.numbers, lx.punct, lx.cpOff, lx.cpState, lx.longReads,
     lx.localOffsets, lx.localNames, lx.defStarts);
+  if (lx.tags.length > 0) tagsOf.set(out, lx.tags);
+  if (lx.jsxBraces.length > 0) bracesOf.set(out, new Set(lx.jsxBraces));
+  return out;
+}
+
+const tagsOf = new WeakMap<LexResult, LexId[]>();
+const bracesOf = new WeakMap<LexResult, ReadonlySet<number>>();
+const NO_BRACES: ReadonlySet<number> = new Set();
+
+/** The JSX tag-name segments of a lex, in document order (`Lexer.tags`). */
+export function jsxTags(lx: LexResult): readonly LexId[] {
+  return tagsOf.get(lx) ?? [];
+}
+
+/** The offsets of every JSX expression's `{` and `}` (`Lexer.jsxBraces`). */
+export function jsxBraces(lx: LexResult): ReadonlySet<number> {
+  return bracesOf.get(lx) ?? NO_BRACES;
+}
+
+const EXPR_SYNTAX: Record<'jsx' | 'plain', LangSyntax> = {
+  jsx: { ...base, family: 'js', key: 'jsx', jsx: true },
+  plain: { ...base, family: 'js', key: 'ts' },
+};
+
+/**
+ * Where a template expression ends: the offset of the `}` that closes the `{` before
+ * `from`, read as JavaScript (JSX inside it when `jsx`), else the text's length. With
+ * `opener` a backtick, the offset after the template literal that starts at `from`.
+ */
+export function braceExpressionEnd(text: string, from: number, jsx: boolean, opener?: '`'): number {
+  const lx = new Lexer(text, EXPR_SYNTAX[jsx ? 'jsx' : 'plain']);
+  return opener === '`' ? lx.templateEnd(from) : lx.expressionEnd(from);
 }
 
 /** A script view lexed region by region, so no string, comment or brace runs from one script into the next. */
@@ -2096,14 +2146,20 @@ function lexScripts(view: string, syntax: LangSyntax): LexResult {
   const idents: LexId[] = [];
   const numbers: LexRange[] = [];
   const punct: number[] = [];
+  const tags: LexId[] = [];
+  const braces: number[] = [];
   const parts: LexResult[] = [];
   for (const r of viewRegions(view)) {
     const slice = view.slice(r.start, r.end);
     const lx = new Lexer(slice, js);
     lx.run();
-    parts.push(new Lexed(js, slice, lineStartsOf(slice), lx.spans, lx.holes, lx.idents, lx.numbers, lx.punct, lx.cpOff, lx.cpState, lx.longReads,
-      lx.localOffsets, lx.localNames, lx.defStarts));
+    const part = new Lexed(js, slice, lineStartsOf(slice), lx.spans, lx.holes, lx.idents, lx.numbers, lx.punct, lx.cpOff, lx.cpState, lx.longReads,
+      lx.localOffsets, lx.localNames, lx.defStarts);
+    if (lx.jsxBraces.length > 0) bracesOf.set(part, new Set(lx.jsxBraces));
+    parts.push(part);
     const d = r.start;
+    for (const x of lx.tags) tags.push({ name: x.name, offset: x.offset + d, length: x.length });
+    for (const x of lx.jsxBraces) braces.push(x + d);
     for (const x of lx.spans) spans.push({ start: x.start + d, end: x.end + d, region: x.region });
     for (const x of lx.holes) holes.push({ start: x.start + d, end: x.end + d });
     for (const x of lx.idents) idents.push({ name: x.name, offset: x.offset + d, length: x.length });
@@ -2111,6 +2167,8 @@ function lexScripts(view: string, syntax: LangSyntax): LexResult {
     for (const x of lx.punct) punct.push(x + d);
   }
   const merged = new Lexed(syntax, view, lineStartsOf(view), spans, holes, idents, numbers, punct);
+  if (tags.length > 0) tagsOf.set(merged, tags);
+  if (braces.length > 0) bracesOf.set(merged, new Set(braces));
   scriptParts.set(merged, parts);
   return merged;
 }

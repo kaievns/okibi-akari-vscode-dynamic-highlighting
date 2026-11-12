@@ -1,0 +1,221 @@
+id,file,jsLine,function,operator,original,replacement,set,before,after,firstNamedKiller,whyNotKilled
+5,out/sfc.js,16,searcher,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+6,out/sfc.js,16,searcher,num+1,1,2,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+9,out/sfc.js,18,isSpace,drop-left,c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f',(c === '\f'),sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+17,out/sfc.js,18,isSpace,binop,||,&&,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+20,out/sfc.js,18,isSpace,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+25,out/sfc.js,32,startTag,binop,!==,===,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+27,out/sfc.js,34,startTag,binop,&&,||,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+42,out/sfc.js,40,startTag,binop,===,!==,sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+63,out/sfc.js,48,startTag,num+1,1,2,sample,survived,survived,,equivalent: a bare `{…}` attribute's `expr` is read as a flag only; its region is pushed on its own
+74,out/sfc.js,54,startTag,drop-right,i < n && !isSpace(t[i]) && t[i] !== '=' && t[i] !== '>',(i < n && !isSpace(t[i]) && t[i] !== '='),sample,killed,killed,Astro: the frontmatter is code only at the start; a JSX expression ends at its own brace,
+81,out/sfc.js,54,startTag,binop,<,<=,sample,survived,survived,,equivalent: past the text's end `t[n]` is undefined and the tag stays unclosed
+87,out/sfc.js,54,startTag,drop-left,t[i] === '/' && t[i + 1] === '>',(t[i + 1] === '>'),sample,killed,killed,test/components.test.js,
+97,out/sfc.js,59,startTag,drop-right,j < n && isSpace(t[j]),(j < n),sample,killed,killed,test/components.test.js,
+98,out/sfc.js,59,startTag,binop,<,<=,sample,survived,survived,,equivalent: `isSpace(undefined)` is false
+100,out/sfc.js,61,startTag,binop,!==,===,sample,killed,killed,test/components.test.js,
+101,out/sfc.js,62,startTag,drop-continue,continue;,;,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+115,out/sfc.js,68,startTag,binop,+,-,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+118,out/sfc.js,69,startTag,num+1,1,2,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+134,out/sfc.js,80,startTag,binop,+,-,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+151,out/sfc.js,90,startTag,drop-left,j < n && !isSpace(t[j]) && t[j] !== '>',(t[j] !== '>'),sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+152,out/sfc.js,90,startTag,drop-right,j < n && !isSpace(t[j]) && t[j] !== '>',(j < n && !isSpace(t[j])),sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+156,out/sfc.js,90,startTag,binop,<,<=,sample,survived,survived,,equivalent: an unquoted value at the text's end leaves the tag unclosed either way
+167,out/sfc.js,100,quotedMustaches,binop,<,<=,sample,survived,survived,,"equivalent: `t[end]` is the closing quote, never `{`"
+174,out/sfc.js,104,quotedMustaches,binop,+,-,sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+178,out/sfc.js,113,attrOf,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+190,out/sfc.js,122,isCodeScript,drop-left,"!type || attrValue(t, type) === '' || JS_TYPE.test(attrValue(t, type))","(JS_TYPE.test(attrValue(t, type)))",sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+198,out/sfc.js,131,vueDirective,binop,+,-,sample,killed,killed,"Vue: v-pre content, a pug template and a src script are not code; a dynamic argument is",
+204,out/sfc.js,134,vueDirective,binop,||,&&,sample,survived,killed,"Vue: a slot template with no value scopes nothing, and a custom block after the template is not code",
+213,out/sfc.js,134,vueDirective,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+229,out/sfc.js,148,vueDirective,binop,||,&&,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+237,out/sfc.js,150,vueDirective,drop-left,name === 'v-for' || slot,(slot),sample,survived,survived,,equivalent for valid Vue: a `v-for` value without ` in ` or ` of ` is a compile error
+261,out/sfc.js,162,vueTemplate,drop-right,close < 0 || close >= to,(close < 0),sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+273,out/sfc.js,167,vueTemplate,drop-right,lt < 0 || lt >= to,(lt < 0),sample,survived,survived,,"edge input only: the loop's `i < to` stops the scan after one more tag, the fallback's `</template` at `to`, which can close a nested `<template v-for>` the scan never closed and give it a block"
+280,out/sfc.js,170,vueTemplate,num+1,4,5,sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+284,out/sfc.js,171,vueTemplate,num+1,3,4,sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+289,out/sfc.js,174,vueTemplate,num+1,1,2,sample,killed,killed,"a caret inside {#each} or a v-for element focuses that block, and its alias is data without a server",
+301,out/sfc.js,182,vueTemplate,binop,>=,>,sample,survived,killed,"Vue: the template ends at the `</template>` its own tags close; one in a comment, a value or a mustache counts for nothing",
+316,out/sfc.js,191,vueTemplate,drop-continue,continue;,;,sample,survived,survived,,"equivalent: the fall-through restarts one character into the closing tag, where no `{{` or tag starts before its `>`"
+324,out/sfc.js,199,vueTemplate,binop,+,-,sample,killed,killed,test/components.test.js,
+326,out/sfc.js,199,vueTemplate,num+1,1,2,sample,survived,survived,,equivalent: the name `startTag` returns is not read in a template
+336,out/sfc.js,209,vueTemplate,if-false,pre,false,sample,killed,killed,"Vue: v-pre content, a pug template and a src script are not code; a dynamic argument is",
+357,out/sfc.js,232,vueComponent,num+1,4,5,sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+390,out/sfc.js,257,vueComponent,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+409,out/sfc.js,276,templateEnd,num+1,0,1,sample,survived,removed,,the line went: the template's own scan finds its `</template>`
+410,out/sfc.js,276,templateEnd,binop,!==,===,sample,survived,removed,,the line went: the template's own scan finds its `</template>`
+437,out/sfc.js,294,topLevelWord,drop-right,k < 0 || k > e,(k < 0),sample,survived,survived,,equivalent: a quote closed past `e` and one never closed both end the scan
+445,out/sfc.js,297,topLevelWord,drop-right,c === '(' || c === '[' || c === '{',(c === '(' || c === '['),sample,survived,killed,"Svelte: an each head splits at its own `as`, outside brackets and words",
+451,out/sfc.js,297,topLevelWord,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+454,out/sfc.js,299,topLevelWord,drop-left,c === ')' || c === ']' || c === '}',(c === '}'),sample,killed,killed,"Svelte: an each head splits at its own `as`, outside brackets and words",
+457,out/sfc.js,299,topLevelWord,drop-left,c === ')' || c === ']',(c === ']'),sample,survived,killed,"Svelte: an each head splits at its own `as`, outside brackets and words",
+467,out/sfc.js,301,topLevelWord,drop-left,"depth === 0 && isSpace(t[i - 1]) && t.startsWith(word, i)","(t.startsWith(word, i))",sample,survived,killed,"Svelte: an each head splits at its own `as`, outside brackets and words",
+470,out/sfc.js,301,topLevelWord,drop-left,depth === 0 && isSpace(t[i - 1]),(isSpace(t[i - 1])),sample,survived,killed,"Svelte: an each head splits at its own `as`, outside brackets and words",
+475,out/sfc.js,301,topLevelWord,num+1,1,2,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+479,out/sfc.js,301,topLevelWord,binop,+,-,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+480,out/sfc.js,301,topLevelWord,binop,===,!==,sample,survived,killed,Svelte: a start tag unclosed at the end of the file opens nothing; `as` is a word of its own,
+486,out/sfc.js,307,trimmed,binop,<,<=,sample,survived,survived,,equivalent: an all-space range trims to empty either way
+489,out/sfc.js,309,trimmed,drop-right,e > s && isSpace(t[e - 1]),(e > s),sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+491,out/sfc.js,309,trimmed,binop,-,+,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+503,out/sfc.js,326,svelteTag,binop,-,+,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+510,out/sfc.js,330,svelteTag,if-false,b.kind === word && (word === 'each' || word === 'await' || word === 'snippet'),false,sample,killed,killed,"Svelte: `as` in an each head is no cast; a block, a non-JS script and a style are not code",
+519,out/sfc.js,330,svelteTag,drop-left,word === 'each' || word === 'await',(word === 'await'),sample,killed,killed,"Svelte: `as` in an each head is no cast; a block, a non-JS script and a style are not code",
+536,out/sfc.js,339,svelteTag,num+1,1,2,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+538,out/sfc.js,342,svelteTag,drop-left,"sigil === ':' && word === 'else' && /^\s+if\b/.test(t.slice(s, s + 8))","(/^\s+if\b/.test(t.slice(s, s + 8)))",sample,survived,survived,,equivalent for valid Svelte: only `{:else if}` holds ` if` after its word
+541,out/sfc.js,342,svelteTag,drop-left,sigil === ':' && word === 'else',(word === 'else'),sample,survived,survived,,equivalent for valid Svelte: only `{:else if}` holds ` if` after its word
+543,out/sfc.js,342,svelteTag,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+553,out/sfc.js,347,svelteTag,binop,<,<=,sample,survived,survived,,"equivalent: `as` lies past the head's `{#each`, never at 0"
+562,out/sfc.js,355,svelteTag,binop,-,+,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+568,out/sfc.js,356,svelteTag,binop,-,+,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+583,out/sfc.js,374,svelteTag,if-false,word === 'then' || word === 'catch',false,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+598,out/sfc.js,389,svelteTag,if-false,word === 'else' && !elseIf,false,sample,survived,removed,,"the line went: a bare `{:else}` returned early, the same as an empty region"
+624,out/sfc.js,406,svelteComponent,binop,||,&&,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+632,out/sfc.js,406,svelteComponent,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+637,out/sfc.js,408,svelteComponent,binop,+,-,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+640,out/sfc.js,409,svelteComponent,num+1,1,2,sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+641,out/sfc.js,410,svelteComponent,drop-continue,continue;,;,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+673,out/sfc.js,430,svelteComponent,if-false,!m,false,sample,killed,killed,"120 random walks over walk.vue, walk.svelte, walk.astro, walk.tsx and walk.jsx leave no leftovers and paint nothing outside a code region",
+676,out/sfc.js,431,svelteComponent,num+1,1,2,sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+681,out/sfc.js,436,svelteComponent,if-false,!tag.closed,false,sample,survived,killed,Svelte: a start tag unclosed at the end of the file opens nothing; `as` is a word of its own,
+694,out/sfc.js,443,svelteComponent,drop-left,!a.expr && a.valueStart < 0,(a.valueStart < 0),sample,survived,survived,,equivalent: a directive with a value took the first branch
+708,out/sfc.js,453,svelteComponent,drop-right,(name === 'script' || name === 'style') && !tag.selfClosing,((name === 'script' || name === 'style')),sample,survived,killed,"start tags: a self-closing element, unquoted values, quoted Svelte values and an empty comment",
+734,out/sfc.js,487,astroComponent,num+1,3,4,sample,survived,survived,,"edge input only: markup on the closing fence's line, right after `---`"
+735,out/sfc.js,489,astroComponent,binop,<,<=,sample,survived,survived,,equivalent: at the text's end both searches miss and the loop breaks
+737,out/sfc.js,492,astroComponent,binop,&&,||,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+749,out/sfc.js,493,astroComponent,binop,+,-,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+755,out/sfc.js,496,astroComponent,drop-continue,continue;,;,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+756,out/sfc.js,498,astroComponent,if-false,lt < 0,false,sample,killed,killed,timeout (ETIMEDOUT),
+758,out/sfc.js,498,astroComponent,num+1,0,1,sample,killed,killed,Astro: the frontmatter is code only at the start; a JSX expression ends at its own brace,
+777,out/sfc.js,510,astroComponent,binop,+,-,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+781,out/sfc.js,512,astroComponent,binop,+,-,sample,survived,killed,timeout (ETIMEDOUT),
+785,out/sfc.js,516,astroComponent,num+1,0,1,sample,survived,survived,,"equivalent for valid markup: the attribute scan starts on the name's last character, read as a value-less attribute no rule looks at"
+791,out/sfc.js,520,astroComponent,binop,&&,||,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+792,out/sfc.js,520,astroComponent,drop-left,a.expr && a.name !== '',(a.name !== ''),sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+793,out/sfc.js,520,astroComponent,drop-right,a.expr && a.name !== '',(a.expr),sample,survived,survived,,equivalent: a bare expression's region is pushed twice and merged
+806,out/sfc.js,527,astroComponent,drop-left,name === 'script' || name === 'style',(name === 'style'),sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+812,out/sfc.js,529,astroComponent,binop,&&,||,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+814,out/sfc.js,529,astroComponent,drop-right,"name === 'script' && isCodeScript(t, tag)",(name === 'script'),sample,killed,killed,Astro: the frontmatter is code only at the start; a JSX expression ends at its own brace,
+820,out/sfc.js,537,astroComponent,drop-continue,continue;,;,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+823,out/sfc.js,549,componentRegions,drop-left,cache.text === text && cache.lang === languageId,(cache.lang === languageId),sample,killed,killed,"Vue: v-pre content, a pug template and a src script are not code; a dynamic argument is",
+826,out/sfc.js,549,componentRegions,binop,===,!==,sample,survived,killed,the region cache is per language as well as per text,
+833,out/sfc.js,554,componentRegions>lineBreak,binop,===,!==,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+838,out/sfc.js,560,componentRegions,binop,&&,||,sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+841,out/sfc.js,560,componentRegions,binop,>,>=,sample,survived,survived,,"equivalent: the character before a region is its delimiter, never a line break at offset 0"
+844,out/sfc.js,560,componentRegions,num+1,1,2,sample,killed,killed,a region never puts a mark on a line break,
+850,out/sfc.js,564,componentRegions,binop,<,<=,sample,survived,killed,"the view reads back every region and block of nested, void, touching and file-start constructs",
+854,out/sfc.js,566,componentRegions,num+1,1,2,sample,survived,killed,"the view reads back every region and block of nested, void, touching and file-start constructs",
+858,out/sfc.js,567,componentRegions,drop-right,last && r.start - 1 <= last.end,(last),sample,killed,killed,"code regions: scripts, frontmatter and every template expression, patterns marked",
+874,out/html.js,221,codeView,num+1,0,1,sample,survived,killed,"the view reads back every region and block of nested, void, touching and file-start constructs",
+880,out/html.js,226,codeView>markup,binop,<,<=,sample,killed,killed,"the code view keeps every offset and line, and reads its regions and blocks back from the marks",
+890,out/html.js,228,codeView>markup,binop,<,<=,sample,survived,killed,"the view reads back every region and block of nested, void, touching and file-start constructs",
+892,out/html.js,228,codeView>markup,binop,===,!==,sample,killed,killed,"the code view keeps every offset and line, and reads its regions and blocks back from the marks",
+896,out/html.js,238,codeView,binop,-,+,sample,killed,killed,"the code view keeps every offset and line, and reads its regions and blocks back from the marks",
+899,out/html.js,258,viewRegions,num+1,2,3,sample,survived,survived,,equivalent: every start below -1 searches
+903,out/html.js,261,viewRegions>startFrom,drop-right,pattern !== -1 && pattern < k,(pattern !== -1),sample,survived,survived,,fast path: the search from `k` finds the same mark
+911,out/html.js,265,viewRegions,num+1,0,1,sample,survived,killed,"the view reads back every region and block of nested, void, touching and file-start constructs",
+917,out/html.js,269,viewRegions,binop,===,!==,sample,killed,killed,"the code view keeps every offset and line, and reads its regions and blocks back from the marks",
+932,out/html.js,317,flowText,drop-left,componentViewCache.text === text && componentViewCache.lang === languageId,(componentViewCache.lang === languageId),sample,killed,killed,an Astro <script> is a scope of its own: the frontmatter and the client script share no names,
+955,out/lex.js,2169,lexScripts,num+1,0,1,sample,survived,removed,,the line went: a per-region tag map no code read
+957,out/lex.js,2171,lexScripts,binop,>,>=,sample,survived,survived,,equivalent: an empty set and no set read the same
+962,out/lex.js,2191,lexScripts,binop,>,>=,sample,survived,survived,,equivalent: an empty set and no set read the same
+974,out/focus.js,72,scanBraceBlocks,drop-right,c !== 123 && c !== 125,(c !== 123),sample,killed,killed,a script binding and its template uses are one identity: a caret in the template tints the script,
+977,out/focus.js,72,scanBraceBlocks,binop,!==,===,sample,killed,killed,"JSX: a tag is not a name, so a local named like a tag stays apart, and a component is not data",
+982,out/focus.js,1840,nestingSweep,binop,&&,||,sample,killed,killed,"nothing paints outside a code region, in any phase, with the server and without",
+983,out/focus.js,1840,nestingSweep,drop-left,k < blocks.length && blocks[k].open < o,(blocks[k].open < o),sample,killed,killed,"nothing paints outside a code region, in any phase, with the server and without",
+987,out/focus.js,1841,nestingSweep,binop,&&,||,sample,survived,killed,template blocks nest: an inner block and a region after it are as deep as the blocks around them,
+998,out/focus.js,1845,nestingSweep,num+1,1,2,sample,survived,killed,template blocks nest: an inner block and a region after it are as deep as the blocks around them,
+1018,out/focus.js,2510,functionScopeOf,binop,===,!==,sample,killed,killed,a script binding and its template uses are one identity: a caret in the template tints the script,
+1032,out/classify.js,87,jsxComponentNames,drop-right,c === 0x2e || c === 0x3a || c === 0x2d,(c === 0x2e || c === 0x3a),sample,survived,killed,JSX: only a tag's root names a component; a lone self-closing component tag counts,
+1037,out/classify.js,87,jsxComponentNames,num+1,0x2e,47,sample,survived,killed,JSX: only a tag's root names a component; a lone self-closing component tag counts,
+1038,out/classify.js,87,jsxComponentNames,binop,===,!==,sample,survived,killed,JSX: only a tag's root names a component; a lone self-closing component tag counts,
+1048,out/classify.js,106,patternDeclarations,num+1,0,1,sample,killed,killed,"a caret inside {#each} or a v-for element focuses that block, and its alias is data without a server",
+1058,out/classify.js,112,patternDeclarations,binop,+,-,sample,survived,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+1070,out/classify.js,115,patternDeclarations,drop-left,skip || text[n] === '(' || text[n] === '.',(text[n] === '.'),sample,survived,removed,,the line went: rewritten by the pattern fix
+1076,out/classify.js,115,patternDeclarations,binop,===,!==,sample,killed,killed,"a caret inside {#each} or a v-for element focuses that block, and its alias is data without a server",
+1096,out/classify.js,125,patternDeclarations,drop-left,c === '(' || c === '[' || c === '{',(c === '{'),sample,survived,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+1100,out/classify.js,125,patternDeclarations,drop-right,c === '(' || c === '[',(c === '('),sample,survived,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+1117,out/classify.js,131,patternDeclarations,binop,||,&&,sample,survived,removed,,the line went: rewritten by the pattern fix
+1122,out/classify.js,131,patternDeclarations,drop-right,c === '=' && text[i + 1] !== '>',(c === '='),sample,survived,removed,,the line went: rewritten by the pattern fix
+1123,out/classify.js,131,patternDeclarations,binop,===,!==,sample,killed,killed,"a caret inside {#each} or a v-for element focuses that block, and its alias is data without a server",
+1125,out/classify.js,131,patternDeclarations,binop,+,-,sample,survived,removed,,the line went: rewritten by the pattern fix
+1127,out/classify.js,131,patternDeclarations,binop,&&,||,sample,killed,killed,"a caret inside {#each} or a v-for element focuses that block, and its alias is data without a server",
+1128,out/classify.js,131,patternDeclarations,drop-left,c === ':' && opens[opens.length - 1] !== '{',(opens[opens.length - 1] !== '{'),sample,killed,killed,"a caret inside {#each} or a v-for element focuses that block, and its alias is data without a server",
+1132,out/classify.js,131,patternDeclarations,binop,-,+,sample,survived,removed,,the line went: rewritten by the pattern fix
+1136,out/classify.js,137,nextNonBlank,drop-right,i < text.length && (text[i] === ' ' || text[i] === '\t' || text[i] === '\n' || text[i] === '\r'),(i < text.length),sample,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+1156,out/classify.js,335,buildFileIndex,binop,===,!==,sample,killed,killed,"a Svelte or Astro shorthand attribute, typed `property` by the server, reads its binding; a Vue prop in a template stays a member",
+1194,out/colors.js,57,planFromColoring,binop,||,&&,sample,killed,killed,"heuristic: a destructured parameter declares its own names, not a shorthand in its default value",
+1198,out/colors.js,57,planFromColoring,drop-left,info.cls === 'out' && !info.isCapture,(!info.isCapture),sample,killed,killed,planFromColoring: out-of-fn non-capture is bold (idg); captures and locals are id,
+1199,out/colors.js,57,planFromColoring,drop-right,info.cls === 'out' && !info.isCapture,(info.cls === 'out'),sample,killed,killed,planFromColoring: out-of-fn non-capture is bold (idg); captures and locals are id,
+1206,out/placeholders.js,441,sveltePlaceholderSpans,drop-continue,continue;,;,sample,killed,killed,"band 1: holes restored in a Svelte JavaScript script only, its template and TypeScript scripts left to the theme",
+1208,out/placeholders.js,443,sveltePlaceholderSpans,binop,+,-,sample,killed,killed,"band 1: holes restored in a Svelte JavaScript script only, its template and TypeScript scripts left to the theme",
+1223,out/decorator.js,608,onEdit,drop-right,"!(0, html_1.isViewLanguage)(langOf(e.document)) || this.focusedBlock(editor) !== null","(!(0, html_1.isViewLanguage)(langOf(e.document)))",sample,killed,killed,a caret in the markup is Survey and typing there stays Survey; one in an expression focuses and typing enters Edit,
+10000,out/classify.js,106,patternDeclarations,num+1,1,2,rewritten,survived,survived,,equivalent: every test reads `skipFrom` against 0
+10001,out/classify.js,116,patternDeclarations,binop,&&,||,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10002,out/classify.js,116,patternDeclarations,drop-left,text[p] === '.' && text[p - 1] !== '.',(text[p - 1] !== '.'),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10003,out/classify.js,116,patternDeclarations,drop-right,text[p] === '.' && text[p - 1] !== '.',(text[p] === '.'),rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10004,out/classify.js,116,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10005,out/classify.js,116,patternDeclarations,binop,!==,===,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10006,out/classify.js,116,patternDeclarations,binop,-,+,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10007,out/classify.js,116,patternDeclarations,num+1,1,2,rewritten,survived,survived,,"equivalent for valid code: a member access in a pattern sits in a default, which is skipped already"
+10008,out/classify.js,117,patternDeclarations,if-false,skipFrom >= 0 || text[n] === '(' || text[n] === '.' || (text[n] === ':' && inBrace) || member,false,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10009,out/classify.js,117,patternDeclarations,binop,||,&&,rewritten,survived,survived,,"equivalent: a key before `:` is no candidate, so declaring it paints nothing"
+10010,out/classify.js,117,patternDeclarations,drop-left,skipFrom >= 0 || text[n] === '(' || text[n] === '.' || (text[n] === ':' && inBrace) || member,(member),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10011,out/classify.js,117,patternDeclarations,drop-right,skipFrom >= 0 || text[n] === '(' || text[n] === '.' || (text[n] === ':' && inBrace) || member,(skipFrom >= 0 || text[n] === '(' || text[n] === '.' || (text[n] === ':' && inBrace)),rewritten,survived,survived,,"equivalent: a name after `.` is no candidate, so declaring it paints nothing"
+10012,out/classify.js,117,patternDeclarations,binop,||,&&,rewritten,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+10013,out/classify.js,117,patternDeclarations,drop-left,skipFrom >= 0 || text[n] === '(' || text[n] === '.' || (text[n] === ':' && inBrace),((text[n] === ':' && inBrace)),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10014,out/classify.js,117,patternDeclarations,drop-right,skipFrom >= 0 || text[n] === '(' || text[n] === '.' || (text[n] === ':' && inBrace),(skipFrom >= 0 || text[n] === '(' || text[n] === '.'),rewritten,survived,survived,,"equivalent: a key before `:` is no candidate, so declaring it paints nothing"
+10015,out/classify.js,117,patternDeclarations,binop,||,&&,rewritten,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+10016,out/classify.js,117,patternDeclarations,drop-left,skipFrom >= 0 || text[n] === '(' || text[n] === '.',(text[n] === '.'),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10017,out/classify.js,117,patternDeclarations,drop-right,skipFrom >= 0 || text[n] === '(' || text[n] === '.',(skipFrom >= 0 || text[n] === '('),rewritten,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+10018,out/classify.js,117,patternDeclarations,binop,||,&&,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10019,out/classify.js,117,patternDeclarations,drop-left,skipFrom >= 0 || text[n] === '(',(text[n] === '('),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10020,out/classify.js,117,patternDeclarations,drop-right,skipFrom >= 0 || text[n] === '(',(skipFrom >= 0),rewritten,survived,survived,,edge input only: a snippet's name read as a value inside its own body; as a callee it never tints
+10021,out/classify.js,117,patternDeclarations,binop,>=,>,rewritten,survived,survived,,equivalent for valid code: a default or a type at depth 0 is no pattern syntax
+10022,out/classify.js,117,patternDeclarations,num+1,0,1,rewritten,survived,survived,,equivalent for valid code: a default or a type at depth 0 is no pattern syntax
+10023,out/classify.js,117,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10024,out/classify.js,117,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10025,out/classify.js,117,patternDeclarations,binop,&&,||,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10026,out/classify.js,117,patternDeclarations,drop-left,text[n] === ':' && inBrace,(inBrace),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10027,out/classify.js,117,patternDeclarations,drop-right,text[n] === ':' && inBrace,(text[n] === ':'),rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10028,out/classify.js,117,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10029,out/classify.js,127,patternDeclarations,if-false,c === ')' || c === ']' || c === '}',false,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10030,out/classify.js,127,patternDeclarations,binop,||,&&,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10031,out/classify.js,127,patternDeclarations,drop-left,c === ')' || c === ']' || c === '}',(c === '}'),rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10032,out/classify.js,127,patternDeclarations,drop-right,c === ')' || c === ']' || c === '}',(c === ')' || c === ']'),rewritten,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+10033,out/classify.js,127,patternDeclarations,binop,||,&&,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10034,out/classify.js,127,patternDeclarations,drop-left,c === ')' || c === ']',(c === ']'),rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10035,out/classify.js,127,patternDeclarations,drop-right,c === ')' || c === ']',(c === ')'),rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10036,out/classify.js,127,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10037,out/classify.js,127,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10038,out/classify.js,127,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10039,out/classify.js,129,patternDeclarations,if-false,opens.length < skipFrom,false,rewritten,survived,survived,,"equivalent for valid code: a `,` at the default's depth or above comes before the next binding"
+10040,out/classify.js,129,patternDeclarations,binop,<,<=,rewritten,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+10041,out/classify.js,130,patternDeclarations,num+1,1,2,rewritten,survived,survived,,equivalent: every test reads `skipFrom` against 0
+10042,out/classify.js,132,patternDeclarations,if-false,"c === ','",false,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10043,out/classify.js,132,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10044,out/classify.js,133,patternDeclarations,if-false,opens.length <= skipFrom,false,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10045,out/classify.js,133,patternDeclarations,binop,<=,<,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10046,out/classify.js,134,patternDeclarations,num+1,1,2,rewritten,survived,survived,,equivalent: every test reads `skipFrom` against 0
+10047,out/classify.js,136,patternDeclarations,if-false,skipFrom < 0 && ((c === '=' && text[i + 1] !== '>') || (c === ':' && opens[opens.length - 1] !== '{')),false,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10048,out/classify.js,136,patternDeclarations,binop,&&,||,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10049,out/classify.js,136,patternDeclarations,drop-left,skipFrom < 0 && ((c === '=' && text[i + 1] !== '>') || (c === ':' && opens[opens.length - 1] !== '{')),(((c === '=' && text[i + 1] !== '>') || (c === ':' && opens[opens.length - 1] !== '{'))),rewritten,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+10050,out/classify.js,136,patternDeclarations,drop-right,skipFrom < 0 && ((c === '=' && text[i + 1] !== '>') || (c === ':' && opens[opens.length - 1] !== '{')),(skipFrom < 0),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10051,out/classify.js,136,patternDeclarations,binop,<,<=,rewritten,survived,survived,,equivalent for valid code: a default or a type at depth 0 is no pattern syntax
+10052,out/classify.js,136,patternDeclarations,num+1,0,1,rewritten,survived,survived,,equivalent for valid code: a default or a type at depth 0 is no pattern syntax
+10053,out/classify.js,136,patternDeclarations,binop,||,&&,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10054,out/classify.js,136,patternDeclarations,drop-left,(c === '=' && text[i + 1] !== '>') || (c === ':' && opens[opens.length - 1] !== '{'),((c === ':' && opens[opens.length - 1] !== '{')),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10055,out/classify.js,136,patternDeclarations,drop-right,(c === '=' && text[i + 1] !== '>') || (c === ':' && opens[opens.length - 1] !== '{'),((c === '=' && text[i + 1] !== '>')),rewritten,survived,killed,"patterns: a default's calls, arrow and typed parameter, a computed key and a parameter's type bind nothing",
+10056,out/classify.js,136,patternDeclarations,binop,&&,||,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10057,out/classify.js,136,patternDeclarations,drop-left,c === '=' && text[i + 1] !== '>',(text[i + 1] !== '>'),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10058,out/classify.js,136,patternDeclarations,drop-right,c === '=' && text[i + 1] !== '>',(c === '='),rewritten,survived,survived,,equivalent for valid code: an `=>` outside a default or a type is no pattern syntax
+10059,out/classify.js,136,patternDeclarations,binop,===,!==,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10060,out/classify.js,136,patternDeclarations,binop,!==,===,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10061,out/classify.js,136,patternDeclarations,binop,+,-,rewritten,survived,survived,,equivalent for valid code: an `=` after `>` or before it outside a default is no pattern syntax
+10062,out/classify.js,136,patternDeclarations,num+1,1,2,rewritten,survived,survived,,equivalent for valid code: an `=` after `>` or before it outside a default is no pattern syntax
+10063,out/classify.js,136,patternDeclarations,binop,&&,||,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10064,out/classify.js,136,patternDeclarations,drop-left,c === ':' && opens[opens.length - 1] !== '{',(opens[opens.length - 1] !== '{'),rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10065,out/classify.js,136,patternDeclarations,drop-right,c === ':' && opens[opens.length - 1] !== '{',(c === ':'),rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10066,out/classify.js,136,patternDeclarations,binop,===,!==,rewritten,killed,killed,"patterns: a nested key, a default with a call, a spread and a typed parameter declare only their bindings",
+10067,out/classify.js,136,patternDeclarations,binop,!==,===,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10068,out/classify.js,136,patternDeclarations,binop,-,+,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",
+10069,out/classify.js,136,patternDeclarations,num+1,1,2,rewritten,killed,killed,"a pattern declares its bindings, not its keys: `{ id: key }` binds `key`",

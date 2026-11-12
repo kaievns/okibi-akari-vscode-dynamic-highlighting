@@ -11,14 +11,32 @@ const JS_TYPE = /^(?:text\/(?:javascript(?:1\.[0-5])?|x-javascript|jscript|lives
 /** The `type` values whose content the grammar reads as HTML again. */
 const TEMPLATE_TYPE = /^text\/(?:x-handlebars|(?:x-(?:handlebars-)?|ng-)?template|html)(?:\s|$)/i;
 
+import { COMPONENT_LANGUAGES, CodeRegion, TemplateBlock, componentRegions } from './sfc';
+
 export const REGION_MARK = '\f';
+/** Starts a region whose names a template binds (src/sfc.ts); it ends at a REGION_MARK too. */
+export const PATTERN_MARK = '\v';
+/** On the opening and closing character of a template block (`{#each}`, a `v-for` element), in the markup. */
+export const BLOCK_OPEN = '\x0e';
+export const BLOCK_CLOSE = '\x0f';
+/** BLOCK_OPEN for a block that is a module of its own (an Astro client `<script>`). */
+export const MODULE_OPEN = '\x10';
 
 export interface ScriptRegion {
   /** Offset of the content's first character, after the start tag's `>`. */
   start: number;
   /** Offset of the `<` of `</script`, or the document's length. */
   end: number;
+  /** A component's pattern region declares the names it holds; absent means code. */
+  kind?: CodeRegion['kind'];
 }
+
+/**
+ * The languages read through a view: HTML's scripts, a component's scripts and template
+ * expressions. Spelled out: src/sfc.ts reaches this module through src/lex.ts while it loads.
+ */
+export const VIEW_LANGUAGES: ReadonlySet<string> = new Set(['html', 'vue', 'svelte', 'astro']);
+export const isViewLanguage = (languageId: string | undefined): boolean => languageId !== undefined && VIEW_LANGUAGES.has(languageId);
 
 const isSpace = (c: string): boolean => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f';
 
@@ -188,13 +206,33 @@ export function scriptRegions(text: string): readonly ScriptRegion[] {
 
 /** The document as the layer reads its scripts (see the file comment). */
 export function scriptView(text: string): string {
-  const regions = scriptRegions(text);
+  return codeView(text, scriptRegions(text), []);
+}
+
+/** `text` with everything outside `regions` blanked, each region between its marks, and each block's ends marked. */
+export function codeView(text: string, regions: readonly ScriptRegion[], blocks: readonly TemplateBlock[]): string {
   const parts: string[] = [];
   const blank = (s: string): string => s.replace(/[^\n\r]+/g, (run) => ' '.repeat(run.length));
+  const ends: [number, string][] = [];
+  for (const b of blocks) ends.push([b.open, b.module ? MODULE_OPEN : BLOCK_OPEN], [b.close, BLOCK_CLOSE]);
+  ends.sort((a, b) => a[0] - b[0]);
+  let k = 0;
+  // Called left to right: an end inside a region is passed over, never marked.
+  const markup = (from: number, to: number): void => {
+    let at = from;
+    while (k < ends.length && ends[k][0] < to) {
+      const [o, c] = ends[k++];
+      if (o < from || text[o] === '\n' || text[o] === '\r') continue;
+      parts.push(blank(text.slice(at, o)), c);
+      at = o + 1;
+    }
+    parts.push(blank(text.slice(at, to)));
+  };
   let at = 0;
   for (const r of regions) {
-    // The mark sits on the start tag's `>`.
-    parts.push(blank(text.slice(at, r.start - 1)), REGION_MARK, text.slice(r.start, r.end).replace(/\f/g, ' '));
+    // The mark sits on the start tag's `>`, or the delimiter before an expression.
+    markup(at, r.start - 1);
+    parts.push(r.kind === 'pattern' ? PATTERN_MARK : REGION_MARK, text.slice(r.start, r.end).replace(/[\f\v\x0e\x0f\x10]/g, ' '));
     if (r.end < text.length) {
       parts.push(REGION_MARK);
       at = r.end + 1;
@@ -202,7 +240,7 @@ export function scriptView(text: string): string {
       at = r.end;
     }
   }
-  parts.push(blank(text.slice(at)));
+  markup(at, text.length);
   return parts.join('');
 }
 
@@ -212,12 +250,21 @@ const viewCache: { view: string | undefined; regions: readonly ScriptRegion[] } 
 export function viewRegions(view: string): readonly ScriptRegion[] {
   if (viewCache.view === view) return viewCache.regions;
   const out: ScriptRegion[] = [];
-  let i = view.indexOf(REGION_MARK);
+  // Every region ends at a REGION_MARK, so only the pattern search can run far ahead: it is reused.
+  let pattern = -2;
+  const startFrom = (k: number): number => {
+    const a = view.indexOf(REGION_MARK, k);
+    if (pattern !== -1 && pattern < k) pattern = view.indexOf(PATTERN_MARK, k);
+    return a < 0 ? pattern : pattern < 0 ? a : Math.min(a, pattern);
+  };
+  let i = startFrom(0);
   while (i >= 0) {
     const close = view.indexOf(REGION_MARK, i + 1);
-    out.push({ start: i + 1, end: close < 0 ? view.length : close });
+    const r: ScriptRegion = { start: i + 1, end: close < 0 ? view.length : close };
+    if (view[i] === PATTERN_MARK) r.kind = 'pattern';
+    out.push(r);
     if (close < 0) break;
-    i = view.indexOf(REGION_MARK, close + 1);
+    i = startFrom(close + 1);
   }
   viewCache.view = view;
   viewCache.regions = out;
@@ -238,7 +285,31 @@ export function regionAt(regions: readonly ScriptRegion[], offset: number): Scri
   return undefined;
 }
 
-/** The text the layer's scanners read for a document: an HTML document's script view, else the text itself. */
+/** The template blocks of a view, read back from its marks: [open, close] offsets, outermost first. */
+export function viewBlocks(view: string): TemplateBlock[] {
+  const out: TemplateBlock[] = [];
+  const open: number[] = [];
+  for (const m of view.matchAll(/[\x0e\x0f\x10]/g)) {
+    if (m[0] !== BLOCK_CLOSE) open.push(m.index);
+    else if (open.length) {
+      const o = open.pop()!;
+      out.push(view[o] === MODULE_OPEN ? { open: o, close: m.index, module: true } : { open: o, close: m.index });
+    }
+  }
+  return out.sort((a, b) => a.open - b.open);
+}
+
+const componentViewCache: { text: string | undefined; lang: string | undefined; view: string } = { text: undefined, lang: undefined, view: '' };
+
+/** The text the layer's scanners read for a document: an HTML document's script view, a component's code view, else the text itself. */
 export function flowText(text: string, languageId: string): string {
-  return languageId === 'html' ? scriptView(text) : text;
+  if (languageId === 'html') return scriptView(text);
+  if (!COMPONENT_LANGUAGES.has(languageId)) return text;
+  if (componentViewCache.text === text && componentViewCache.lang === languageId) return componentViewCache.view;
+  const c = componentRegions(text, languageId);
+  const view = codeView(text, c.regions, c.blocks);
+  componentViewCache.text = text;
+  componentViewCache.lang = languageId;
+  componentViewCache.view = view;
+  return view;
 }

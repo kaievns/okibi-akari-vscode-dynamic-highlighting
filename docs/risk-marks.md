@@ -213,6 +213,7 @@ is unchanged.
 | `kotlin`, `swift`, `dart` | `as` casts, `as?` and `as!` included | `import … as` |
 | `python` | none | `import … as`, `with … as`, `except … as`, `case … as`, `any()` |
 | `go` | none | `any` (see below) |
+| `vue`, `svelte`, `astro` | TypeScript's, in every code region of the component ([components.md](components.md#marks)) | TypeScript's, and a Svelte `{#each xs as x}`'s `as`, which is markup |
 | `javascript`, `javascriptreact` | none | no casts, no `any` type |
 | `lua` | none | no casts; no async marks either, since Lua has no `async` / `await` keyword |
 | `ruby` | none | no casts; Sorbet's `T.cast`, `T.unsafe` and `T.untyped` are method calls. No async marks: Ruby has no async syntax, so `async: true` and the Async gem's `Async do` are names |

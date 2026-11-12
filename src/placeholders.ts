@@ -39,6 +39,7 @@
  * not wait for Focus or Edit and does not blink when the phase relaxes.
  */
 
+import { componentRegions } from './sfc';
 import { LexResult, LexSpan, bangCalls, errorAttributes, lexFor } from './lex';
 
 export interface Span {
@@ -421,6 +422,21 @@ export function rubyPlaceholderSpans(text: string): Span[] {
     if (text[h.start - 1] !== '{' || text[h.start - 2] !== '#' || h.end >= text.length || text[h.end] !== '}') continue;
     if (lx.regionAt(h.start - 1) !== 'string' || lx.regionAt(h.end) !== 'string') continue;
     out.push({ start: h.start - 2, end: h.start }, { start: h.end, end: h.end + 1 });
+  }
+  return out;
+}
+
+/**
+ * A Svelte component's template delimiters in its JavaScript `<script>` blocks only:
+ * the grammar embeds `source.js` there, with its grammar's token types, and
+ * `source.ts` in a TypeScript script and in every template expression
+ * (docs/components.md#band-1-restores). `text` is the document, not its view.
+ */
+export function sveltePlaceholderSpans(text: string): Span[] {
+  const out: Span[] = [];
+  for (const r of componentRegions(text, 'svelte').regions) {
+    if (!r.js) continue;
+    for (const s of jsPlaceholderSpans(text.slice(r.start, r.end))) out.push({ start: s.start + r.start, end: s.end + r.start });
   }
   return out;
 }

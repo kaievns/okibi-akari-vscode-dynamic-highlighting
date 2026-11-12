@@ -213,6 +213,56 @@ the HTML walks                       █████████ 9
 the static-id fixture test           ███ 3
 ```
 
+### Components
+
+The component code (`src/sfc.ts`; `codeView`, `viewRegions`, `viewBlocks` and
+`flowText`'s component path in `src/html.ts`; the JSX tags and braces,
+`braceExpressionEnd` and `lexScripts` in `src/lex.ts`; the template blocks,
+`nestingSweep` and the template-block scope in `src/focus.ts`;
+`jsxComponentNames`, `patternDeclarations`, the module tier and the shorthand
+read in `src/classify.ts` and `src/colors.ts`; `sveltePlaceholderSpans`; the
+new lines of `src/decorator.ts`) was sampled the same way: 150 of the 1,227
+mutants on the lines this change added to the compiled `out/*.js`, each run
+against `components.test.js`, then `lexer`, `javascript`, `html` and
+`lexer-render`, then the Vue and HTML walks, then the rest of the fast suite,
+then perf-golden. Six workers ran side by side. With the first version of
+`test/components.test.js`, 82 were killed and 68 survived. The survivors were
+mapped onto the fixed build by line text, and all 70 mutants of the lines the
+fix below rewrote were added (`set` `rewritten` in the CSV): with the tests
+then, 33 of the 62 mapped and 47 of the 70 were killed. The tests added after
+that kill 10 more. 9 mutants sit in lines that went, 2 of them `templateEnd`'s,
+which the template scan's own `</template>` replaced. The mutants on lines a later
+fix rewrote (`vueTemplate`'s mustache and end-tag lines, the each key's, the Svelte
+brace branch) were run again on the new line, and one, the template scan's bound,
+is now edge input only. 16 mutants of the lines that fix added, picked by hand and
+not in the CSV, were run the same way: 14 are killed, and 2 survive as equivalent, a
+`}}` never starting at the template's bound and an each key's scan never reaching a
+`(` right after `as`, which a space always follows. 6 mutants of `src/sfc.ts`
+that HTML and JavaScript tests killed under the load of six workers and a
+real-editor run passed every stage run alone: 5 count as survivors, and one is
+killed by a component test. Per mutant, with the line of the compiled file it
+first ran on, in [mutation-audit-components.csv](mutation-audit-components.csv).
+
+| Set | Mutants | Before: killed / survived | After: killed / survived / removed |
+|---|---|---|---|
+| sample | 150 | 82 / 68 | 117 / 24 / 9 |
+| rewritten | 70 | 47 / 23 | 54 / 16 / 0 |
+| **total** | **220** | **129 / 91** | **171 / 40 / 9** |
+
+```
+Left after (40 survived)
+equivalent: no input changes the output   ███████████████████████ 23
+equivalent for valid code or markup       █████████████ 13
+edge input only                           ███ 3
+fast path: same output                    █ 1
+```
+
+**The bug a new test exposed**, fixed in the same change: a pattern's default
+value ended at the first comma, so `h` in `{#each xs as { e = f(g, h) }}`
+declared a binding, and a spread declared none: `rest` in `{ ...rest }` read as
+a member after its dot. A default or a type annotation now ends at a `,` or a
+bracket at its own depth. A per-region tag map no code read went too.
+
 ## Timing
 
 A test that checks an algorithm stays linear compares the CPU time of an input

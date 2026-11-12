@@ -317,6 +317,22 @@ test('heuristic: which initializers make a binding a function or a module, not d
   p.d.dispose();
 });
 
+test('heuristic: an optional call `cb?.()` is a callee, as `cb()` is', async () => {
+  const h = await harness('function f({ cb, n }) {\n  cb?.(n);\n  cb(n);\n  return n + 1;\n}\n', 'javascript');
+  assert.deepEqual(await h.at('return n', 'n'), ['1:cb', '1:n', '2:n', '3:n', '4:n']);
+  h.d.dispose();
+});
+
+test('heuristic: a generic function\'s destructured parameters declare, past an object type in its type parameters', async () => {
+  const body = '  const total = items.length;\n  return <p>{title}{total}</p>;\n}\n';
+  for (const head of ['function List<T extends { id: number }>({ items, title }: Props<T>) {\n', 'function List<T>({ items, title }: Props<T>) {\n']) {
+    const h = await harness(head + body, 'typescriptreact', { uri: `file:///generic-${head.length}.tsx` });
+    const paint = await h.at('const total', 'total');
+    assert.deepEqual(paint.filter((p) => p.startsWith('1:')), ['1:items', '1:title'], head);
+    h.d.dispose();
+  }
+});
+
 test('heuristic: a destructured parameter declares its own names, not a shorthand in its default value', async () => {
   const text = 'let y = 1;\nconst g = (a = [1, { y }], { b }) => {\n  return a + b + y + y;\n};\n';
   const h = await harness(text, 'javascript');
@@ -501,12 +517,15 @@ test('a TypeScript declaration file keeps band 1 and gets no Focus', async () =>
   h.d.dispose();
 });
 
-test('the React ids keep their behaviour: no template, JSDoc or namespace restore yet', async () => {
-  const text = "import * as React from 'react';\n/** @param {string} [name] */\nconst s = `${React.version}`;\n";
-  for (const lang of ['javascriptreact', 'typescriptreact']) {
+// javascriptreact shares javascript's language configuration and grammar token types; typescriptreact shares typescript's.
+test('the React ids get the JavaScript and TypeScript restores: holes in javascriptreact only, JSDoc and the namespace in both', async () => {
+  const text = "import * as UI from './ui';\n/** @param {string} [name] */\nconst s = `${UI.version}`;\nconst e = <UI.Button label={UI.label} />;\n";
+  for (const [lang, holes] of [['javascriptreact', ['3:${', '3:}']], ['typescriptreact', []]]) {
     const h = await harness(text, lang, { uri: `file:///r-${Math.random()}.${lang === 'javascriptreact' ? 'jsx' : 'tsx'}` });
     h.d.render();
-    for (const pool of ['placeholder', 'commentRestore', 'importRestore']) assert.deepEqual(h.show(h.d.pool[pool]), [], `${lang} ${pool}`);
+    assert.deepEqual(h.show(h.d.pool.placeholder), holes, `${lang} placeholder`);
+    assert.deepEqual(h.show(h.d.pool.commentRestore), ['2:[', '2:]', '2:{', '2:}'], `${lang} JSDoc`);
+    assert.deepEqual(h.show(h.d.pool.importRestore), ['3:UI', '4:UI'], `${lang}: the hole's and the attribute's uses, not the tag's`);
     h.d.dispose();
   }
 });

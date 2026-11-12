@@ -209,6 +209,9 @@ const ZIG_DANGER = new Set([
 const DANGER_RULES = new Map<string, DangerRule>([
   ['typescript', tsDanger],
   ['typescriptreact', tsDanger],
+  ['vue', tsDanger],
+  ['svelte', tsDanger],
+  ['astro', tsDanger],
   ['rust', onlyAs(rustCast)],
   ['kotlin', onlyAs(importAwareCast)],
   ['dart', onlyAs(importAwareCast)],

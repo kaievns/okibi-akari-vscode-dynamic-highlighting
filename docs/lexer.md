@@ -43,8 +43,8 @@ from that layout.
 | languageId | Comments | Strings | `'` | Extras |
 |---|---|---|---|---|
 | `typescript`, `typescript-declaration` | `//`, `/* */`, `#!` at offset 0 | `'` `"` single-line; `` ` `` multi-line with nested `${}` | string | regex literals in expression position; `#name` is an identifier |
-| `javascript`, `javascriptreact`, `typescriptreact` | same | same | string | same, plus JSX: text children and attribute strings are `string`, `{…}` is code |
-| `html` | each script as `javascript` | same | string | lexes the script view: the markup is blanked, a form feed marks each script's start and end, and each script is lexed on its own and shifted to the document ([html.md](html.md#the-script-view)) |
+| `javascript`, `javascriptreact`, `typescriptreact` | same | same | string | same, plus JSX: text children and attribute strings are `string`, `{…}` is code; a tag's name segments are tags, not identifiers (`jsxTags`), and an expression's `{` `}` are kept apart (`jsxBraces`) |
+| `html`, `vue`, `svelte`, `astro` | each region as `javascript` | same | string | lexes the code view (syntax key `view`): the markup is blanked, a form feed or a vertical tab marks each region's start and a form feed its end, and each region is lexed on its own, JSX included, and shifted to the document ([html.md](html.md#the-script-view), [components.md](components.md#the-code-view)) |
 | `go` | `//`, `/* */` | `"` single-line; `` ` `` raw, multi-line, no escapes | rune | — |
 | `python` | `#` | prefixes `[rRbBuUfFtT]{1,2}`; `'` `"` single-line; `'''` `"""` multi-line; `f`/`t` holes with `!conv` and `:spec` (nested fields), `{{` literal, `\N{…}` named escape | string | a triple-quoted, non-f string in statement position is `doc`; `\` + newline in code continues the line |
 | `rust` | `//`, `///`, `//!`, nested `/* */` | `"` `b"` `c"` multi-line with escapes; `r#*"…"#*`, `br`, `cr` raw | char or lifetime | `'x'`, `'\''`, `'\u{…}'`, `'\x41'`, `b'x'` are chars; `'a`, `'static`, `'outer` are lifetimes (code, not identifiers); `r#ident` is one identifier |

@@ -11,6 +11,7 @@ const { Decorator, isDecoratable } = require('../out/decorator');
 const { lexFor } = require('../out/lex');
 const focus = require('../out/focus');
 const html = require('../out/html');
+const sfc = require('../out/sfc');
 const { LUA_KEYWORDS } = require('../out/lua');
 const { RUBY_KEYWORDS } = require('../out/ruby');
 const { isZigReserved } = require('../out/zig');
@@ -295,20 +296,22 @@ const KEYWORDS = new Set(('import from as export class private async await const
 function tokensFor(text, languageId, degraded, strings) {
   if (languageId === 'ruby') return encode(text, rubyLspTokens(text));
   if (languageId === 'html') return encode(text, htmlServerTokens(text, degraded));
+  if (sfc.COMPONENT_LANGUAGES.has(languageId)) return encode(text, componentServerTokens(text, languageId, degraded));
   if (languageId === 'zig') return encode(text, zigLspTokens(text, strings));
   const toks = [];
   const declared = new Set();
-  const namespaces = languageId === 'javascript' ? jsNamespaceNames(lexFor(text, languageId)) : new Set();
+  const js = languageId === 'javascript' || languageId === 'javascriptreact';
+  const namespaces = js ? jsNamespaceNames(lexFor(text, languageId)) : new Set();
   for (const id of lexFor(text, languageId).idents) {
     let type;
     const mods = [];
     if (languageId === 'rust' && (id.name === 'Self' || id.name === 'crate' || id.name === 'super')) {
       type = degraded ? (id.name === 'Self' ? 'struct' : 'namespace') : (id.name === 'Self' ? 'selfTypeKeyword' : 'keyword');
-    } else if (languageId === 'javascript' && namespaces.has(id.name) && text[id.offset - 1] !== '.') {
+    } else if (js && namespaces.has(id.name) && text[id.offset - 1] !== '.') {
       // tsserver sends no token for a project file's `import * as` binding; Deno types it `variable`.
       if (!degraded) continue;
       type = 'variable';
-    } else if (languageId === 'javascript' && id.name === 'self') {
+    } else if (js && id.name === 'self') {
       type = 'variable';
     } else if (id.name === 'self' || id.name === 'this') {
       type = degraded ? 'const' : 'selfKeyword';
@@ -363,6 +366,30 @@ function htmlServerTokens(text, degraded) {
     if (type === 'variable') declared.add(id.name);
     return { offset: id.offset, length: id.length, type, modifiers: mods };
   });
+}
+
+/**
+ * The component servers' shape (tsserver with the Vue plugin, the Svelte and Astro
+ * servers): every name in a script or a template expression, nothing for `import * as`'s
+ * binding, and Vue's `component` on a capitalised tag in the markup.
+ */
+function componentServerTokens(text, languageId, degraded) {
+  const view = html.flowText(text, languageId);
+  const lx = lexFor(view, languageId);
+  const namespaces = jsNamespaceNames(lx);
+  const ids = lx.idents.filter((id) => !KEYWORDS.has(id.name) && !(namespaces.has(id.name) && view[id.offset - 1] !== '.'));
+  const declared = new Set();
+  const toks = ids.map((id) => {
+    const next = view[id.offset + id.length];
+    const type = next === '(' ? 'function' : view[id.offset - 1] === '.' ? 'property' : /^[A-Z]/.test(id.name) && !degraded ? 'class' : 'variable';
+    const mods = type === 'variable' && !declared.has(id.name) ? ['declaration'] : [];
+    if (type === 'variable') declared.add(id.name);
+    return { offset: id.offset, length: id.length, type, modifiers: mods };
+  });
+  if (languageId === 'vue') {
+    for (const m of text.matchAll(/<\/?([A-Z]\w*)/g)) toks.push({ offset: m.index + m[0].length - m[1].length, length: m[1].length, type: 'component', modifiers: [] });
+  }
+  return toks.sort((a, b) => a.offset - b.offset);
 }
 
 /**
@@ -467,6 +494,11 @@ const FIXTURES = {
   ts: { lang: 'typescript', file: 'walk.ts' },
   js: { lang: 'javascript', file: 'walk.js' },
   html: { lang: 'html', file: 'walk.html' },
+  vue: { lang: 'vue', file: 'walk.vue', component: true },
+  svelte: { lang: 'svelte', file: 'walk.svelte', component: true },
+  astro: { lang: 'astro', file: 'walk.astro', component: true },
+  tsx: { lang: 'typescriptreact', file: 'walk.tsx', component: true },
+  jsx: { lang: 'javascriptreact', file: 'walk.jsx', component: true },
   py: { lang: 'python', file: 'walk.py' },
   rs: { lang: 'rust', file: 'walk.rs' },
   go: { lang: 'go', file: 'walk.go' },
@@ -1288,6 +1320,32 @@ function generateHtml(seed, steps) {
   return { cfg: { docs, split: rnd() < 0.35, provider }, events };
 }
 
+/** Typed into a component besides the usual keys: region boundaries, template blocks and markup. */
+const COMPONENT_TYPED = ['{{', '}}', '{', '}', '<script>', '</script>', '---', '{#each items as item}', '{/each}', ' v-for="x in xs"', '"', '<Child />', '<>', '</>', '<!--', '-->', '`'];
+const COMPONENT_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].component);
+
+/**
+ * A walk with a component first (walk.vue, walk.svelte, walk.astro, walk.tsx or walk.jsx): the
+ * events of `generate(seed)`, a fifth of the typed keys a region boundary or markup, and
+ * beside it another component, walk.ts, walk.html, walk.md or walk.css, or nothing.
+ * `keys` picks from fewer components, so a seed found before a component joined replays.
+ */
+function generateComponents(seed, steps, keys = COMPONENT_KEYS) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x736663);
+  for (const ev of events) if (ev.t === 'type' && rnd() < 0.2) ev.text = pickOf(COMPONENT_TYPED, rnd());
+  const first = keys[seed % keys.length];
+  const second = pickOf([first, ...keys, 'ts', 'html', 'md', 'css'], rnd());
+  const docs = second === first ? [first] : [first, second];
+  const provider = {};
+  for (const key of docs) {
+    const lang = FIXTURES[key].lang;
+    if (FIXTURES[key].web) provider[lang] = { mode: 'none', latency: 0 };
+    else if (lang !== 'markdown') provider[lang] = { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
 /** A walk with walk.rb first: the events of `generate(seed)`, its own documents and servers. */
 function generateRuby(seed, steps) {
   const { events } = generate(seed, steps);
@@ -1549,5 +1607,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, PROSE_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, PROSE_KEYS,
 };

@@ -1,6 +1,6 @@
 # Import restore
 
-A band-1 mark for Python, Go, Lua, JavaScript (an HTML document's scripts included), TypeScript and Zig. It paints the uses
+A band-1 mark for Python, Go, Lua, JavaScript (an HTML document's scripts included), TypeScript, JSX and TSX, Vue, Svelte and Astro components, and Zig. It paints the uses
 of imported modules and types at the theme's type slate (Okibi `#a5b6c8`, Akari
 `#52657a`) in documents that no semantic provider colours, and comes off once
 one answers; in Lua it stays, and in JavaScript and TypeScript it hands over
@@ -8,7 +8,7 @@ per name ([Handover](#handover)). Code: `src/imports.ts`, `src/pystdlib.ts`,
 `src/lua.ts` (`luaRestoreSpans`), `src/zig.ts` (`zigImportSpans`), `Decorator.renderImports`. Tests: `test/imports.test.js`, and
 `test/shadows.test.js` for the resolver rules the
 [shadow restore](shadow-restore.md) brought, which shares this resolver,
-`test/javascript.test.js`, `test/html.test.js` and `test/zig.test.js`.
+`test/javascript.test.js`, `test/html.test.js`, `test/components.test.js` and `test/zig.test.js`.
 
 ## Why the theme cannot do it
 
@@ -207,13 +207,17 @@ is not painted ([Not covered](#not-covered)). Over 2,123 public files
 uses, 124 uses in all.
 
 An HTML document's scripts get the same restore: the HTML server sends no token
-for the binding or its uses either ([html.md](html.md#band-1-restores)).
+for the binding or its uses either ([html.md](html.md#band-1-restores)). So do
+`javascriptreact`, `typescriptreact` and a Vue, Svelte or Astro component's
+code, template expressions included: tsserver, the Vue plugin and the Svelte and
+Astro servers send no token for a project file's namespace either
+([components.md](components.md#band-1-restores)).
 
-`javascriptreact` and `typescriptreact` are not covered yet: `<NS.Tag>` in JSX
-needs checking against the tag colour first. A `javascript` file can hold JSX
-too, so there a tag name, `NS` right after `<` or `</`, is not painted; the
-grammar paints `NS.Tag` as one component token. A use in the tag's attributes or
-children is.
+A JSX tag name, `NS` in `<NS.Tag>` or `</NS.Tag>`, is not painted: it is a tag,
+not an identifier (`jsxTags`), and the grammar paints `NS.Tag` as one component
+token. A use in the tag's attributes or children is. While an element is still
+unclosed its tag names are identifiers to the lexer, so a name right after `<`
+or `</` is skipped too.
 
 ## Zig
 

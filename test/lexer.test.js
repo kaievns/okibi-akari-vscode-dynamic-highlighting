@@ -74,7 +74,7 @@ const TABLE = [
   ['typescript', 'const s = "a // b"; // real\nnext', [['string', '"a // b"'], ['comment', '// real']], ['const', 's', 'next']],
   ['javascript', '#!/usr/bin/env node\nlet x = 1', [['comment', '#!/usr/bin/env node']], ['let', 'x'], ['1']],
   ['typescriptreact', "const p = <p className=\"a\">Don't count 3 {n}</p>; m = 2",
-    [['string', '"a"'], ['string', "Don't count 3 "]], ['const', 'p', 'p', 'n', 'p', 'm'], ['2']],
+    [['string', '"a"'], ['string', "Don't count 3 "]], ['const', 'p', 'n', 'm'], ['2']],
   ['typescriptreact', 'const f = <T,>(x: T) => x < y', [], ['const', 'f', 'T', 'x', 'T', 'x', 'y']],
   ['typescript', 'const v = <T>x; a < b', [], ['const', 'v', 'T', 'x', 'a', 'b']],
   ['typescript', 'x = "abc\\\r\ndef"; y = 1', [['string', '"abc\\\r\ndef"']], ['x', 'y'], ['1']],
@@ -83,10 +83,10 @@ const TABLE = [
   ['typescript', 'x = /a/g', [['string', '/a/g']], ['x']],
   ['typescript', 'a = 1n$b', [], ['a', '$b'], ['1n']],
   ['typescript', 'x #', [], ['x']],
-  ['typescriptreact', 'const e = <A.B x={y}><C/>{/*c*/}</A.B>;', [['comment', '/*c*/']], ['const', 'e', 'A', 'B', 'y', 'C', 'A', 'B']],
-  ['typescriptreact', 'const e = <svg:rect/>; const f = <my-el/>;', [], ['const', 'e', 'svg', 'rect', 'const', 'f', 'my', 'el']],
-  ['typescriptreact', 'x = <svg:g>hi</svg:g>', [['string', 'hi']], ['x', 'svg', 'g', 'svg', 'g']],
-  ['typescriptreact', 'x = <A z={w}>hi</A>', [['string', 'hi']], ['x', 'A', 'w', 'A']],
+  ['typescriptreact', 'const e = <A.B x={y}><C/>{/*c*/}</A.B>;', [['comment', '/*c*/']], ['const', 'e', 'y']],
+  ['typescriptreact', 'const e = <svg:rect/>; const f = <my-el/>;', [], ['const', 'e', 'const', 'f']],
+  ['typescriptreact', 'x = <svg:g>hi</svg:g>', [['string', 'hi']], ['x']],
+  ['typescriptreact', 'x = <A z={w}>hi</A>', [['string', 'hi']], ['x', 'w']],
   ['typescriptreact', 'x = <A>{y', [], ['x', 'A', 'y']],
 
   // ── go ──
@@ -133,6 +133,16 @@ test('lexer tables: comment / doc / string spans and code identifiers per langua
     if (wantIdents) assert.deepEqual(identsOf(src, lang), wantIdents, `identifiers for ${label}`);
     if (wantNumbers) assert.deepEqual(numbersOf(src, lang), wantNumbers, `numbers for ${label}`);
   }
+});
+
+// A tag is markup: its name segments are kept apart from the identifiers, and a rolled-back element keeps none.
+test('JSX tag names are tags, not identifiers', () => {
+  const { jsxTags } = require('../out/lex');
+  const tags = (src) => jsxTags(lex(src, 'typescriptreact')).map((t) => t.name);
+  assert.deepEqual(tags('const e = <A.B x={y}><C/>{/*c*/}</A.B>;'), ['A', 'B', 'C', 'A', 'B']);
+  assert.deepEqual(tags('const e = <svg:rect/>; const f = <my-el/>;'), ['svg', 'rect', 'my', 'el']);
+  assert.deepEqual(tags('x = <A>{y'), [], 'an element never closed rolls back with its tags');
+  assert.deepEqual(tags('const f = <T,>(x: T) => x'), [], 'a generic is no tag');
 });
 
 test('default syntax: no `#` comments, no lifetime rule, quotes are single-line', () => {
