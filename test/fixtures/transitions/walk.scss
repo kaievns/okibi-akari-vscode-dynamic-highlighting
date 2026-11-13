@@ -1,0 +1,76 @@
+// SCSS: every construct, synthetic.
+@use "sass:math";
+@use "sass:color";
+@forward "src/list" hide list-reset, $horizontal-list-gap;
+
+$base-size: 16px !default;
+$self: #3c4a5d;
+$breakpoints: (
+  "small": 576px,
+  "medium": 768px,
+  "large": 1024px,
+);
+
+%message-shared {
+  border: 1px solid #ccc;
+  padding: 10px;
+  color: #333;
+}
+
+@function rem($px, $base: $base-size) {
+  @if $px == 0 {
+    @return 0;
+  }
+  @return math.div($px, $base) * 1rem;
+}
+
+@mixin respond($name) {
+  $width: map-get($breakpoints, $name);
+  @if $width == null {
+    @error "Unknown breakpoint `#{$name}`.";
+  } @else if $width > 1000px {
+    @media (min-width: $width) { @content; }
+  } @else {
+    @media (min-width: $width - 1px) { @content; }
+  }
+}
+
+.card {
+  @extend %message-shared;
+  $async: 3;
+  padding: rem(24px);
+  background: color.adjust($self, $lightness: -10%);
+
+  &-title {
+    font-size: rem(20px);
+    &:hover { color: darken($self, 5%); }
+  }
+
+  & + & { margin-top: $async * 4px; }
+
+  .this #{&}__body {
+    @include respond("medium") {
+      padding: rem(32px);
+    }
+  }
+}
+
+@each $name, $glyph in $breakpoints {
+  .icon-#{$name}:before {
+    content: "#{$glyph}";
+  }
+}
+
+@for $i from 1 through 3 {
+  .mt-#{$i} { margin-top: #{$i * 4}px; }
+}
+
+$n: 6;
+@while $n > 0 {
+  .item-#{$n} { width: 2em * $n; }
+  $n: $n - 2;
+}
+
+@debug "self is #{$self}";
+@warn "deprecated";
+/* block comment with $var and #{x} */

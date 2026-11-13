@@ -27,14 +27,15 @@ The ids VS Code 1.145.2 and the extensions below register (`contributes.language
 | `dtd`, `rnc` | `.dtd .ent .mod`, which `vscode.xml` lists too, and `.rnc` | `redhat.vscode-xml` 0.29.3 (its public `package.json`; not installed here) | static content |
 | `json` | `.webmanifest` | `vscode.json` | static content |
 | `handlebars` | `.handlebars .hbs .hjs`, whose grammar embeds `text.html.basic` | `vscode.handlebars` | static content: a logic-less template, whose `{{ }}` tags have no lexer family |
-| `razor`, `php` | `.cshtml .razor`; `.php .php4 .php5 .phtml .ctp` | `vscode.razor`, `vscode.php` | code, read whole by the default lexer: a click in markup enters Focus, and a number in text paints clay. Their C# and PHP are real code, so the templates step takes them, not this one |
+| `php` | `.php .php4 .php5 .phtml .ctp` | `vscode.php` | code in its PHP regions, the markup outside every scope ([php.md](php.md)) |
+| `razor`, `aspnetcorerazor` | `.cshtml .razor` | `vscode.razor`; `ms-dotnettools.csharp` | static content ([php.md](php.md#razor)) |
 | `markdown` | ```` ```html ````, ```` ```css ````, ```` ```xml ```` and ```` ```svg ```` fences, raw HTML in prose | `vscode.markdown` | prose: the two markdown marks only |
 
-`scss`, `less`, `sass` and `stylus` stay static as before; their own audit is the
-next step's.
+`scss`, `less`, `sass`, `stylus`, `postcss` and `graphql` are static content too
+([stylesheets.md](stylesheets.md)); `mdx` is prose ([mdx.md](mdx.md)).
 
 Before `handlebars` was listed, a `.hbs` page was read as code, as `razor` and
-`php` still are: in the stub, a click on the `<p>` line of a six-line
+`php` were until [php.md](php.md#ids): in the stub, a click on the `<p>` line of a six-line
 `{{#if}}` page entered Focus with a 3-line stripe, and `42` in its text painted
 clay; the same text as `html` stayed Survey and painted nothing.
 

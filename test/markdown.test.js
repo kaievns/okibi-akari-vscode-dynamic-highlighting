@@ -316,6 +316,8 @@ test('every markdown-derived id VS Code registers is prose, and the ones it serv
   }
   for (const id of served) assert.ok(id in languages, `${id} is registered`);
   assert.equal(focus.isMarkdownLanguage('quarto'), false, 'control: prose that VS Code does not serve as markdown');
+  // MDX's prose links follow markdown's; its grammar is source.mdx, which the theme's ==highlight== scope does not reach.
+  assert.deepEqual(Object.keys(languages).filter((id) => focus.isLinkMarkLanguage(id)).sort(), [...served, 'mdx'].sort());
 });
 
 test('code languages still resolve blocks normally', () => {
@@ -351,4 +353,61 @@ test('no ==highlight== wash inside an HTML comment', () => {
   // underlined, so it still covers a URL in a comment.
   const link = '<!-- https://example.com/hidden -->\n';
   assert.equal(md.linkSpans(link).length, 1);
+});
+
+// ── MDX ─────────────────────────────────────────────────────────────────────
+
+const { mdxCodeSpans } = require('../out/mdx');
+
+test('mdxCodeSpans: ESM to its closing blank line, expressions, comments and JSX tags are code; JSX children are prose', () => {
+  const text = [
+    "import {Chart} from './chart.js'",
+    "import confetti from 'https://esm.sh/canvas-confetti'",
+    'export const meta = {',
+    '',
+    "  site: 'https://in-esm.example',",
+    '}',
+    '',
+    '# Title {meta.title}',
+    '',
+    'A [link](https://prose.example) and {/* https://in-comment.example */} ==mark==.',
+    '',
+    '<Card href="https://in-attr.example" data={{u: "https://in-expr.example"}}>',
+    '  Child prose with [a link](https://child.example) and ==child==.',
+    '</Card>',
+    '',
+    'Escaped \\{ brace and a < b comparison with https://bare.example',
+  ].join('\n');
+  const code = mdxCodeSpans(text);
+  assert.deepEqual(sel(text, md.linkSpans(text, code)), ['https://prose.example', 'https://child.example', 'https://bare.example']);
+  assert.deepEqual(sel(text, md.highlightSpans(text, code)), ['mark', 'child']);
+  const inCode = (needle) => code.some((s) => text.indexOf(needle) >= s.start && text.indexOf(needle) < s.end);
+  for (const n of ['https://esm.sh', 'https://in-esm', 'meta.title', 'https://in-comment', 'https://in-attr', 'https://in-expr', '</Card>']) assert.ok(inCode(n), `${n} is code`);
+  for (const n of ['Child prose', 'Escaped', 'a < b']) assert.ok(!inCode(n), `${n} is prose`);
+});
+
+test('mdxCodeSpans: markdown code stays code, and an import inside a fence is no ESM', () => {
+  const text = ['```js', "import x from 'https://in-fence.example'", '```', '', 'Text `{not: expr}` and {x}.', ''].join('\n');
+  const code = mdxCodeSpans(text);
+  assert.deepEqual(md.linkSpans(text, code), []);
+  assert.ok(code.some((s) => text.slice(s.start, s.end) === '{x}'));
+});
+
+test('mdxCodeSpans: an ESM block runs past a blank line inside an open bracket, template or JSX element, and to the end while one stays open', () => {
+  const esm = (text) => text.slice(0, mdxCodeSpans(text)[0].end);
+  assert.equal(esm('export const a = [\n\n  1,\n]\n\nprose'), 'export const a = [\n\n  1,\n]');
+  assert.equal(esm('export const q = `\n\nline`;\n\nprose'), 'export const q = `\n\nline`;');
+  assert.equal(esm('export const x = <div>\ntext\n\nmore</div>\n\nprose'), 'export const x = <div>\ntext\n\nmore</div>');
+  const open = 'export const meta = {\n\n## Heading\n\nA [link](https://x.example).\n';
+  assert.deepEqual(mdxCodeSpans(open), [{ start: 0, end: open.length }]);
+});
+
+test('mdxCodeSpans stays linear in a document whose ESM block is open, closed or followed by expressions', () => {
+  const { growth } = require('./cpu-time');
+  const unit = '## Heading\n\nSome prose with a [link](https://example.com/page), `code` and {x}.\n\n<Note>\n\nInside.\n\n</Note>\n\n';
+  let seq = 0;
+  for (const head of ['export const meta = {\n\n', 'import {A} from "./a"\nexport const x = f(\n\n', 'export const q = `\n\n', 'export const meta = {a: 1}\n\n']) {
+    const ratio = growth((n) => `${head}${unit.repeat(n)}<!-- ${seq++} -->`, mdxCodeSpans, 300);
+    assert.ok(ratio < 24, `${JSON.stringify(head)}: 8x the document cost ${ratio.toFixed(1)}x`);
+  }
 });

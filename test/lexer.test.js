@@ -506,7 +506,7 @@ test('relex equals a full lex over chained random edits in every language family
     '/', '*', 'é', '💡', '\r\n', 'lambda ', 'def ', 'fn ', 'let ', 'r"', '.', '|x|', '{{', '}}', "'\\u{", "'\\u{41}'",
     '}\'', '/re/g', '// c\n', '# c\n', '"s"', "'c'", '#if 0\n', '#endif\n', '<b>', '</b>',
     '--', '--[[', '--[==[', ']]', ']==]', '[[', '[=[', ']=]', '\\z', 'end', 'then', 'function '];
-  const LANG = { c: 'c', cpp: 'cpp', go: 'go', java: 'java', kt: 'kotlin', py: 'python', rs: 'rust', ts: 'typescript', md: 'markdown', lua: 'lua', rb: 'ruby' };
+  const LANG = { c: 'c', cpp: 'cpp', go: 'go', java: 'java', kt: 'kotlin', py: 'python', rs: 'rust', ts: 'typescript', md: 'markdown', lua: 'lua', rb: 'ruby', php: 'php' };
   const files = [
     ...fsx.readdirSync(pathx.join(__dirname, '../samples')).map((f) => pathx.join(__dirname, '../samples', f)),
     ...fsx.readdirSync(pathx.join(__dirname, 'fixtures/transitions')).map((f) => pathx.join(__dirname, 'fixtures/transitions', f)),

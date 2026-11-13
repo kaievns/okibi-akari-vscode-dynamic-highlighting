@@ -19,7 +19,7 @@
 
 import { LexId, LexResult, blankOrHashLine, forgetLex, jsxBraces, lexFor, rememberLex, scriptLexes } from './lex';
 import { bestAt, buildIntervalIndex } from './intervals';
-import { BLOCK_OPEN, MODULE_OPEN, isViewLanguage, viewBlocks, viewRegions } from './html';
+import { BLOCK_OPEN, MODULE_OPEN, isRegionLanguage, isViewLanguage, viewBlocks, viewRegions } from './html';
 import type { TemplateBlock } from './sfc';
 
 export type { LexId } from './lex';
@@ -1609,6 +1609,12 @@ export function scanRubyBlocks(text: string): BraceBlock[] {
  * (test/fixtures/markdown-languages.json).
  */
 const MARKDOWN_LANGUAGES = new Set(['markdown', 'prompt', 'instructions', 'chatagent', 'skill']);
+/**
+ * Documents whose link targets lose `editor.links`' underline: the markdown ids and MDX,
+ * whose prose links follow markdown's. MDX has no wash: the theme's `==highlight==`
+ * scope is injected into `text.html.markdown`, not `source.mdx` (docs/mdx.md).
+ */
+const LINK_MARK_LANGUAGES = new Set([...MARKDOWN_LANGUAGES, 'mdx']);
 
 export const markdownLanguages = (): string[] => [...MARKDOWN_LANGUAGES];
 
@@ -1662,9 +1668,9 @@ const STATIC_CONTENT_LANGUAGES = new Set([
   'toml', 'kdl', 'ini', 'properties', 'java-properties', 'dotenv', 'ignore', 'pip-requirements',
   'go.mod', 'go.sum', 'go.work', 'dockerbake', 'cmake-cache', 'dts',
   'xml', 'xsl', 'dtd', 'rnc', 'xhtml', 'vue-html', 'svg',
-  'css', 'scss', 'less', 'sass', 'stylus', 'tailwindcss',
+  'css', 'scss', 'less', 'sass', 'stylus', 'postcss', 'tailwindcss',
   'graphql', 'proto', 'csv', 'tsv', 'csv (pipe)', 'csv (semicolon)', 'csv (whitespace)', 'dynamic csv',
-  'dockerfile', 'makefile', 'erb', 'helm', 'gotmpl', 'handlebars',
+  'dockerfile', 'makefile', 'erb', 'helm', 'gotmpl', 'handlebars', 'razor', 'aspnetcorerazor',
 ]);
 
 export const staticContentLanguages = (): string[] => [...STATIC_CONTENT_LANGUAGES];
@@ -1712,6 +1718,11 @@ export function isProseLanguage(languageId?: string): boolean {
 /** True when a document takes the two markdown marks. */
 export function isMarkdownLanguage(languageId?: string): boolean {
   return languageId !== undefined && MARKDOWN_LANGUAGES.has(languageId);
+}
+
+/** True when a document's link targets lose the underline: the markdown ids and MDX. */
+export function isLinkMarkLanguage(languageId?: string): boolean {
+  return languageId !== undefined && LINK_MARK_LANGUAGES.has(languageId);
 }
 
 /**
@@ -1917,8 +1928,8 @@ function computeTopLevelExcludes(
       ranges.push({ start: h.start, end: b.openOffset });
     }
   }
-  if (isViewLanguage(languageId)) {
-    // The top level of an HTML document or a component is its regions' top level: the markup is outside it.
+  if (isRegionLanguage(languageId)) {
+    // The top level of an HTML document, a component or a PHP page is its regions' top level: the markup is outside it.
     let at = 0;
     for (const r of viewRegions(text)) {
       if (r.start > at) ranges.push({ start: at, end: r.start });

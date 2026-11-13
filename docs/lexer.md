@@ -58,6 +58,7 @@ from that layout.
 | `lua` | `--`; `--[[ ]]`, `--[==[ ]==]` (matching `=` count); `#!` at offset 0 | `'` `"` single-line with escapes, `\` + newline and `\z` + blanks continue it; `[[ ]]`, `[==[ ]==]` multi-line, no escapes | string | `//` and `#` are operators; hex fractions, a trailing dot and LuaJIT suffixes stay in the numeral ([lua.md](lua.md#lexer)) |
 | `ruby` | `#`; `=begin` … `=end` at column 0; everything after a top-level `__END__` line | `'` `"` `` ` `` multi-line with escapes, `#{}` / `#@x` / `#$x` holes in `"` and `` ` ``; `%`-literals with any delimiter and nesting; heredocs, bodies read at the line break; `/re/` and `?a` where an expression starts or as a command argument; symbols and `"key":` labels | string | `@x`, `@@x`, `$x`, `name?` / `name!` are one identifier; `//` is an empty regex where an expression starts ([ruby.md](ruby.md#lexer)) |
 | `zig`, `zon` | `//`, `///`, `//!`; no block comment | `'` `"` single-line with escapes; `\\` to the line end, one line of a multiline string | char | `@"…"` and `@name` are one identifier with the `@`; hex fractions stay in the numeral ([zig.md](zig.md#lexer)) |
+| `php` | `//`, `#` (not `#[`), `/* */`; a line comment ends at the view's mark on a `?>` | `'` multi-line with escapes, no holes; `"` and `` ` `` multi-line with escapes and `$name` / `{$…}` holes; heredocs (`<<<ID`, `<<<"ID"`) to the closing identifier, indented or not, else the end, with the same holes, nowdocs (`<<<'ID'`) with none; the heredoc reader is shared with the region reader (`phpHeredocAt`) | string | lexes a page's PHP view whole: the markup is blanked ([php.md](php.md#the-php-view)); `$name` is one identifier with its `$`; never re-lexed, since an edit that moves a region's end changes the view past the edit |
 | anything else | `//`, `/* */` | `'` `"` single-line; `` ` `` multi-line with `${}` | string | no `#` comments, no lifetime rule |
 
 On JavaScript and TypeScript the regions match TypeScript's own parser on every
@@ -148,7 +149,8 @@ span: a `\\` line ends at its line break, and so does an unclosed `"…`, `'…`
 `@"…` whose last character is a backslash, since in Zig a backslash before a line
 break escapes nothing; so every Zig line start is recorded. Ruby heredoc bodies
 are read at the line break that ends their opener's line, before that line
-start is recorded, so they count as such a span. Three decisions read more
+start is recorded, so they count as such a span, and so do PHP heredocs and
+nowdocs, read from the `<<<` to their closing identifier. Three decisions read more
 than a line ahead and leave no span over what they read:
 
 | Decision | What it reads | Re-lex |

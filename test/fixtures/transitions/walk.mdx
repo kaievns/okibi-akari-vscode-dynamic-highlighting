@@ -1,0 +1,42 @@
+---
+title: The self test
+order: 42
+---
+
+import {Chart} from '../components/chart.js'
+import * as util from './util.js'
+export const meta = {author: 'self', count: 3}
+export function Note({children, kind = 'info'}) {
+  const label = kind.toUpperCase()
+  return <aside className={kind}>{label}: {children}</aside>
+}
+
+# Hello, {meta.author}
+
+Some prose with `inline code`, a [link](https://example.com), ==a highlight== and
+**bold** text. This is 42 words of prose about self and this and async.
+
+{/* a comment with self and this */}
+
+<Chart year={2024} data={[1, 2, 3].map((n) => n * 2)} />
+
+<Note kind="warning">
+  Inline JSX with {util.format(meta.count)} and text.
+</Note>
+
+{(function () {
+  const total = meta.count + 1
+  return <span>{total}</span>
+})()}
+
+```js
+const self = this
+async function f(x) { return x + 1 }
+```
+
+- a list item with {meta.count} and <abbr title="x">HTML</abbr>
+- another item ==marked== here
+
+export default function Layout({children}) {
+  return <main>{children}</main>
+}

@@ -352,6 +352,48 @@ test('nothing paints outside a code region, in any phase, with the server and wi
   assert.ok(checked > 1000, `${checked} paints checked`);
 });
 
+test('a <style lang="scss|less|stylus|postcss"> body is markup: a click or typing there stays Survey, and nothing paints in it', async () => {
+  const STYLES = {
+    scss: '$self: 42px;\n.card { padding: $self; &-title { #{$prop}: math.div($self, 2); } @include m(3); }\n',
+    less: '@self: 42px;\n.card { padding: @self; @{prop}: (@self / 2); .m(3); &:extend(.a all); }\n',
+    stylus: 'self = 42px\n.card\n  padding self\n  {prop} (self / 2)\n  m(3)\n',
+    postcss: '.card {\n  padding: 42px;\n  & .this { color: $(self); @mixin m 3; }\n}\n',
+  };
+  const script = { vue: ['<script setup>\n', '</script>\n'], svelte: ['<script>\n', '</script>\n'], astro: ['---\n', '---\n'] };
+  let clicks = 0;
+  for (const lang of ['vue', 'svelte', 'astro']) {
+    for (const [styleLang, body] of Object.entries(STYLES)) {
+      const [open1, close1] = script[lang];
+      const t = `${open1}const self = 1;\nfunction f(a) { return a + self; }\n${close1}<style lang="${styleLang}">\n${body}</style>\n`;
+      const start = t.indexOf('<style');
+      const end = t.indexOf('</style>');
+      const lines = t.split('\n');
+      const control = open(t, lang, ...at(t, 'return a', 'a'));
+      control.d.onSelection({ textEditor: control.ed, selections: control.ed.selections, kind: 2 });
+      assert.equal(control.d.machine.current, Phase.Focus, `${lang} ${styleLang}: control, a click in the script focuses`);
+      control.d.dispose();
+      for (let line = t.slice(0, start).split('\n').length; line < t.slice(0, end).split('\n').length - 1; line++) {
+        const h = open(t, lang, line, Math.floor(lines[line].length / 2));
+        h.d.onSelection({ textEditor: h.ed, selections: h.ed.selections, kind: 2 });
+        await h.d.runClassify(h.doc);
+        assert.equal(h.d.machine.current, Phase.Survey, `${lang} ${styleLang}:${line + 1}: a click in the style`);
+        const o = h.doc.offsetAt(h.ed.selection.active);
+        h.d.onEdit(h.doc.applyEdit(o, o, 'x'));
+        assert.equal(h.d.machine.current, Phase.Survey, `${lang} ${styleLang}:${line + 1}: typing in the style`);
+        for (const phase of [Phase.Survey, Phase.Focus, Phase.Edit]) {
+          h.d.machine.phase = phase;
+          h.d.render();
+          const inStyle = h.painted().filter(([a]) => a > start && a < end + 1);
+          assert.deepEqual(inStyle.map(([a, b]) => h.doc.getText().slice(a, b)), [], `${lang} ${styleLang}:${line + 1} ${phase}: nothing in the style`);
+        }
+        h.d.dispose();
+        clicks++;
+      }
+    }
+  }
+  assert.equal(clicks, 3 * (2 + 2 + 5 + 4));
+});
+
 test('a caret in the markup is Survey and typing there stays Survey; one in an expression focuses and typing enters Edit', () => {
   for (const [f, lang, cases] of [
     ['Counter.vue', 'vue', [['{{ props.label }}', 'props', true], ['<p v-if="count === 0">', 'count', true], ['<p v-else>Full</p>', 'Full', false], ['.counter h1', 'counter', false], [':data-limit', 'data', false], ['<Child :value', 'Child', false]]],

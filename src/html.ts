@@ -12,6 +12,7 @@ const JS_TYPE = /^(?:text\/(?:javascript(?:1\.[0-5])?|x-javascript|jscript|lives
 const TEMPLATE_TYPE = /^text\/(?:x-handlebars|(?:x-(?:handlebars-)?|ng-)?template|html)(?:\s|$)/i;
 
 import { COMPONENT_LANGUAGES, CodeRegion, TemplateBlock, componentRegions } from './sfc';
+import { phpView } from './php';
 
 export const REGION_MARK = '\f';
 /** Starts a region whose names a template binds (src/sfc.ts); it ends at a REGION_MARK too. */
@@ -37,6 +38,8 @@ export interface ScriptRegion {
  */
 export const VIEW_LANGUAGES: ReadonlySet<string> = new Set(['html', 'vue', 'svelte', 'astro']);
 export const isViewLanguage = (languageId: string | undefined): boolean => languageId !== undefined && VIEW_LANGUAGES.has(languageId);
+/** Documents whose code is regions of markup: the view languages, and PHP pages, which are one lex and one block scan (docs/php.md). */
+export const isRegionLanguage = (languageId: string | undefined): boolean => isViewLanguage(languageId) || languageId === 'php';
 
 const isSpace = (c: string): boolean => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f';
 
@@ -304,6 +307,7 @@ const componentViewCache: { text: string | undefined; lang: string | undefined; 
 /** The text the layer's scanners read for a document: an HTML document's script view, a component's code view, else the text itself. */
 export function flowText(text: string, languageId: string): string {
   if (languageId === 'html') return scriptView(text);
+  if (languageId === 'php') return phpView(text);
   if (!COMPONENT_LANGUAGES.has(languageId)) return text;
   if (componentViewCache.text === text && componentViewCache.lang === languageId) return componentViewCache.view;
   const c = componentRegions(text, languageId);

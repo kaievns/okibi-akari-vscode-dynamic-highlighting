@@ -1,0 +1,62 @@
+// Stylus: every construct, synthetic.
+@import 'nib'
+self-color = #3c4a5d
+base = 16px
+async = 3
+
+border-radius(n)
+  -webkit-border-radius n
+  border-radius n
+
+rem(px, b = base)
+  if px == 0
+    return 0
+  return (px / b) * 1rem
+
+add(a, b)
+  a + b
+
+.card
+  border-radius 4px
+  padding rem(24px)
+  color self-color
+  &-title
+    font-size rem(20px)
+    &:hover
+      color darken(self-color, 5%)
+  .this &
+    margin-top async * 4px
+  for i in 1..3
+    .mt-{i}
+      margin-top (i * 4)px
+  if base > 10px
+    width 100%
+  else
+    width auto
+  unless async
+    display none
+
+@css {
+  .raw { color: red; }
+}
+
+@media (min-width: 768px)
+  .card
+    padding rem(32px)
+
+$placeholder
+  color red
+.ext
+  @extend $placeholder
+
+list = 1 2 3
+for n, idx in list
+  .n-{idx}
+    z-index n
+
+@keyframes pulse
+  from
+    opacity 0
+  to
+    opacity 1
+/* block comment with self-color and {i} */

@@ -745,6 +745,26 @@ never shown. Taking `tailwindcss` out of `STATIC_CONTENT_LANGUAGES` fails it at
 seed 13 and `handlebars` at seed 2, each as the file opens (`self` paints), and
 leaving the markup in the top level fails the paint-inside check.
 
+**The sheet, PHP and MDX walks** are three more tests, 120 walks each
+(`OKIBI_SHEET_WALKS`, `OKIBI_PHP_WALKS`, `OKIBI_MDX_WALKS`), each with its own
+generator so the other walks' seeds stay as they were. The sheet walks open
+`walk.ts`, `walk.py`, `walk.rs`, `walk.go` or `walk.html`, then one or two of
+`walk.scss`, `walk.less`, `walk.styl`, `walk.pcss` (`postcss`), `walk.tw4.css`
+(`tailwindcss`), `walk.graphql`, `walk.razor` (as `razor` and `aspnetcorerazor`)
+and `walk.cshtml`, with no server for them; a fifth of the typed keys are a
+stylesheet's or a template's opener or closer. Each must show nothing and be asked
+nothing, as a data file. In the default run each id was the active editor at 119 to
+380 steps, and a sheet was on screen beside a painted code file at 425. The PHP
+walks open `walk.php`, alone or beside `walk.html`, `walk.ts`, `walk.md`,
+`walk.scss` or `walk.cshtml`, a fifth of the typed keys a PHP tag, a quote or a
+comment opener; every step each `walk.php` editor must paint inside its PHP regions
+only, a stripe line holding PHP or lying inside a block whose braces sit in two
+regions, and never the `self` mark or an async mark. In the default run it showed
+tints on 139 steps, clay on 567 and the stripe on 683. The MDX walks open
+`walk.mdx` beside a code file, and in half of them `walk.md`, a fifth of the typed
+keys an expression's, a JSX tag's or an ESM line's end, a fence, `==` or `](`;
+`walk.mdx` must show the link cancel only, no wash: 2,509 steps showed it.
+
 **The component walks** are one more test, 120 walks (`OKIBI_COMPONENT_WALKS`).
 Each opens `walk.vue`, `walk.svelte`, `walk.astro`, `walk.tsx` or `walk.jsx` by
 seed, alone or beside another of them, `walk.ts`, `walk.html`, `walk.md` or `walk.css`, and
@@ -854,6 +874,13 @@ restores need no recompute pending in any document. Everything else is compared 
 the default run, 300 walks of 40 steps, 65% of steps compare every type; the
 test fails below half.
 
+The two share the module-level lex memo, so a wrong incremental re-lex reaches
+both and their paints agree. Each step therefore also requires every shown
+document's cached lex to equal a fresh `lex` of its text: re-lexing a PHP page's
+view after an edit that moves a region's end fails it at seeds 1000 and 5000 of
+the PHP walks, shrunk to 7 and 3 events; seed 1 does not reach it, and
+`test/php.test.js` holds the case directly.
+
 A data file's editor must also show nothing at all, at every step, whatever the
 fresh one paints. The comparison alone would pass a data file both decorators
 paint the same wrong way. Taking an id out of `STATIC_CONTENT_LANGUAGES` fails the
@@ -949,8 +976,8 @@ Each is a named test in `test/transitions.test.js` that fails without its fix.
   (`json5`, `jsonl`, `java-properties`, `go.mod` and the rest) take the same
   `isNonFlowLanguage` path; `test/render.test.js` holds the config ones to no
   paint and no server request, but they are not walked.
-- Six prose files are walked, `walk.md` and the five markdown-derived ones. The
-  other ids of `PROSE_LANGUAGES` (`plaintext`, `restructuredtext`, `quarto`, `mdx`
-  and the rest) take the same `isNonFlowLanguage` path and are not walked.
+- Seven prose files are walked, `walk.md`, the five markdown-derived ones and
+  `walk.mdx`. The other ids of `PROSE_LANGUAGES` (`plaintext`, `restructuredtext`,
+  `quarto` and the rest) take the same `isNonFlowLanguage` path and are not walked.
 - A dwell or `enabled` change resets the phase to Survey (`refresh()`), so the
   walks reach Edit again only through more typing.

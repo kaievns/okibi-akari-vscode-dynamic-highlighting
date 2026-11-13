@@ -188,6 +188,33 @@ Two checks the audit showed could never fail went too: a `::` after a name,
 which Zig has no token for, and a `const` / `var` before a container field,
 where the word before a field is none or `comptime`.
 
+### PHP, MDX and the static ids
+
+The PHP region reader, the PHP lexer rules, the PHP view's wiring, the MDX code
+spans and the ids `postcss`, `razor` and `aspnetcorerazor` were audited by hand:
+37 source mutants, one per rule, each compiling. Each ran against `php.test.js`,
+`markdown.test.js`, `render.test.js`, `rust.test.js`, `lexer.test.js` and
+`transitions.test.js`, every walk at its default count; the unmutated tree
+passes all six. All 37 are killed. The first run killed 35, and 2 survived, ESM
+read as prose and MDX read as plain markdown: no URL in the tests sat in ESM
+outside braces or in a JSX attribute. The two cases added for them, an `import`
+from a URL and a JSX attribute URL, kill both. Per mutant, with its replacement,
+in [mutation-audit-php-mdx.csv](mutation-audit-php-mdx.csv).
+
+```
+Final (37 mutants), by the tests that kill each
+test/php.test.js               ██████████████████████████ 26
+test/render.test.js            ███████ 7
+test/markdown.test.js          █████ 5
+test/rust.test.js              ███ 3
+the walks (transitions)        █████████ 9, 1 of them alone
+```
+
+Cutting walks for an audit has a floor: at 5 walks the Zig reclose test fails on
+the unmutated tree ("every decoration type compared at 20 of 85 steps"), so an
+audit that cuts it counts every mutant as killed by the walks. Cutting only the
+main walks to 10, as the HTML audit below does, leaves the baseline passing.
+
 ### HTML
 
 The HTML code (`src/html.ts`, `lexScripts`, `scanScriptBlocks`, the top-level

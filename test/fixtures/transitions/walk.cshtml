@@ -1,0 +1,50 @@
+@page
+@model IndexModel
+@using System.Linq
+@{
+    ViewData["Title"] = "Self test";
+    var items = new[] { 1, 2, 3 };
+    var async = 42;
+}
+<!doctype html>
+<html>
+<head>
+  <title>@ViewData["Title"]</title>
+  <style>.card { padding: 4px; }</style>
+</head>
+<body>
+  <h1 class="title">Hello, @Model.Name and 42 more</h1>
+  <ul>
+  @foreach (var item in items)
+  {
+      <li data-id="@item" onclick="pick(@item)">@item.ToString()</li>
+  }
+  </ul>
+  @if (items.Length > 2)
+  {
+      <p>Many self items, this is 3.</p>
+  }
+  else
+  {
+      <p>Few</p>
+  }
+  @* a razor comment with self and 42 *@
+  <p>@(items.Sum() * 2) and @@escaped</p>
+  <script>
+    const items = @Html.Raw(Json.Serialize(Model.Items));
+    function sum(list) {
+      let total = 0;
+      for (const n of list) { total += n; }
+      return total;
+    }
+    const self = this;
+  </script>
+</body>
+</html>
+@functions {
+    public int Total(int[] xs) {
+        var sum = 0;
+        foreach (var x in xs) { sum += x; }
+        return sum;
+    }
+}

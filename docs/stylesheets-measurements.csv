@@ -1,0 +1,13 @@
+corpus,source,files,language_id,clicks,entered_focus_or_edit,tints,clay,self,async,server_calls,tree
+scss,"bootstrap 5.3.9, bulma 1.0.4, font-awesome 4.7.0, foundation-sites 6.9.0, uikit 3.25.31 (npm pack); sass repo (git, depth 1)",580,scss,4850,0,0,0,0,0,0,before and after
+less,"bootstrap 3.4.1, font-awesome 4.7.0, semantic-ui-less 2.5.0, uikit 3.25.31 (npm pack); less.js repo",624,less,4290,0,0,0,0,0,0,before and after
+stylus,"stylus 0.64.0, nib 1.2.0 (npm pack); stylus repo",477,stylus,2972,0,0,0,0,0,0,before and after
+css-as-postcss,"150 of the public .css files above",150,postcss,1080,1080,1468,1965,1,0,6930,before
+css-as-postcss,"the same",150,postcss,1080,0,0,0,0,0,0,after
+css-as-tailwindcss,"the same",150,tailwindcss,1080,0,0,0,0,0,0,before and after
+mdx,"tailwindcss.com repo 263, graphql-js repo 50, mdx repo 36",349,mdx,3408,0,0,0,0,0,0,before and after
+graphql,"graphql-js repo, @octokit/graphql-schema 15.26.1 (one file over 400 kB skipped)",2,graphql,20,0,0,0,0,0,0,before and after
+gql-in-js,"1080 documents from graphql-js tests and @apollo/client 4.3.8 sources, each wrapped in a gql template",1080,javascript,5250,5250,8640,1080,0,0,34740,after: 0 paints inside the templates
+handlebars,"Casper repo 29, handlebars.js repo 9 (35 .hbs/.handlebars)",35,handlebars,156,0,0,0,0,0,0,before and after
+php,"@wordpress/block-library 12.1.0, 91 .php, gettext hello.php",92,php,2879,2879,5738,224,49,0,17550,"before: 30 tints and 2 clay in markup, 7 clay in strings, 49 self on self::, 5706 tints over a variable with its $"
+php,"the same",92,php,2879,2771,5784,215,0,0,16626,"after: 0 in markup, comments or strings; 5782 tints on variables, the $ unpainted, 76 of them in string holes; 2 on a const name"

@@ -1,0 +1,42 @@
+/* Tailwind v4 directives, synthetic. */
+@import "tailwindcss";
+@source "../node_modules/@my-company/ui-lib";
+@source not "./legacy";
+@plugin "@tailwindcss/typography";
+@config "../tailwind.config.js";
+
+@theme {
+  --color-self: oklch(0.72 0.11 221.19);
+  --font-display: "Satoshi", "sans-serif";
+  --breakpoint-3xl: 120rem;
+  --spacing: 0.25rem;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+}
+
+@utility tab-4 {
+  tab-size: 4;
+}
+
+@utility async-* {
+  content-visibility: --value(--async-*, [*]);
+}
+
+@variant dark (&:where(.dark, .dark *));
+@custom-variant theme-midnight (&:where([data-theme="midnight"] *));
+
+.btn {
+  @apply px-4 py-2 rounded-lg;
+  @variant hover {
+    background: --theme(--color-self / 50%);
+  }
+  padding: calc(var(--spacing) * 4);
+  margin: --spacing(4);
+  color: --alpha(var(--color-self) / 50%);
+}
+
+@layer components {
+  .this { @apply text-[#bada55]; }
+}

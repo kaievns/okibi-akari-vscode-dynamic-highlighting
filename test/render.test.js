@@ -357,6 +357,13 @@ const CONFIG_TEXTS = {
   css: walkText('walk.css'),
   tailwindcss: walkText('walk.css'),
   handlebars: walkText('walk.hbs'),
+  scss: walkText('walk.scss'),
+  less: walkText('walk.less'),
+  stylus: walkText('walk.styl'),
+  postcss: walkText('walk.pcss'),
+  graphql: walkText('walk.graphql'),
+  razor: walkText('walk.cshtml'),
+  aspnetcorerazor: walkText('walk.razor'),
   xml: walkText('walk.xml'),
   xsl: '<?xml version="1.0"?>\n<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">\n  <xsl:template match="/">\n    <xsl:if test="self &gt; 42"><p>{this}</p></xsl:if>\n  </xsl:template>\n</xsl:stylesheet>\n',
   'html-template': '<% const self = this; %>\n<script>\n  function f(async) { const n = 42; return { self: async + n }; }\n</script>\n<p><%= self %></p>\n',
@@ -1024,4 +1031,20 @@ test('a markdown-derived file paints at most the markdown marks, in any phase an
   assert.ok(focus.count(control.decorator.gutterDecoration) > 0, 'control: gutter stripe');
   assert.ok(tints(control, focus) > 0, 'control: identity tints');
   assert.equal(focus.count(control.decorator.pool.mdHighlight), 0, 'control: no wash outside the markdown ids');
+});
+
+test('MDX paints the link-underline cancel on its prose links only, no wash, no bands, and asks no server', async () => {
+  stub.clearLspResponses();
+  const text = `${walkText('walk.mdx')}\n<Chart src="https://in-attr.example/data.json" note={'https://in-expr.example'} />\n`;
+  const lines = text.split('\n');
+  const line = lines.findIndex((l) => l.includes('const label'));
+  const h = await harness(text, 'mdx', line, lines[line].indexOf('label'));
+  for (const phase of PHASES) {
+    const snap = h.paint(phase);
+    const links = snap.ranges(h.decorator.pool.mdLinkPlain).map((r) => lines[r.start.line].slice(r.start.character, r.end.character));
+    assert.deepEqual(links, ['https://example.com'], `${phase}: the prose link only`);
+    assert.equal(snap.count(h.decorator.pool.mdHighlight), 0, `${phase}: no wash`);
+    assert.equal(h.decorator.pool.banded().reduce((n, t) => n + snap.count(t), 0) + snap.count(h.decorator.gutterDecoration), 0, `${phase}: no bands`);
+  }
+  assert.deepEqual(stub.lspCalls.map(([cmd]) => cmd), [], 'mdx asks the language server nothing');
 });

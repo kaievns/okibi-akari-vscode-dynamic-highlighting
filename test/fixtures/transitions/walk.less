@@ -1,0 +1,67 @@
+// LESS: every construct, synthetic.
+@import (reference) "mixins.less";
+@plugin "my-plugin";
+@self: #3c4a5d;
+@base: 16px;
+@property: color;
+@selector: ~".banner";
+@images: "../img";
+@async: 3;
+
+.bordered(@width: 2px; @style: solid) {
+  border: @width @style black;
+}
+
+.mixin(@a) when (lightness(@a) >= 50%) {
+  background-color: black;
+}
+.mixin(@a) when (lightness(@a) < 50%) {
+  background-color: white;
+}
+
+.loop(@i) when (@i > 0) {
+  .w-@{i} { width: (@i * 100% / 5); }
+  .loop(@i - 1);
+}
+.loop(5);
+
+#namespace {
+  .m() { color: @self; }
+}
+
+@{selector} {
+  .bordered(4px; dashed);
+  @{property}: @self;
+  background+: url("@{images}/white-sand.png");
+  width: ~"calc(100% - @{base})";
+  height: (@base * 2);
+  #namespace > .m();
+  #namespace.m();
+
+  &-title {
+    font-size: @base + 4;
+    &:extend(.card all);
+    &:hover { color: darken(@self, 10%); }
+  }
+
+  .this {
+    @media (min-width: 768px) {
+      padding: e("2px");
+      @r: { color: red; };
+      @r();
+    }
+  }
+}
+
+@detached: {
+  background: red;
+};
+.call { @detached(); }
+
+@plugin "plugin"; 
+.test { width: pi(); }
+@selectors: blue, green, red;
+each(@selectors, {
+  .sel-@{value} { a: b; }
+});
+/* block comment with @var and @{x} */

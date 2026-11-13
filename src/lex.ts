@@ -42,17 +42,21 @@ export interface LangSyntax {
   readonly cppRaw: boolean;
   /** Shell: `#` starts a comment only at the start of a word. */
   readonly shellHash: boolean;
+  /** PHP inside a page's view: `#` comments, multi-line strings, heredocs, `$name` and `{$…}` holes. */
+  readonly php: boolean;
 }
 
 const SYNTAX_BY_ID: Record<string, LangSyntax> = {};
 const def = (ids: string[], s: LangSyntax): void => {
   for (const id of ids) SYNTAX_BY_ID[id] = s;
 };
-const base = { jsx: false, cppRaw: false, shellHash: false };
+const base = { jsx: false, cppRaw: false, shellHash: false, php: false };
 def(['typescript', 'typescript-declaration'], { ...base, family: 'js', key: 'ts' });
 def(['javascript', 'javascriptreact', 'typescriptreact'], { ...base, family: 'js', key: 'jsx', jsx: true });
 /** An HTML document's script view or a component's code view (src/html.ts): each region lexed as `javascript` on its own. */
 def(['html', 'vue', 'svelte', 'astro'], { ...base, family: 'js', key: 'view', jsx: true });
+/** A PHP page's view (src/php.ts), lexed whole: a brace may pair across `?>` and `<?php`. */
+def(['php'], { ...base, family: 'default', key: 'php', php: true });
 def(['go'], { ...base, family: 'go', key: 'go' });
 def(['python'], { ...base, family: 'python', key: 'python' });
 def(['rust'], { ...base, family: 'rust', key: 'rust' });
@@ -180,6 +184,26 @@ const RUBY_SPECIAL_GLOBAL = new Set('!@~&`\'+;,/\\.<>_*$?:"0123456789='.split(''
 interface Heredoc { id: string; indented: boolean; interp: boolean }
 
 const MAX_NEST = 64;
+/** A PHP heredoc's or nowdoc's opening line: `<<<ID`, `<<<"ID"` or `<<<'ID'`. */
+const PHP_HEREDOC = /^<<<[ \t]*(["']?)([A-Za-z_\x80-\uffff][\w\x80-\uffff]*)\1\r?\n/;
+
+export interface PhpHeredoc { readonly nowdoc: boolean; readonly body: number; readonly close: number; readonly end: number }
+
+/**
+ * The PHP heredoc or nowdoc whose `<<<` is at `i`: where its body starts, where its
+ * closing identifier starts (an indented one included) and the offset after it, else
+ * null; unclosed, it runs to the text's end. Shared by the lexer and src/php.ts's regions.
+ */
+export function phpHeredocAt(t: string, i: number): PhpHeredoc | null {
+  const m = PHP_HEREDOC.exec(t.slice(i, i + 200));
+  if (!m) return null;
+  const body = i + m[0].length;
+  const closer = new RegExp(`^[ \\t]*${m[2]}(?![\\w\\x80-\\uffff])`, 'gm');
+  closer.lastIndex = body;
+  const e = closer.exec(t);
+  const end = e ? e.index + e[0].length : t.length;
+  return { nowdoc: m[1] === "'", body, close: e ? end - m[2].length : t.length, end };
+}
 
 // ── the lexer ─────────────────────────────────────────────────────────────────
 
@@ -306,6 +330,13 @@ class Lexer {
       }
       if (fam === 'lua' && ((c === CH.minus && next === CH.minus) || (c === CH.lbrack && (next === CH.lbrack || next === CH.eq)))) {
         const r = c === CH.minus ? this.luaComment(i) : this.luaLong(i, i, 'string');
+        if (r >= 0) {
+          i = r;
+          continue;
+        }
+      }
+      if (this.syn.php && c === CH.lt && next === CH.lt && t.charCodeAt(i + 2) === CH.lt) {
+        const r = this.phpHeredoc(i);
         if (r >= 0) {
           i = r;
           continue;
@@ -449,6 +480,11 @@ class Lexer {
   private lineComment(i: number): number {
     const t = this.t;
     let end = this.lineEnd(i);
+    if (this.syn.php) {
+      // The view's mark on the `?` of a `?>` (src/php.ts); searched within the line, so many comments stay linear.
+      const f = t.slice(i, end).indexOf('\f');
+      if (f >= 0) end = i + f;
+    }
     if (this.fam === 'c') {
       while (end < this.n && end > i && t.charCodeAt(end - 1) === CH.bslash) {
         end = this.lineEnd(t.indexOf('\n', end) + 1);
@@ -537,7 +573,7 @@ class Lexer {
       case 'c':
         return this.atLineStart(i) ? this.directive(i) : -1;
       default:
-        return -1;
+        return this.syn.php && t.charCodeAt(i + 1) !== CH.lbrack ? this.lineComment(i) : -1;
     }
   }
 
@@ -1316,7 +1352,8 @@ class Lexer {
         r = c === CH.sq ? this.rubyDelimited(start, q + 1, "'", '', false) : this.rubyDelimited(start, q + 1, t[q], '', true);
         break;
       default:
-        r = c === CH.bq ? this.template(start, q) : this.plain(start, q, false, true);
+        if (this.syn.php) r = c === CH.sq ? this.plain(start, q, true, true) : this.phpString(start, q + 1, c, -1, -1);
+        else r = c === CH.bq ? this.template(start, q) : this.plain(start, q, false, true);
         break;
     }
     if (r >= 0) {
@@ -1430,6 +1467,61 @@ class Lexer {
     }
     this.span(seg, n, 'string');
     return n;
+  }
+
+  /** A PHP heredoc or nowdoc from its `<<<` to the end of its closing identifier, else -1. */
+  private phpHeredoc(i: number): number {
+    const h = phpHeredocAt(this.t, i);
+    if (!h) return -1;
+    if (h.nowdoc) this.span(i, h.end, 'string');
+    else this.phpString(i, h.body, -1, h.close, h.end);
+    this.exprStart = false;
+    this.stmtStart = false;
+    return h.end;
+  }
+
+  /**
+   * A PHP `"…"` or `` `…` `` body from `from`, closed by `quote`, or a heredoc body closed
+   * by the identifier at `closeAt`, ending at `end`: escapes, `$name` and `{$…}` holes.
+   */
+  private phpString(start: number, from: number, quote: number, closeAt: number, end: number): number {
+    const t = this.t;
+    const n = this.n;
+    const stop = closeAt >= 0 ? closeAt : n;
+    let seg = start;
+    let j = from;
+    while (j < stop) {
+      const c = t.charCodeAt(j);
+      if (c === CH.bslash) {
+        j += this.escapeWidth(j);
+        continue;
+      }
+      if (c === quote) {
+        this.span(seg, j + 1, 'string');
+        return j + 1;
+      }
+      if (c === CH.lbrace && t.charCodeAt(j + 1) === CH.dollar && this.nest < MAX_NEST) {
+        this.span(seg, j + 1, 'string');
+        const e = this.hole(j + 1, Stop.Hole);
+        if (e >= n) return n;
+        seg = e;
+        j = e + 1;
+        continue;
+      }
+      if (c === CH.dollar && idStartWidth(t, j + 1) > 0 && t.charCodeAt(j + 1) !== CH.dollar) {
+        this.span(seg, j, 'string');
+        const e = scanIdent(t, j + 1, false);
+        this.holes.push({ start: j, end: e });
+        this.idents.push({ name: t.slice(j, e), offset: j, length: e - j });
+        seg = e;
+        j = e;
+        continue;
+      }
+      j++;
+    }
+    const last = closeAt >= 0 ? Math.max(end, seg) : Math.min(j, n);
+    this.span(seg, last, 'string');
+    return last;
   }
 
   /** Lex a hole's code; returns the offset of the char that ended it. */
@@ -2136,6 +2228,30 @@ const EXPR_SYNTAX: Record<'jsx' | 'plain', LangSyntax> = {
 export function braceExpressionEnd(text: string, from: number, jsx: boolean, opener?: '`'): number {
   const lx = new Lexer(text, EXPR_SYNTAX[jsx ? 'jsx' : 'plain']);
   return opener === '`' ? lx.templateEnd(from) : lx.expressionEnd(from);
+}
+
+/**
+ * The first line break of `text`, read as JavaScript, that the top level reaches with no `(`, `[`
+ * or `{` open and code before it, where `accept` takes the offset after it; else -1. One lex,
+ * stopped there.
+ */
+export function closedLineBreak(text: string, accept: (lineStart: number) => boolean): number {
+  const L = new Lexer(text, syntaxFor('javascript'));
+  let open = 0;
+  let seen = 0;
+  L.stopAt = (i) => {
+    for (; seen < L.punct.length; seen++) {
+      const c = text.charCodeAt(L.punct[seen]);
+      if (c === CH.lparen || c === CH.lbrack || c === CH.lbrace) open++;
+      else if ((c === CH.rparen || c === CH.rbrack || c === CH.rbrace) && open > 0) open--;
+    }
+    if (open > 0 || !accept(i)) return false;
+    const s = L.spans[L.spans.length - 1];
+    const p = Math.max(0, i - 2);
+    return s === undefined || p < s.start || p >= s.end;
+  };
+  L.run();
+  return L.stoppedAt < 0 ? -1 : L.stoppedAt - 1;
 }
 
 /** A script view lexed region by region, so no string, comment or brace runs from one script into the next. */

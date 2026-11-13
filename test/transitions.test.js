@@ -10,6 +10,8 @@ const { mayForceMove, positionMovedBy, rangesMovedBy } = require('../out/trackin
 const { Phase } = require('../out/phases');
 const html = require('../out/html');
 const sfc = require('../out/sfc');
+const php = require('../out/php');
+const focus = require('../out/focus');
 const { Position } = require('./vscode-stub');
 
 const WALKS = Number(process.env.OKIBI_WALKS ?? 300);
@@ -328,6 +330,92 @@ test(`${CONTAINER_WALKS} random walks over the Docker and Kubernetes files besid
   t.diagnostic(seen);
 });
 
+const SHEET_WALKS = Number(process.env.OKIBI_SHEET_WALKS ?? 120);
+
+test(`${SHEET_WALKS} random walks over the stylesheets, GraphQL and Razor files beside a code file leave no leftovers`, async (t) => {
+  const active = Object.fromEntries(h.SHEET_KEYS.map((k) => [h.FIXTURES[k].lang, 0]));
+  let beside = 0;
+  await walks(h.generateSheets, SHEET_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    const lang = w.activeEditor()?.document.languageId;
+    if (lang in active) active[lang]++;
+    const shown = w.visible().map((ed, j) => [ed.document.languageId, Object.keys(r.got.editors[j].out).map((k) => k.split(' ')[0])]);
+    if (shown.some(([l]) => l in active) && shown.some(([, roles]) => roles.some((x) => x === 'gutter' || /^id/.test(x)))) beside++;
+  });
+  const seen = `active: ${Object.entries(active).map(([l, n]) => `${l} ${n}`).join(', ')}; a sheet on screen beside a painted code file at ${beside} steps`;
+  if (DEFAULT_RUN && SHEET_WALKS === 120) for (const [l, n] of Object.entries(active)) assert.ok(n > 0, `${l}: ${seen}`);
+  t.diagnostic(seen);
+});
+
+const PHP_WALKS = Number(process.env.OKIBI_PHP_WALKS ?? 120);
+
+/**
+ * The first paint of a PHP editor outside every PHP region of its text, else null. A
+ * stripe line holds PHP, or markup inside a block whose braces sit in two regions
+ * (`<?php if ($x) { ?> … <?php } ?>`), which the stripe covers whole (docs/php.md).
+ */
+function paintOutsidePhp(doc, out) {
+  const regions = php.phpRegions(doc.getText());
+  const inside = (o) => regions.some((r) => o >= r.start && o <= r.end);
+  const regionOf = (o) => regions.findIndex((r) => o >= r.start && o <= r.end);
+  const bridged = focus.scanBlocks(html.flowText(doc.getText(), 'php'), 'php')
+    .filter((b) => regionOf(b.openOffset) !== regionOf(b.closeOffset))
+    .map((b) => [b.openLine, b.closeLine]);
+  for (const [key, ranges] of Object.entries(out)) {
+    const role = key.split(' ')[0];
+    for (const [s, e] of ranges) {
+      if (role !== 'gutter' && inside(s) && inside(e)) continue;
+      if (role === 'gutter') {
+        const ls = doc.offsetAt(new Position(s, 0));
+        const le = ls + doc.lineAt(s).text.length;
+        if (regions.some((r) => r.start <= le && r.end >= ls)) continue;
+        if (bridged.some(([a, z]) => s >= a && s <= z)) continue;
+      }
+      return `${role} at ${s}-${e}`;
+    }
+  }
+  return null;
+}
+
+test(`${PHP_WALKS} random walks over walk.php leave no leftovers and paint nothing outside a PHP region`, async (t) => {
+  const shown = { tint: 0, clay: 0, gutter: 0, self: 0, riskAsync: 0 };
+  const outside = [];
+  await walks(h.generatePhp, PHP_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    const roles = new Set();
+    w.visible().forEach((ed, j) => {
+      if (ed.document.languageId !== 'php') return;
+      const out = r.got.editors[j].out;
+      const bad = paintOutsidePhp(ed.document, out);
+      if (bad) outside.push(`step ${i}, v${ed.document.version}: ${bad}`);
+      for (const k of Object.keys(out)) roles.add(k.split(' ')[0]);
+    });
+    if ([...roles].some((x) => /^(id|idg)\d$/.test(x))) shown.tint++;
+    if (roles.has('numberEngaged')) shown.clay++;
+    if (roles.has('gutter')) shown.gutter++;
+    for (const k of ['self', 'riskAsync']) if (roles.has(k)) shown[k]++;
+  });
+  assert.deepEqual(outside.slice(0, 5), []);
+  assert.equal(shown.self + shown.riskAsync, 0, `walk.php paints no self restore and no async mark: ${JSON.stringify(shown)}`);
+  if (DEFAULT_RUN && PHP_WALKS === 120) for (const k of ['tint', 'clay', 'gutter']) assert.ok(shown[k] > 0, `${k}: ${JSON.stringify(shown)}`);
+  t.diagnostic(`walk.php painted, in steps: ${JSON.stringify(shown)}`);
+});
+
+const MDX_WALKS = Number(process.env.OKIBI_MDX_WALKS ?? 120);
+
+test(`${MDX_WALKS} random walks over walk.mdx leave no leftovers and paint only the link-underline cancel there`, async (t) => {
+  const shown = { mdHighlight: 0, mdLinkPlain: 0 };
+  let active = 0;
+  await walks(h.generateMdx, MDX_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    if (w.activeEditor()?.document.languageId === 'mdx') active++;
+    w.visible().forEach((ed, j) => {
+      if (ed.document.languageId !== 'mdx') return;
+      for (const k of Object.keys(r.got.editors[j].out)) if (k.split(' ')[0] in shown) shown[k.split(' ')[0]]++;
+    });
+  });
+  assert.equal(shown.mdHighlight, 0, 'MDX has no wash: the theme scopes no ==highlight== there');
+  if (DEFAULT_RUN && MDX_WALKS === 120) for (const [k, n] of Object.entries({ link: shown.mdLinkPlain, active })) assert.ok(n > 0, `${k}: ${JSON.stringify({ ...shown, active })}`);
+  t.diagnostic(`walk.mdx: ${JSON.stringify({ ...shown, active })}`);
+});
+
 // ── Leftovers the walks found, as their shrunk sequences ──────────────────────
 
 const LUA_FORMAT = h.FIXTURES.lua.text.split('\n').findIndex((l) => /string\.format/.test(l));
@@ -453,9 +541,9 @@ for (const [name, cfg, events] of REGRESSIONS) {
 
 // ZON opens under `zig`, whose server answers it, and VS Code answers the chat customisation ids.
 const MD_MARKS = ['mdHighlight', 'mdLinkPlain'];
-for (const key of [...h.DATA_KEYS, ...h.CONTAINER_KEYS, ...h.WEB_KEYS, 'zon', ...h.PROSE_KEYS]) test(`switching between a code file in Edit and a ${key} file leaves ${h.FIXTURES[key].marks ? 'only the markdown marks' : 'nothing'} on the ${key} file`, async () => {
+for (const key of [...h.DATA_KEYS, ...h.CONTAINER_KEYS, ...h.WEB_KEYS, ...h.SHEET_KEYS, 'zon', ...h.PROSE_KEYS, 'mdx']) test(`switching between a code file in Edit and a ${key} file leaves ${h.FIXTURES[key].marks === 'link' ? 'only the link-underline cancel' : h.FIXTURES[key].marks ? 'only the markdown marks' : 'nothing'} on the ${key} file`, async () => {
   const lang = h.FIXTURES[key].lang;
-  const shows = h.FIXTURES[key].marks ? MD_MARKS : [];
+  const shows = h.FIXTURES[key].marks === 'link' ? ['mdLinkPlain'] : h.FIXTURES[key].marks ? MD_MARKS : [];
   const answered = key === 'zon' || shows.length > 0;
   const cfg = { docs: ['ts', key], split: true, provider: { typescript: { mode: 'ok', latency: 0 }, [lang]: { mode: answered ? 'ok' : 'none', latency: 0 } } };
   const events = [

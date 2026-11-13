@@ -29,7 +29,7 @@ component walks in `test/transitions.test.js`, the JSX rows in
 | Svelte | every `<script>` of a JavaScript `lang`; `{…}` in text and in attribute positions, quoted values included (`class="a {b}"`); a block head's expressions: `{#if e}`, `{:else if e}`, `{#each e as …, i (key)}`'s `e` and `key`, `{#await e}`, `{#key e}`, `{@html e}`, `{@render e}`, `{@const …}` from `const`; a value-less `bind:x`, `class:x`, `style:x`'s name | `{#each}`'s alias and index, `{:then v}`, `{:catch e}`, `{#await e then v}`, `{#snippet name(params)}`, name and parameters as one region, `let:x` |
 | Astro | the frontmatter, `---` at the file's start to the next line starting `---`; every `<script>` of a JavaScript type (`is:inline` included); `{…}` in text and attribute positions and a template-literal attribute value; JSX inside an expression is lexed as JSX | none |
 
-Not code: comments, `<style>` (its `lang` is step 6b's), a `v-pre` element's
+Not code: comments, `<style>` of any `lang` ([stylesheets.md](stylesheets.md#in-other-files)), a `v-pre` element's
 content, a `lang="pug"` template, a CoffeeScript script, `is:raw` content, and
 a Svelte block keyword (`#each`, `as`, `:then`). An expression ends where the
 JavaScript lexer closes its `{` (`braceExpressionEnd`, `src/lex.ts`): a `}` in a

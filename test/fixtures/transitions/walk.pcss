@@ -1,0 +1,38 @@
+/* PostCSS: nesting, custom media, mixins, each (plugins), synthetic. */
+@custom-media --small-viewport (max-width: 30em);
+@custom-selector :--heading h1, h2, h3;
+
+:root {
+  --self: #3c4a5d;
+  --async: 3;
+}
+
+@define-mixin icon $network, $color: blue {
+  .icon.is-$(network) {
+    color: $color;
+    @mixin-content;
+  }
+}
+
+@mixin icon twitter {
+  background: url(twt.png);
+}
+
+@each $icon in (foo, bar, baz) {
+  .icon-$(icon) {
+    background: url('icons/$(icon).png');
+  }
+}
+
+.card {
+  padding: 24px;
+  & .this {
+    color: var(--self);
+    @media (--small-viewport) {
+      padding: calc(var(--async) * 4px);
+    }
+  }
+  &:hover { color: color-mix(in oklch, var(--self), white 10%); }
+}
+
+:--heading { margin-top: 0; }

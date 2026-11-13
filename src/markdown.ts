@@ -182,8 +182,7 @@ export function htmlCommentSpans(text: string, code: Span[] = codeSpans(text)): 
  * comments are skipped, and so is a `==` inside a link target (`?a==b==c`); a
  * mark may still contain a whole link.
  */
-export function highlightSpans(text: string): Span[] {
-  const code = codeSpans(text);
+export function highlightSpans(text: string, code: Span[] = codeSpans(text)): Span[] {
   const skip = [...code, ...htmlCommentSpans(text, code)];
   const links = linkSpans(text, code);
   const inLink = (at: number): boolean => inAny(links, at, at + 2);

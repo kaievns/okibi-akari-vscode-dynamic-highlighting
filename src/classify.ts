@@ -2172,8 +2172,8 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
       continue;
     }
     candidateAt.add(id.offset);
-    // A Ruby global's tint covers its name; the `$` sigil keeps its own register.
-    const sigil = family === 'ruby' && id.name.startsWith('$') ? 1 : 0;
+    // A Ruby global's or a PHP variable's tint covers its name; the `$` sigil keeps its own register.
+    const sigil = (family === 'ruby' || lx.syntax.key === 'php') && id.name.startsWith('$') ? 1 : 0;
     const range: OffsetRange = { start: id.offset + sigil, end: id.offset + id.length };
     const list = occurrences.get(id.name);
     if (list) {

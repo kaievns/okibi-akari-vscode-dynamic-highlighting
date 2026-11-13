@@ -1,0 +1,85 @@
+# GraphQL schema: every type-system construct, synthetic.
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+"""
+A thing with an id. Block description with `code` and self.
+"""
+interface Node {
+  id: ID!
+}
+
+"Single-line description"
+type User implements Node & Entity @key(fields: "id") {
+  id: ID!
+  name(format: NameFormat = FULL): String
+  self: User
+  async: Boolean @deprecated(reason: "use `sync`")
+  friends(first: Int = 10, after: String): [User!]!
+  score: Float
+}
+
+union SearchResult = User | Post
+
+enum NameFormat {
+  FULL
+  SHORT @deprecated
+}
+
+input UserInput {
+  name: String!
+  tags: [String!] = []
+  age: Int = 42
+}
+
+scalar DateTime @specifiedBy(url: "https://tools.ietf.org/html/rfc3339")
+
+directive @key(fields: String!) repeatable on OBJECT | INTERFACE
+
+extend type Query {
+  me: User
+  search(term: String!): [SearchResult!]!
+}
+
+type Mutation {
+  updateUser(id: ID!, input: UserInput!): User
+}
+# GraphQL operations, synthetic.
+query GetUser($id: ID!, $withFriends: Boolean = false, $first: Int = 10) {
+  user(id: $id) {
+    ...UserFields
+    friends(first: $first) @include(if: $withFriends) {
+      edges {
+        node { id name }
+      }
+    }
+    me: self { id }
+  }
+}
+
+mutation Update($id: ID!, $input: UserInput!) {
+  updateUser(id: $id, input: $input) {
+    id
+    name(format: SHORT)
+  }
+}
+
+subscription OnUser($id: ID!) {
+  userChanged(id: $id) @skip(if: false) { id score }
+}
+
+fragment UserFields on User {
+  id
+  name
+  ... on Node { id }
+  ... @include(if: true) { async }
+}
+
+{
+  search(term: "self \"quoted\" é", limit: 3, ratio: 1.5e3, filter: {kind: FULL, tags: ["a", "b"], none: null}) {
+    __typename
+  }
+}

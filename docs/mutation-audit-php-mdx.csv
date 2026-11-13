@@ -1,0 +1,45 @@
+id,file,mutant,original,replacement,killed by
+1,src/php.ts,<?= opens no region,|=)?/g;,)?/g;,php.test.js
+2,src/php.ts,a line comment does not end at ?>,if (t[j] === '?' && t[j + 1] === '>') return j;,if (false) return j;,php.test.js
+3,src/php.ts,strings do not hide ?>,"if (c === ""'"" || c === '""' || c === '`') {",if (false) {,php.test.js
+4,src/php.ts,no heredoc in the regions,"const h = phpHeredocAt(t, j);","const h = j < 0 ? phpHeredocAt(t, j) : null;",php.test.js
+5,src/php.ts,a block comment does not hide ?>,"const e = t.indexOf('*/', j + 2);",const e = j;,php.test.js
+6,src/php.ts,#[ is a comment in the regions,(c === '#' && t[j + 1] !== '['),(c === '#'),php.test.js
+7,src/decorator.ts,a markup caret in PHP has a scope,if (isRegionLanguage(lang) && !regionAt,if (isRegionLanguage(lang) && lang !== 'php' && !regionAt,php.test.js
+8,src/decorator.ts,typing in PHP markup engages,&& (!isRegionLanguage(langOf(e.document)),&& (langOf(e.document) === 'php' || !isRegionLanguage(langOf(e.document)),php.test.js
+9,src/focus.ts,PHP markup in the top level,if (isRegionLanguage(languageId)) {,if (isRegionLanguage(languageId) && languageId !== 'php') {,transitions.test.js
+10,src/risk.ts,async marks in PHP,&& lx.syntax.key !== 'php') {,) {,php.test.js transitions.test.js
+11,src/decorator.ts,self restore in PHP,|| langOf(doc) === 'php') {,) {,php.test.js transitions.test.js
+12,src/classify.ts,PHP tint covers the $,(family === 'ruby' || lx.syntax.key === 'php'),family === 'ruby',php.test.js
+13,src/mdx.ts,no ESM,"if (lineStart && ESM_START.test(text.slice(i, i + 7))) {","if (lineStart && ESM_START.test(text.slice(i, i + 7)) && i < 0) {",markdown.test.js
+14,src/mdx.ts,JSX tags are prose,} else if (c === '<' &&,} else if (i < 0 && c === '<' &&,markdown.test.js render.test.js
+15,src/mdx.ts,expressions are prose,"} else if (c === '{') {
+      const close","} else if (i < 0 && c === '{') {
+      const close",markdown.test.js
+16,src/decorator.ts,wash in MDX,highlight: isMarkdownLanguage(langOf(doc)) ? highlightSpans,highlight: isMarkdownLanguage(langOf(doc)) || langOf(doc) === 'mdx' ? highlightSpans,render.test.js transitions.test.js
+17,src/focus.ts,postcss read as code,"'stylus', 'postcss', 'tailwindcss',","'stylus', 'tailwindcss',",render.test.js rust.test.js transitions.test.js
+18,src/focus.ts,razor read as code,"'handlebars', 'razor', 'aspnetcorerazor',","'handlebars', 'aspnetcorerazor',",render.test.js rust.test.js transitions.test.js
+19,src/focus.ts,aspnetcorerazor read as code,"'handlebars', 'razor', 'aspnetcorerazor',","'handlebars', 'razor',",render.test.js rust.test.js transitions.test.js
+20,src/html.ts,PHP read whole,if (languageId === 'php') return phpView(text);,if (languageId === 'php' && text.length < 0) return phpView(text);,php.test.js transitions.test.js
+21,src/decorator.ts,MDX read as markdown,langOf(doc) === 'mdx' ? mdxCodeSpans(text),langOf(doc) === 'mdx' && text.length < 0 ? mdxCodeSpans(text),render.test.js
+22,src/focus.ts,no link cancel in MDX,"const LINK_MARK_LANGUAGES = new Set([...MARKDOWN_LANGUAGES, 'mdx']);",const LINK_MARK_LANGUAGES = new Set([...MARKDOWN_LANGUAGES]);,markdown.test.js render.test.js transitions.test.js
+23,src/php.ts,a {$…} hole read as string in the regions,"else if (q !== ""'"" && c === '{' && t[j + 1] === '$') j = codeEnd(t, j + 1, '}') - 1;","else if (j < 0) j = codeEnd(t, j + 1, '}') - 1;",php.test.js
+24,src/php.ts,<?phpx opens after php,/<\?(?:[pP][hH][pP](?=\s|$)|=)?/g,/<\?(?:[pP][hH][pP]|=)?/g,php.test.js
+25,src/lex.ts,ESM ends at the first blank line,if (open > 0 || !accept(i)) return false;,return accept(i);,markdown.test.js
+26,src/lex.ts,# is no comment in PHP,return this.syn.php && t.charCodeAt(i + 1) !== CH.lbrack ? this.lineComment(i) : -1;,return this.syn.php && i < 0 ? this.lineComment(i) : -1;,php.test.js
+27,src/lex.ts,#[ is a comment,return this.syn.php && t.charCodeAt(i + 1) !== CH.lbrack ? this.lineComment(i) : -1;,return this.syn.php ? this.lineComment(i) : -1;,php.test.js
+28,src/lex.ts,'…' ends at its line,"r = c === CH.sq ? this.plain(start, q, true, true)","r = c === CH.sq ? this.plain(start, q, false, true)",php.test.js
+29,src/lex.ts,no $name holes,"if (c === CH.dollar && idStartWidth(t, j + 1) > 0 && t.charCodeAt(j + 1) !== CH.dollar) {",if (j < 0) {,php.test.js
+30,src/lex.ts,no {$…} holes,if (c === CH.lbrace && t.charCodeAt(j + 1) === CH.dollar && this.nest < MAX_NEST) {,if (j < 0) {,php.test.js
+31,src/lex.ts,a nowdoc has holes,"if (h.nowdoc) this.span(i, h.end, 'string');","if (h.nowdoc && i < 0) this.span(i, h.end, 'string');",php.test.js
+32,src/lex.ts,no heredoc in the lexer,"const h = phpHeredocAt(this.t, i);
+    if (!h) return -1;","const h = i < 0 ? phpHeredocAt(this.t, i) : null;
+    if (!h) return -1;",php.test.js
+33,src/lex.ts,a line comment runs past ?>,if (f >= 0) end = i + f;,if (f < -1) end = i + f;,php.test.js
+34,src/decorator.ts,relex a PHP view,&& shown && !isRegionLanguage(langOf(e.document))) {,&& shown) {,php.test.js
+35,src/lex.ts,backtick is a JS template,"r = c === CH.sq ? this.plain(start, q, true, true) : this.phpString(start, q + 1, c, -1, -1);","r = c === CH.sq ? this.plain(start, q, true, true) : c === CH.bq ? this.template(start, q) : this.phpString(start, q + 1, c, -1, -1);",php.test.js
+36,src/lex.ts,an unclosed heredoc's last holes are text,"close: e ? end - m[2].length : t.length, end };","close: end - m[2].length, end };",php.test.js
+37,src/lex.ts,a line comment searches past its line for ?>,"const f = t.slice(i, end).indexOf('\f');
+      if (f >= 0) end = i + f;","const g = t.indexOf('\f', i);
+      const f = g >= 0 && g < end ? g - i : -1;
+      if (f >= 0) end = i + f;",php.test.js

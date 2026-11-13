@@ -29,7 +29,7 @@ export interface LexicalRisk {
 }
 
 const ASYNC_WORDS = new Set(['await', 'async']);
-/** Families whose `async` and `await` are plain names: Lua and Ruby have no such keywords, and Zig 0.17's list has neither. */
+/** Families whose `async` and `await` are plain names: Lua and Ruby have no such keywords, and Zig 0.17's list has neither; nor has PHP. */
 const NO_ASYNC_FAMILIES = new Set(['lua', 'ruby', 'zig']);
 
 type DangerRule = (lx: LexResult, id: LexId) => boolean;
@@ -41,7 +41,7 @@ export function lexicalRisk(text: string, block: OffsetRange, languageId?: strin
   const result: LexicalRisk = { async: [], danger: [], numberEngaged: lx.numbersIn(block.start, block.end) };
   for (const id of lx.identsIn(block.start, block.end)) {
     const range: OffsetRange = { start: id.offset, end: id.offset + id.length };
-    if (ASYNC_WORDS.has(id.name) && !NO_ASYNC_FAMILIES.has(lx.syntax.family)) {
+    if (ASYNC_WORDS.has(id.name) && !NO_ASYNC_FAMILIES.has(lx.syntax.family) && lx.syntax.key !== 'php') {
       result.async.push(range);
     } else if (danger && danger(lx, id)) {
       result.danger.push(range);

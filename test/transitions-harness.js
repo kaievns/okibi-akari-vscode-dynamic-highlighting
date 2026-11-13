@@ -8,7 +8,7 @@ const path = require('path');
 const stub = require('./vscode-stub');
 const vs = stub.install();
 const { Decorator, isDecoratable } = require('../out/decorator');
-const { lexFor } = require('../out/lex');
+const { lex, lexFor } = require('../out/lex');
 const focus = require('../out/focus');
 const html = require('../out/html');
 const sfc = require('../out/sfc');
@@ -261,6 +261,24 @@ function nonFlowPaint(snap, editors) {
     const allowed = MARKED_LANGS.has(doc.languageId) ? MD_MARKS : NO_MARKS;
     const roles = Object.keys(snap.editors[i].out).map((k) => k.split(' ')[0]).filter((r) => !allowed.has(r));
     if (roles.length) return `editor ${i} (${doc.uri.toString().split('/').pop()} v${doc.version}) is a ${kind} file and shows ${roles.join(', ')}`;
+  }
+  return null;
+}
+
+const lexKey = (x) => JSON.stringify([x.spans, x.holes, x.idents.map((i) => [i.name, i.offset]), x.numbers, x.punct]);
+
+/**
+ * A shown document whose cached lex differs from a fresh lex of its text. The oracle
+ * shares the lex memo with the walked Decorator, so a wrong incremental re-lex would
+ * reach both and leave their paints equal.
+ */
+function staleLex(d, editors) {
+  for (const ed of editors) {
+    const doc = ed.document;
+    const state = d.blockCache.get(doc);
+    if (!state || state.version !== doc.version) continue;
+    const lang = focus.effectiveLanguageId(doc.languageId, doc.fileName);
+    if (lexKey(state.lex) !== lexKey(lex(html.flowText(doc.getText(), lang), lang))) return `${doc.fileName} v${doc.version}: the cached lex differs from a fresh one`;
   }
   return null;
 }
@@ -532,14 +550,27 @@ const FIXTURES = {
   chatagent: { lang: 'chatagent', file: 'walk.agent.md', prose: true, marks: true },
   skill: { lang: 'skill', file: 'walk.skill.md', prose: true, marks: true },
   jmd: { lang: 'juliamarkdown', file: 'walk.jmd', prose: true },
+  mdx: { lang: 'mdx', file: 'walk.mdx', prose: true, marks: 'link' },
+  php: { lang: 'php', file: 'walk.php' },
+  scss: { lang: 'scss', file: 'walk.scss', sheet: true },
+  less: { lang: 'less', file: 'walk.less', sheet: true },
+  stylus: { lang: 'stylus', file: 'walk.styl', sheet: true },
+  postcss: { lang: 'postcss', file: 'walk.pcss', sheet: true },
+  tailwind4: { lang: 'tailwindcss', file: 'walk.tw4.css', sheet: true },
+  graphql: { lang: 'graphql', file: 'walk.graphql', sheet: true },
+  razor: { lang: 'razor', file: 'walk.razor', sheet: true },
+  cshtml: { lang: 'razor', file: 'walk.cshtml', sheet: true },
+  aspnet: { lang: 'aspnetcorerazor', file: 'walk.razor', sheet: true },
 };
 for (const f of Object.values(FIXTURES)) f.text = fs.readFileSync(path.join(FIX, f.file), 'utf8');
 const DATA_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].data);
 const CONTAINER_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].container);
 /** Static files walked beside walk.html only, so the main walks' data files and seeds stay as they were. */
 const WEB_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].web);
-const DATA_LANGS = new Set([...DATA_KEYS, ...CONTAINER_KEYS, ...WEB_KEYS].map((k) => FIXTURES[k].lang));
-const PROSE_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].prose && k !== 'md');
+/** Stylesheets, GraphQL and Razor, walked beside a code file by their own generator, so the other walks' seeds stay as they were. */
+const SHEET_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].sheet);
+const DATA_LANGS = new Set([...DATA_KEYS, ...CONTAINER_KEYS, ...WEB_KEYS, ...SHEET_KEYS].map((k) => FIXTURES[k].lang));
+const PROSE_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].prose && k !== 'md' && k !== 'mdx');
 const PROSE_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.prose).map((f) => f.lang));
 const MARKED_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.marks).map((f) => f.lang));
 
@@ -854,7 +885,7 @@ class World {
       mask(got, IMPORT_ROLE);
       mask(want, IMPORT_ROLE);
     }
-    return { diff: nonFlow ?? asked ?? diffSnapshots(got, want, visible), quiet: q.band2 && q.imports, got };
+    return { diff: nonFlow ?? asked ?? staleLex(this.d, visible) ?? diffSnapshots(got, want, visible), quiet: q.band2 && q.imports, got };
   }
 
   dispose() {
@@ -1415,6 +1446,63 @@ function generateContainers(seed, steps) {
   return { cfg: { docs, split: rnd() < 0.35, provider }, events };
 }
 
+/**
+ * A walk with a code file first, then one or two of the stylesheets, GraphQL and Razor
+ * files, each with no server: the events of `generate(seed)`, a fifth of the typed keys
+ * a stylesheet's or a template's opener or closer.
+ */
+const SHEET_TYPED = ['}', '{', '#{', '@{', '*/', '/*', '"', '@code {', '{{', '}}', '"""', '#'];
+function generateSheets(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x737479);
+  for (const ev of events) if (ev.t === 'type' && rnd() < 0.2) ev.text = pickOf(SHEET_TYPED, rnd());
+  const code = pickOf(['ts', 'py', 'rs', 'go', 'html'], rnd());
+  const first = SHEET_KEYS[seed % SHEET_KEYS.length];
+  const docs = [code, first];
+  if (rnd() < 0.4) docs.push(pickOf(SHEET_KEYS.filter((k) => FIXTURES[k].file !== FIXTURES[first].file), rnd()));
+  const provider = { [FIXTURES[code].lang]: { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) } };
+  for (const key of docs.slice(1)) provider[FIXTURES[key].lang] = { mode: 'none', latency: 0 };
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
+/** Typed into walk.php besides the usual keys: PHP's open and close tags, quotes, comment openers and markup. */
+const PHP_TYPED = ['?>', '<?php ', '<?= ', '<?', '"', "'", '//', '#', '/*', '*/', '<<<EOT\n', '<p>', '{', '}'];
+
+/**
+ * A walk with walk.php first: the events of `generate(seed)`, a fifth of the typed keys
+ * from PHP_TYPED, and beside it walk.php again, walk.html, walk.ts, walk.md, walk.scss or
+ * walk.cshtml. VS Code's PHP extension sends no semantic tokens.
+ */
+function generatePhp(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x706870);
+  for (const ev of events) if (ev.t === 'type' && rnd() < 0.2) ev.text = pickOf(PHP_TYPED, rnd());
+  const second = pickOf(['php', 'html', 'ts', 'md', 'scss', 'cshtml'], rnd());
+  const docs = second === 'php' ? ['php'] : ['php', second];
+  const provider = { php: { mode: pickOf(['none', 'empty'], rnd()), latency: 0 } };
+  for (const key of docs.slice(1)) {
+    const lang = FIXTURES[key].lang;
+    if (FIXTURES[key].sheet) provider[lang] = { mode: 'none', latency: 0 };
+    else if (lang !== 'markdown') provider[lang] = { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
+/** Typed into walk.mdx besides the usual keys: an expression's, a JSX tag's and an ESM line's ends, a fence, a highlight and a link. */
+const MDX_TYPED = ['{', '}', '<Note>', '</Note>', '<', '>', 'import x from "y"\n', 'export ', '```', '==', '](', '{/*', '*/}'];
+
+/** A walk with walk.mdx first, then a code file, and in half of them walk.md: the events of `generate(seed)`. */
+function generateMdx(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x6d6478);
+  for (const ev of events) if (ev.t === 'type' && rnd() < 0.2) ev.text = pickOf(MDX_TYPED, rnd());
+  const docs = ['mdx', pickOf(['ts', 'py', 'rs', 'go'], rnd())];
+  if (rnd() < 0.5) docs.push('md');
+  const provider = { mdx: { mode: 'ok', latency: 0 }, markdown: { mode: 'ok', latency: 0 } };
+  provider[FIXTURES[docs[1]].lang] = { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
 // The Zig reclose walk: walk.zig alone. Nothing in Zig spans lines, so the closers
 // are a string's `"`, a `\\` line's second backslash and a block's `}`.
 const ZIG_LINES = FIXTURES.zig.text.split('\n');
@@ -1607,5 +1695,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, PROSE_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, generateSheets, generatePhp, generateMdx, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, SHEET_KEYS, PROSE_KEYS,
 };

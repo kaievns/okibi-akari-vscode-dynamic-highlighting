@@ -24,7 +24,7 @@
  */
 
 import * as vscode from 'vscode';
-import { flowText, isViewLanguage, regionAt, viewRegions } from './html';
+import { flowText, isRegionLanguage, regionAt, viewRegions } from './html';
 import {
   scanBlocks,
   innermostBlock,
@@ -35,6 +35,7 @@ import {
   lexRegionFor,
   isNonFlowLanguage,
   isMarkdownLanguage,
+  isLinkMarkLanguage,
   effectiveLanguageId,
   band1LanguageId,
   isTopLevelBlock,
@@ -53,7 +54,8 @@ import { ColorPlan, planFromColoring } from './colors';
 import { ScopeColoring } from './scopecolor';
 import { computeTraceRanges } from './traces';
 import { lexicalRisk, escapeRisk } from './risk';
-import { highlightSpans, linkSpans } from './markdown';
+import { codeSpans, highlightSpans, linkSpans } from './markdown';
+import { mdxCodeSpans } from './mdx';
 import {
   Span, jsPlaceholderSpans, luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans, rustStringBracketSpans,
   sveltePlaceholderSpans, zigPlaceholderSpans,
@@ -543,7 +545,7 @@ export class Decorator implements vscode.Disposable {
     const fallback = isNonFlowLanguage(lang) ? undefined : text;
     const offset = doc.offsetAt(caret);
     // In HTML and a component only a code region is code: a caret in the markup has no scope.
-    if (isViewLanguage(lang) && !regionAt(viewRegions(text), offset)) return null;
+    if (isRegionLanguage(lang) && !regionAt(viewRegions(text), offset)) return null;
     if (state.lex.syntax.family !== 'js') {
       return innermostBlock(blocks, caret.line, offset, fallback);
     }
@@ -724,7 +726,8 @@ export class Decorator implements vscode.Disposable {
     const c = e.contentChanges.length === 1 ? e.contentChanges[0] : undefined;
     const shown = vscode.window.activeTextEditor?.document === e.document ||
       vscode.window.visibleTextEditors.some((ed) => ed.document === e.document);
-    if (c && prev && prev.version === e.document.version - 1 && shown) {
+    // A PHP page's view changes past an edit that moves a region's end, so its lex is redone whole.
+    if (c && prev && prev.version === e.document.version - 1 && shown && !isRegionLanguage(langOf(e.document))) {
       this.relexFrom.set(e.document, {
         version: e.document.version, lex: prev.lex, start: c.rangeOffset, oldEnd: c.rangeOffset + c.rangeLength, newEnd: c.rangeOffset + c.text.length,
       });
@@ -744,7 +747,7 @@ export class Decorator implements vscode.Disposable {
     // neither engages nor enters Edit. A static content or prose file has no scope to
     // edit in, and an undo there may report no caret change to drop it back to Survey.
     if (!isNonFlowLanguage(langOf(e.document)) && this.isTypingEdit(editor, e, now)
-      && (!isViewLanguage(langOf(e.document)) || this.focusedBlock(editor) !== null)) {
+      && (!isRegionLanguage(langOf(e.document)) || this.focusedBlock(editor) !== null)) {
       this.engaged.add(e.document.uri.toString());
       this.machine.onType(now);
     }
@@ -1266,7 +1269,7 @@ export class Decorator implements vscode.Disposable {
    * (docs/zig.md#band-1-restores). Cached per document version.
    */
   private renderSelf(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
-    if (isNonFlowLanguage(band1LangOf(doc))) {
+    if (isNonFlowLanguage(band1LangOf(doc)) || langOf(doc) === 'php') {
       this.applyType(editor, this.pool.self, []);
       return;
     }
@@ -1460,11 +1463,11 @@ export class Decorator implements vscode.Disposable {
    *
    * Band 1, so no phase or engagement check — but still cached per document
    * version, because both scanners walk the whole document and this runs on every
-   * render (i.e. every caret move). Documents outside `isMarkdownLanguage` clear and
+   * render (i.e. every caret move). Documents outside `isLinkMarkLanguage` clear and
    * return, so a `.ts` file never carries a stale wash from a previously active `.md`.
    */
   private renderMarkdownMarks(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
-    if (!isMarkdownLanguage(langOf(doc))) {
+    if (!isLinkMarkLanguage(langOf(doc))) {
       this.applyType(editor, this.pool.mdHighlight, []);
       this.applyType(editor, this.pool.mdLinkPlain, []);
       return;
@@ -1474,10 +1477,11 @@ export class Decorator implements vscode.Disposable {
     let marks = cached && cached.version === doc.version ? cached : undefined;
     if (!marks) {
       const text = this.textFor(doc);
+      const code = langOf(doc) === 'mdx' ? mdxCodeSpans(text) : codeSpans(text);
       marks = {
         version: doc.version,
-        highlight: highlightSpans(text).map((s) => this.toRange(doc, s)),
-        link: linkSpans(text).map((s) => this.toRange(doc, s)),
+        highlight: isMarkdownLanguage(langOf(doc)) ? highlightSpans(text, code).map((s) => this.toRange(doc, s)) : [],
+        link: linkSpans(text, code).map((s) => this.toRange(doc, s)),
       };
       this.mdCache.set(doc, marks);
     }
