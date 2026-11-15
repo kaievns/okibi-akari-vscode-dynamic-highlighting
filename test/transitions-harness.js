@@ -166,7 +166,7 @@ function rolesOf(d) {
   d.pool.id.forEach((t, i) => m.set(t, `id${i}`));
   d.pool.idg.forEach((t, i) => m.set(t, `idg${i}`));
   for (const k of ['self', 'riskAsync', 'riskDanger', 'riskEscape', 'numberEngaged', 'placeholder',
-    'commentRestore', 'stringRestore', 'importRestore', 'shadowRestore', 'mdHighlight', 'mdLinkPlain']) {
+    'commentRestore', 'stringRestore', 'constantRestore', 'importRestore', 'shadowRestore', 'mdHighlight', 'mdLinkPlain']) {
     m.set(d.pool[k], k);
   }
   return m;
@@ -246,19 +246,21 @@ function diffSnapshots(got, want, editors) {
 
 const MD_MARKS = new Set(['mdHighlight', 'mdLinkPlain']);
 const NO_MARKS = new Set();
-const isDataDoc = (doc) => DATA_LANGS.has(doc.languageId) || doc.fileName.endsWith('.zon');
+const BAND1_SELF = new Set(['self']);
+const isDataDoc = (doc) => DATA_LANGS.has(doc.languageId) || doc.fileName.endsWith('.zon') || doc.languageId === 'cmake' || /\.gradle(\.kts)?$/.test(doc.fileName);
 
 /**
  * A data file's editor shows nothing in any state, whatever the fresh Decorator
  * paints, and a prose file's only the markdown marks, if its id takes them. ZON
- * opens under `zig`.
+ * opens under `zig`. A Gradle script is static content whose band 1 is Groovy's or
+ * Kotlin's, so it shows `this` and nothing else.
  */
 function nonFlowPaint(snap, editors) {
   for (let i = 0; i < editors.length; i++) {
     const doc = editors[i].document;
     const kind = isDataDoc(doc) ? 'data' : PROSE_LANGS.has(doc.languageId) ? 'prose' : null;
     if (!kind) continue;
-    const allowed = MARKED_LANGS.has(doc.languageId) ? MD_MARKS : NO_MARKS;
+    const allowed = MARKED_LANGS.has(doc.languageId) ? MD_MARKS : /\.gradle(\.kts)?$/.test(doc.fileName) ? BAND1_SELF : NO_MARKS;
     const roles = Object.keys(snap.editors[i].out).map((k) => k.split(' ')[0]).filter((r) => !allowed.has(r));
     if (roles.length) return `editor ${i} (${doc.uri.toString().split('/').pop()} v${doc.version}) is a ${kind} file and shows ${roles.join(', ')}`;
   }
@@ -316,6 +318,7 @@ function tokensFor(text, languageId, degraded, strings) {
   if (languageId === 'html') return encode(text, htmlServerTokens(text, degraded));
   if (sfc.COMPONENT_LANGUAGES.has(languageId)) return encode(text, componentServerTokens(text, languageId, degraded));
   if (languageId === 'zig') return encode(text, zigLspTokens(text, strings));
+  if (CJVM_LANGUAGES.has(languageId)) return encode(text, cjvmServerTokens(text, languageId, degraded));
   const toks = [];
   const declared = new Set();
   const js = languageId === 'javascript' || languageId === 'javascriptreact';
@@ -360,6 +363,53 @@ function tokensFor(text, languageId, degraded, strings) {
     toks.sort((a, b) => a.offset - b.offset);
   }
   return encode(text, toks);
+}
+
+const CJVM_LANGUAGES = new Set(['c', 'cpp', 'java', 'kotlin']);
+const CJVM_KEYWORDS = new Set(('auto break case char const continue default do double else enum extern float for goto if ' +
+  'inline int long register return short signed sizeof static struct switch typedef union unsigned void volatile while ' +
+  'bool true false nullptr constexpr class namespace template typename this using virtual public private protected ' +
+  'new delete throw try catch operator override final noexcept mutable explicit friend static_cast const_cast ' +
+  'reinterpret_cast dynamic_cast decltype std abstract boolean byte extends implements import instanceof interface ' +
+  'package super synchronized throws transient var record sealed permits yield null fun val is in as when object ' +
+  'companion init lateinit data suspend internal it typealias by').split(' '));
+
+/**
+ * C, C++, Java and Kotlin servers: `ok` types like clangd and jdtls, with a
+ * `declaration` on each first occurrence; `degraded` is each language's other shape.
+ * cpptools sends no `declaration` modifier at all; kotlin-language-server adds a
+ * `variable` over each `$name` template and types a local `val` as
+ * `property.declaration`; jdtls types a field read bare as `property`.
+ */
+function cjvmServerTokens(text, languageId, degraded) {
+  const lx = lexFor(text, languageId);
+  const toks = [];
+  const declared = new Set();
+  const fields = new Set();
+  for (const id of lx.idents) {
+    if (CJVM_KEYWORDS.has(id.name)) continue;
+    const next = text[id.offset + id.length];
+    const before = text.slice(Math.max(0, id.offset - 4), id.offset);
+    let type = next === '(' ? 'function'
+      : text[id.offset - 1] === '.' || before.endsWith('->') ? 'property'
+        : /^[A-Z]/.test(id.name) ? 'class' : 'variable';
+    const mods = [];
+    if (type === 'variable' && languageId === 'java' && fields.has(id.name)) type = 'property';
+    if (type === 'variable' && !declared.has(id.name)) {
+      declared.add(id.name);
+      if (!(degraded && (languageId === 'c' || languageId === 'cpp'))) mods.push('declaration');
+      if (degraded && languageId === 'kotlin' && /\bva[lr]\s+$/.test(text.slice(Math.max(0, id.offset - 6), id.offset))) type = 'property';
+      if (degraded && languageId === 'java' && /^\s*(?:private|protected|public)\b/.test(text.slice(text.lastIndexOf('\n', id.offset) + 1, id.offset))) {
+        type = 'property';
+        fields.add(id.name);
+      }
+    }
+    if (degraded && languageId === 'kotlin' && text[id.offset - 1] === '$' && !lx.isCode(id.offset - 1)) {
+      toks.push({ offset: id.offset - 1, length: id.length + 1, type: 'variable', modifiers: [] });
+    }
+    toks.push({ offset: id.offset, length: id.length, type, modifiers: mods });
+  }
+  return toks;
 }
 
 /**
@@ -545,6 +595,15 @@ const FIXTURES = {
   rb: { lang: 'ruby', file: 'walk.rb' },
   zig: { lang: 'zig', file: 'walk.zig' },
   zon: { lang: 'zig', file: 'walk.zon' },
+  c: { lang: 'c', file: 'walk.c' },
+  cpp: { lang: 'cpp', file: 'walk.cpp' },
+  java: { lang: 'java', file: 'walk.java' },
+  kt: { lang: 'kotlin', file: 'walk.kt' },
+  cmake: { lang: 'cmake', file: 'walk.cmake', cjvmStatic: true },
+  'gradle.kts': { lang: 'kotlin', file: 'walk.gradle.kts', cjvmStatic: true },
+  'gradle-kotlin-dsl': { lang: 'gradle-kotlin-dsl', file: 'walk.gradle.kts', cjvmStatic: true },
+  groovy: { lang: 'groovy', file: 'walk.groovy', noServer: true },
+  gradle: { lang: 'groovy', file: 'walk.gradle', cjvmStatic: true },
   prompt: { lang: 'prompt', file: 'walk.prompt.md', prose: true, marks: true },
   instructions: { lang: 'instructions', file: 'walk.instructions.md', prose: true, marks: true },
   chatagent: { lang: 'chatagent', file: 'walk.agent.md', prose: true, marks: true },
@@ -604,6 +663,8 @@ class World {
     this.provider = {};
     for (const e of this.entries) this.provider[e.lang] = { ...(cfg.provider?.[e.lang] ?? { mode: 'ok', latency: 0 }) };
     this.calls = new Map(); // doc → version → { pending, last }
+    this.onePending = new Map(); // doc → cpptools' waiting request and answer for one version
+    this.cancelled = 0;
     this.held = [];
     this.output = makeEditor(new stub.TextDocument('', 'Log', 'output:okibi-walk'), 0);
     this.panel = false;
@@ -632,8 +693,9 @@ class World {
   serve(cmd, uri) {
     const doc = this.docs.find((x) => x.uri.toString() === uri.toString() && this.isLive(x));
     if (!doc) return undefined;
-    const { mode, latency } = this.provider[doc.languageId] ?? { mode: 'none', latency: 0 };
+    const { mode, latency, cancels } = this.provider[doc.languageId] ?? { mode: 'none', latency: 0 };
     const value = answerFor(cmd, doc.getText(), doc.languageId, mode, this.cfg.symbols);
+    if (cancels && cmd === 'vscode.provideDocumentSemanticTokens' && value !== undefined) return this.serveOnePending(doc, cmd, value, latency, cancels);
     const rec = this.callRecord(doc, doc.version);
     rec.pending++;
     return new Promise((resolve) => {
@@ -644,6 +706,55 @@ class World {
       };
       if (latency === 'never') this.held.push(done);
       else setTimeout(done, latency);
+    });
+  }
+
+  /**
+   * cpptools' semantic tokens (its SemanticTokensProvider): one request waits per file,
+   * and a request while another waits rejects the waiting one as cancelled. A version's
+   * answer arrives once, `latency` after its first request, and a later request for it
+   * gets that answer at once. `rivals` are the editor's own requests for the version, ms
+   * after its first: each cancels whatever waits then.
+   */
+  serveOnePending(doc, cmd, value, latency, rivals) {
+    let st = this.onePending.get(doc);
+    if (st && st.version === doc.version && st.answered) return Promise.resolve(st.value);
+    if (!st || st.version !== doc.version) {
+      st?.waiting?.reject();
+      st = { version: doc.version, value, answered: false, waiting: null };
+      this.onePending.set(doc, st);
+      const rec = this.callRecord(doc, doc.version);
+      const deliver = () => {
+        if (this.onePending.get(doc) !== st) return;
+        st.answered = true;
+        rec.last[cmd] = value;
+        const w = st.waiting;
+        st.waiting = null;
+        w?.resolve(value);
+      };
+      if (latency === 'never') this.held.push(deliver);
+      else setTimeout(deliver, latency);
+      for (const at of rivals) {
+        setTimeout(() => {
+          if (this.onePending.get(doc) === st && !st.answered) this.waitOnePending(doc, st).catch(() => {});
+        }, at);
+      }
+    }
+    return this.waitOnePending(doc, st);
+  }
+
+  waitOnePending(doc, st) {
+    if (st.waiting) {
+      st.waiting.reject();
+      this.cancelled++;
+    }
+    const rec = this.callRecord(doc, st.version);
+    rec.pending++;
+    return new Promise((resolve, reject) => {
+      st.waiting = {
+        resolve: (v) => { rec.pending--; resolve(v); },
+        reject: () => { rec.pending--; reject(Object.assign(new Error('Canceled'), { name: 'Canceled' })); },
+      };
     });
   }
 
@@ -813,6 +924,8 @@ class World {
     if (ed && band2) {
       const doc = ed.document;
       if ((this.calls.get(doc)?.get(doc.version)?.pending ?? 0) > 0) band2 = false;
+      // A fetch waiting to re-ask a provider that cancelled it is still in flight.
+      if (d.classifier.inflight.get(doc)) band2 = false;
       const block = d.focusedBlock(ed);
       const id = d.instanceIds.get(doc);
       if (block && id !== undefined) {
@@ -1411,6 +1524,49 @@ function generateZig(seed, steps) {
 }
 
 /**
+ * A walk with a C, C++, Java, Kotlin or Groovy file first, then the same language,
+ * CMake, a Gradle script in either DSL (a `.gradle.kts` as `kotlin` or as redhat.java's
+ * `gradle-kotlin-dsl`), TypeScript or Python: the events of
+ * `generate(seed)`. Groovy has no semantic tokens provider.
+ */
+const CJVM_KEYS = ['c', 'cpp', 'java', 'kt', 'groovy'];
+function generateCjvm(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x636a766d);
+  const first = CJVM_KEYS[seed % CJVM_KEYS.length];
+  const second = pickOf([first, first, 'cmake', 'gradle.kts', 'gradle-kotlin-dsl', 'gradle', 'ts', 'py'], rnd());
+  const docs = second === first ? [first] : [first, second];
+  const provider = {};
+  for (const key of docs) {
+    if (FIXTURES[key].cjvmStatic || FIXTURES[key].noServer) continue;
+    provider[FIXTURES[key].lang] = { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
+/**
+ * A walk with a C or C++ file first, its server cpptools-shaped and cancelling (one
+ * request waits per file; the editor's own requests for each new version cancel the
+ * companion's, up to 3 times before the answer arrives), or clangd-shaped, or none, for
+ * the whole walk; then the same file, CMake, TypeScript or Python.
+ */
+function generateCjvmCancel(seed, steps) {
+  const events = generate(seed, steps).events.filter((ev) => ev.t !== 'provider');
+  const rnd = mulberry32(seed ^ 0x63707074);
+  const first = pickOf(['c', 'cpp'], rnd());
+  const second = pickOf([first, first, 'cmake', 'ts', 'py'], rnd());
+  const docs = second === first ? [first] : [first, second];
+  const server = pickOf(['cpptools', 'cpptools', 'cpptools', 'clangd', 'none'], rnd());
+  const latency = pickOf([300, 900, 1600, 2400], rnd());
+  const rivals = [60, 400, 1700].filter((at) => at < latency).slice(0, 1 + Math.floor(rnd() * 3));
+  const provider = {
+    [FIXTURES[first].lang]: server === 'cpptools' ? { mode: 'degraded', latency, cancels: rivals }
+      : server === 'clangd' ? { mode: 'ok', latency: pickOf([0, 90, 300], rnd()) } : { mode: 'none', latency: 0 },
+  };
+  return { cfg: { docs, split: rnd() < 0.35, provider, server }, events };
+}
+
+/**
  * A walk with a markdown-derived file first, then a code file, and in half of them
  * another prose file: the events of `generate(seed)`. VS Code registers a semantic
  * tokens provider for the four chat customisation ids, so they get a server.
@@ -1695,5 +1851,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateProse, generateContainers, generateSheets, generatePhp, generateMdx, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, SHEET_KEYS, PROSE_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateCjvm, generateCjvmCancel, generateProse, generateContainers, generateSheets, generatePhp, generateMdx, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, SHEET_KEYS, PROSE_KEYS,
 };

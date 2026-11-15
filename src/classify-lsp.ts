@@ -58,6 +58,8 @@ interface LspBundle {
   semantic: SemanticState;
   /** Rust: how this answer typed `Self` / `crate` / `super`. */
   paths?: PathKeywords;
+  /** C family: the first answer for this version, or one that differs from the last; cpptools may add to it. */
+  provisional?: boolean;
   fnRanges: OffsetRange[];
   /** File-wide analysis, built once per version and shared by every block. */
   fileIndex?: FileIndex;
@@ -170,6 +172,21 @@ export function typedNamespaceKey(lx: LexResult, tokens: readonly DecodedToken[]
   return [...typed].sort().join(',');
 }
 
+/** The length and an FNV-1a hash of a token answer's data. */
+function dataKey(data: ArrayLike<number>): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < data.length; i++) {
+    h = Math.imul(h ^ data[i], 0x01000193) >>> 0;
+  }
+  return `${data.length}:${h}`;
+}
+
+/** A request the provider rejected as cancelled (`vscode.CancellationError`, `Canceled` across the API command). */
+function isCancellation(e: unknown): boolean {
+  const err = e as { name?: string; message?: string } | undefined;
+  return err?.name === 'Canceled' || err?.message === 'Canceled';
+}
+
 /** The backoff for re-asking a server that answered nothing, in ms; null once spent. */
 export function coldRetryDelay(attempts: number, schedule: readonly number[]): number | null {
   return attempts < schedule.length ? schedule[attempts] : null;
@@ -202,6 +219,17 @@ export class Classifier implements vscode.Disposable {
   /** Retry delays after an empty or degraded answer: about 30 s in all, then that answer is final. */
   retrySchedule: readonly number[] = [1000, 2000, 4000, 8000, 15000];
   /**
+   * Waits before re-asking a provider that rejected the request as cancelled: superseded,
+   * not answered. cpptools keeps one request pending per file (docs/c-jvm.md#server-shapes).
+   * Still cancelled after these, the answer reads as `empty`.
+   */
+  cancelRetrySchedule: readonly number[] = [1500, 3000, 6000];
+  /**
+   * Waits before asking again about a provisional C-family answer, until two in a row
+   * match: cpptools adds IntelliSense batches to a version's answer within about a second.
+   */
+  confirmSchedule: readonly number[] = [250, 500, 500, 1000, 1000, 2000];
+  /**
    * Languages where a document spent the whole schedule with no provider
    * registered. Their later documents are not retried; any answer with a legend
    * takes the language off the list.
@@ -220,6 +248,10 @@ export class Classifier implements vscode.Disposable {
   private typedNamespaces = new WeakMap<vscode.TextDocument, string>();
   /** The newest version whose answer set `answered`, `pathKeywords` and `stringLiterals`: a slower answer for older text does not. */
   private answeredVersion = new WeakMap<vscode.TextDocument, number>();
+  /** C family: the last answer's version and data, to tell a settled answer from one still growing. */
+  private lastAnswer = new WeakMap<vscode.TextDocument, { version: number; key: string }>();
+  /** Confirming requests since the answer in `lastAnswer` last changed (`n`), and for its version (`total`). */
+  private confirms = new WeakMap<vscode.TextDocument, { n: number; total: number }>();
 
   /** Does a semantic provider colour this document? Band-1 restores defer to it. */
   semanticOk(doc: vscode.TextDocument): boolean {
@@ -444,6 +476,10 @@ export class Classifier implements vscode.Disposable {
    */
   coldRetryDelay(doc: vscode.TextDocument): number | null {
     const b = this.cache.get(doc);
+    if (b?.semantic === 'ok' && b.provisional) {
+      const c = this.confirms.get(doc) ?? { n: 0, total: 0 };
+      return c.n < this.confirmSchedule.length && c.total < 2 * this.confirmSchedule.length ? this.confirmSchedule[c.n] : null;
+    }
     const settled = b?.semantic === 'ok' && b.paths !== 'degraded';
     if (b && (settled || (b.semantic === 'none' && this.providerless.has(doc.languageId)))) {
       return null;
@@ -451,15 +487,20 @@ export class Classifier implements vscode.Disposable {
     return coldRetryDelay(this.coldAttempts.get(doc) ?? 0, this.retrySchedule);
   }
 
-  /** The cached answer is Rust's degraded one and retries remain to ask again. */
+  /** The cached answer is Rust's degraded one, or a C-family one not yet confirmed, and retries remain to ask again. */
   awaitsLoad(doc: vscode.TextDocument): boolean {
     const b = this.cache.get(doc);
-    return b?.semantic === 'ok' && b.paths === 'degraded' && this.coldRetryDelay(doc) !== null;
+    return b?.semantic === 'ok' && (b.paths === 'degraded' || b.provisional === true) && this.coldRetryDelay(doc) !== null;
   }
 
   /** Spend one retry and drop the cached answer, so the next classify asks again. */
   noteColdRetry(doc: vscode.TextDocument): void {
-    this.coldAttempts.set(doc, (this.coldAttempts.get(doc) ?? 0) + 1);
+    if (this.cache.get(doc)?.provisional) {
+      const c = this.confirms.get(doc) ?? { n: 0, total: 0 };
+      this.confirms.set(doc, { n: c.n + 1, total: c.total + 1 });
+    } else {
+      this.coldAttempts.set(doc, (this.coldAttempts.get(doc) ?? 0) + 1);
+    }
     this.invalidate(doc);
   }
 
@@ -510,7 +551,19 @@ export class Classifier implements vscode.Disposable {
       this.fetchSymbols(doc.uri),
       this.fetchSemanticTokens(doc, lineStarts, text, version),
     ]);
-    const { tokens, semantic, paths, strings } = fetched;
+    const { tokens, semantic, paths, strings, key } = fetched;
+    // cpptools answers a version with its first IntelliSense batch and adds later
+    // ones without a request (docs/c-jvm.md#server-shapes): an answer counts once a
+    // second one for the same version matches it.
+    let provisional: boolean | undefined;
+    if (key !== undefined) {
+      const last = this.lastAnswer.get(doc);
+      provisional = !(last && last.version === version && last.key === key);
+      // A new version starts the count; a changed answer for the same one (a reopen) restarts the waits.
+      if (last?.version !== version) this.confirms.delete(doc);
+      else if (provisional) this.confirms.set(doc, { n: 0, total: this.confirms.get(doc)?.total ?? 0 });
+      this.lastAnswer.set(doc, { version, key });
+    }
     if (version >= (this.answeredVersion.get(doc) ?? 0)) {
       this.answeredVersion.set(doc, version);
       if (semantic === 'ok') {
@@ -571,7 +624,7 @@ export class Classifier implements vscode.Disposable {
     // Build the file-wide index once per version, so classifying an N-block
     // scope costs one file pass + N block passes (not N file passes).
     const fileIndex = tokens && tokens.length > 0 ? buildFileIndex(text, tokens, fnRanges, doc.languageId) : undefined;
-    const bundle: LspBundle = { version, tokens: fileIndex ? null : tokens, semantic, paths, fnRanges, lineStarts, fileIndex };
+    const bundle: LspBundle = { version, tokens: fileIndex ? null : tokens, semantic, paths, provisional, fnRanges, lineStarts, fileIndex };
     this.cache.set(doc, bundle);
     if (semantic === 'ok' && paths !== 'degraded') {
       this.coldAttempts.delete(doc);
@@ -597,7 +650,7 @@ export class Classifier implements vscode.Disposable {
     lineStarts: number[],
     text: string,
     version: number,
-  ): Promise<{ tokens: DecodedToken[] | null; semantic: SemanticState; paths?: PathKeywords; strings?: boolean }> {
+  ): Promise<{ tokens: DecodedToken[] | null; semantic: SemanticState; paths?: PathKeywords; strings?: boolean; key?: string }> {
     const ask = async <T>(cmd: string): Promise<T | undefined> => {
       try {
         return await vscode.commands.executeCommand<T>(cmd, doc.uri);
@@ -605,9 +658,22 @@ export class Classifier implements vscode.Disposable {
         return undefined;
       }
     };
+    const askTokens = async (): Promise<vscode.SemanticTokens | undefined> => {
+      for (let i = 0; ; i++) {
+        try {
+          return await vscode.commands.executeCommand<vscode.SemanticTokens>('vscode.provideDocumentSemanticTokens', doc.uri);
+        } catch (e) {
+          if (!isCancellation(e) || i >= this.cancelRetrySchedule.length || doc.version !== version) {
+            return undefined;
+          }
+          await new Promise((resolve) => setTimeout(resolve, this.cancelRetrySchedule[i]));
+          if (doc.version !== version) return undefined;
+        }
+      }
+    };
     const [legend, tokens] = await Promise.all([
       ask<vscode.SemanticTokensLegend>('vscode.provideDocumentSemanticTokensLegend'),
-      ask<vscode.SemanticTokens>('vscode.provideDocumentSemanticTokens'),
+      askTokens(),
     ]);
     if (!legend) {
       return { tokens: null, semantic: 'none' };
@@ -617,13 +683,15 @@ export class Classifier implements vscode.Disposable {
     }
     const rust = doc.languageId === 'rust';
     const strings = (doc.languageId === 'lua' || doc.languageId === 'zig') && typesStringLiterals(tokens.data, legend.tokenTypes);
+    const key = lexFor(text, doc.languageId).syntax.family === 'c' ? dataKey(tokens.data) : undefined;
     if (doc.version !== version) {
       // Tokens for old text are never classified; only the answer's state is read.
       const { any, paths } = answerStateOf(tokens.data, legend.tokenTypes, lineStarts, text, rust);
       return { tokens: null, semantic: any ? 'ok' : 'empty', paths, strings };
     }
     const decoded = decodeSemanticTokens(tokens.data, legend.tokenTypes, legend.tokenModifiers, lineStarts, text);
-    return { tokens: decoded, semantic: decoded.length > 0 ? 'ok' : 'empty', paths: rust ? rustPathKeywords(decoded) : undefined, strings };
+    const semantic = decoded.length > 0 ? 'ok' : 'empty';
+    return { tokens: decoded, semantic, paths: rust ? rustPathKeywords(decoded) : undefined, strings, key: semantic === 'ok' ? key : undefined };
   }
 
   private collectFunctionRanges(

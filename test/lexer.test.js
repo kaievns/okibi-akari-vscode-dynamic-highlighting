@@ -118,6 +118,15 @@ const TABLE = [
   ['kotlin', 'val s = """$', [['string', '"""$']], ['val', 's']],
   ['java', 'String s = """abc', [['string', '"""abc']], ['String', 's']],
 
+  // ── groovy ──
+  ['groovy', "def a = '$x' + '''\nb $y'''; z", [['string', "'$x'"], ['string', "'''\nb $y'''"]], ['def', 'a', 'z']],
+  ['groovy', 'def s = "n $a.b.c! ${d + 1} $$ $"', [['string', '"n $'], ['string', '! ${'], ['string', '} $$ $"']], ['def', 's', 'a', 'b', 'c', 'd'], ['1']],
+  ['groovy', 'def g = """\n${h}\n$i"""', [['string', '"""\n${'], ['string', '}\n$'], ['string', '"""']], ['def', 'g', 'h', 'i']],
+  ['groovy', 'def r = /a\\/b $c/; def q = n / 2 / k', [['string', '/a\\/b $'], ['string', '/']], ['def', 'r', 'c', 'def', 'q', 'n', 'k'], ['2']],
+  ['groovy', 'def p = $/x $$ $/ /y $e/$; f', [['string', '$/x $$ $/ /y $'], ['string', '/$']], ['def', 'p', 'e', 'f']],
+  ['groovy', '#!/usr/bin/env groovy\nreturn /{/', [['comment', '#!/usr/bin/env groovy'], ['string', '/{/']], ['return']],
+  ['groovy', 'def s = "abc\nx', [['string', '"abc']], ['def', 's', 'x']],
+
   // ── default / other families ──
   ['plaintext', "# not a comment; it's 'one' here\nx", [['string', "'s '"], ['string', "' here"]], ['not', 'a', 'comment', 'it', 'one', 'x']],
   ['shellscript', 'echo a#b # real comment\nx=${#arr}', [['comment', '# real comment']], ['echo', 'a', 'b', 'x', '$', 'arr']],
@@ -506,7 +515,7 @@ test('relex equals a full lex over chained random edits in every language family
     '/', '*', 'é', '💡', '\r\n', 'lambda ', 'def ', 'fn ', 'let ', 'r"', '.', '|x|', '{{', '}}', "'\\u{", "'\\u{41}'",
     '}\'', '/re/g', '// c\n', '# c\n', '"s"', "'c'", '#if 0\n', '#endif\n', '<b>', '</b>',
     '--', '--[[', '--[==[', ']]', ']==]', '[[', '[=[', ']=]', '\\z', 'end', 'then', 'function '];
-  const LANG = { c: 'c', cpp: 'cpp', go: 'go', java: 'java', kt: 'kotlin', py: 'python', rs: 'rust', ts: 'typescript', md: 'markdown', lua: 'lua', rb: 'ruby', php: 'php' };
+  const LANG = { c: 'c', cpp: 'cpp', go: 'go', java: 'java', kt: 'kotlin', groovy: 'groovy', py: 'python', rs: 'rust', ts: 'typescript', md: 'markdown', lua: 'lua', rb: 'ruby', php: 'php' };
   const files = [
     ...fsx.readdirSync(pathx.join(__dirname, '../samples')).map((f) => pathx.join(__dirname, '../samples', f)),
     ...fsx.readdirSync(pathx.join(__dirname, 'fixtures/transitions')).map((f) => pathx.join(__dirname, 'fixtures/transitions', f)),

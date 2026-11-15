@@ -1666,7 +1666,7 @@ const PROSE_LANGUAGES = new Set([
 const STATIC_CONTENT_LANGUAGES = new Set([
   'json', 'jsonc', 'json5', 'jsonl', 'snippets', 'yaml', 'github-actions-workflow', 'dockercompose',
   'toml', 'kdl', 'ini', 'properties', 'java-properties', 'dotenv', 'ignore', 'pip-requirements',
-  'go.mod', 'go.sum', 'go.work', 'dockerbake', 'cmake-cache', 'dts',
+  'go.mod', 'go.sum', 'go.work', 'dockerbake', 'cmake', 'cmake-cache', 'dts', 'gradle-kotlin-dsl',
   'xml', 'xsl', 'dtd', 'rnc', 'xhtml', 'vue-html', 'svg',
   'css', 'scss', 'less', 'sass', 'stylus', 'postcss', 'tailwindcss',
   'graphql', 'proto', 'csv', 'tsv', 'csv (pipe)', 'csv (semicolon)', 'csv (whitespace)', 'dynamic csv',
@@ -1682,7 +1682,7 @@ export const staticContentLanguages = (): string[] => [...STATIC_CONTENT_LANGUAG
  * restores it as TypeScript (docs/javascript.md#declaration-files). ZON is data,
  * and band 1 restores nothing in it (docs/zig.md#zon).
  */
-const DERIVED_STATIC_LANGUAGES = new Map([['typescript-declaration', 'typescript'], ['zon', 'zon'], ['html-template', 'html-template']]);
+const DERIVED_STATIC_LANGUAGES = new Map([['typescript-declaration', 'typescript'], ['zon', 'zon'], ['html-template', 'html-template'], ['gradle', 'groovy'], ['gradle-kts', 'kotlin']]);
 
 /** The language band 1 restores a document as: a derived static id's grammar language, else the id itself. */
 export function band1LanguageId(languageId: string): string {
@@ -1707,6 +1707,8 @@ export function effectiveLanguageId(languageId: string, fileName: string): strin
   if (languageId === 'typescript' && TS_DECLARATION.test(fileName)) return 'typescript-declaration';
   if (languageId === 'zig' && /\.zon$/i.test(fileName)) return 'zon';
   if (languageId === 'html' && HTML_TEMPLATE.test(fileName)) return 'html-template';
+  if (languageId === 'groovy' && /\.gradle$/i.test(fileName)) return 'gradle';
+  if (languageId === 'kotlin' && /\.gradle\.kts$/i.test(fileName)) return 'gradle-kts';
   return languageId;
 }
 
@@ -1778,7 +1780,118 @@ export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
       return withSlots([...braced, ...closures].sort((a, b) => a.openOffset - b.openOffset));
     }
   }
+  if (languageId === 'kotlin') {
+    const bodies = scanKotlinExprBodies(text, braced);
+    if (bodies.length > 0) {
+      return withSlots([...braced, ...bodies].sort((a, b) => a.openOffset - b.openOffset));
+    }
+  }
   return braced;
+}
+
+/**
+ * Kotlin expression-bodied functions, `fun f(x: Int): Int = x * 2`: a function
+ * scope with no braces, from its `(` to the end of the expression. About 4 in 10
+ * Kotlin functions have one (docs/c-jvm.md#kotlin).
+ */
+function scanKotlinExprBodies(text: string, braced: BraceBlock[]): BraceBlock[] {
+  const lx = lexFor(text, 'kotlin');
+  const P = lx.punct;
+  const out: BraceBlock[] = [];
+  for (const id of lx.idents) {
+    if (id.name !== 'fun' || text[id.offset - 1] === '.') continue;
+    const k = lx.punctFrom(id.offset + id.length);
+    if (k >= P.length || text[P[k]] !== '(') continue;
+    const open = P[k];
+    let close = -1;
+    for (let j = k, depth = 0; j < P.length; j++) {
+      const c = text[P[j]];
+      if (c === '(') depth++;
+      else if (c === ')' && --depth === 0) {
+        close = P[j];
+        break;
+      } else if (c === '{' || c === '}' || c === ';') break;
+    }
+    if (close < 0) continue;
+    const eq = kotlinBodyEquals(lx, close + 1);
+    if (eq < 0) continue;
+    const end = kotlinExprEnd(lx, eq + 1);
+    if (end <= eq + 1) continue;
+    out.push({ openLine: lx.lineOf(open), closeLine: lx.lineOf(end), openOffset: open, closeOffset: end, headerStart: open, depth: 0 });
+  }
+  const parent = deepestStrictlyContaining(out, braced);
+  const ancestors = arrowAncestorCounts(out);
+  out.forEach((b, i) => {
+    b.depth = parent[i] + 1 + ancestors[i];
+  });
+  return out;
+}
+
+/** The `=` opening an expression body after a parameter list's `)`, past a return type and `where` clause; -1 for a braced or abstract function. */
+function kotlinBodyEquals(lx: LexResult, from: number): number {
+  const t = lx.text;
+  let depth = 0;
+  for (let i = from; i < t.length && i - from < 600; i++) {
+    if (!lx.isCode(i)) continue;
+    const c = t[i];
+    if (c === '(' || c === '[' || c === '<') depth++;
+    else if (c === ')' || c === ']' || (c === '>' && t[i - 1] !== '-')) depth--;
+    else if (depth > 0) continue;
+    else if (c === '{' || c === '}' || c === ';') return -1;
+    else if (c === '=') return t[i + 1] === '=' ? -1 : i;
+    else if (c === '\n') {
+      const n = nextCodeChar(lx, i + 1);
+      if (n < 0 || !(t[n] === '=' || t[n] === ':' || t.startsWith('where', n))) return -1;
+    }
+  }
+  return -1;
+}
+
+function nextCodeChar(lx: LexResult, i: number): number {
+  const t = lx.text;
+  while (i < t.length) {
+    if (/\s/.test(t[i])) i++;
+    else if (!lx.isCode(i)) i = lx.spanAt(i)?.end ?? i + 1;
+    else return i;
+  }
+  return -1;
+}
+
+const KOTLIN_CONTINUES_LINE = /^(?:\.|\?\.|\?:|&&|\|\||[-+*/%]|(?:as|is|in|to|until|downTo|step|and|or|xor|shl|shr|else|catch|finally)\b)/;
+
+/**
+ * The last code char of a Kotlin expression body starting at `from`: a line break
+ * at depth 0 ends it unless the line ends in an operator or the next one opens
+ * with one, as does a `;` or the bracket closing what holds the function.
+ */
+function kotlinExprEnd(lx: LexResult, from: number): number {
+  const t = lx.text;
+  let depth = 0;
+  let last = -1;
+  for (let i = from; i < t.length; i++) {
+    if (!lx.isCode(i)) {
+      const span = lx.spanAt(i);
+      if (span && span.region === 'string') last = span.end - 1;
+      i = (span?.end ?? i + 1) - 1;
+      continue;
+    }
+    const c = t[i];
+    if (c === '\n') {
+      if (depth > 0 || last < 0) continue;
+      if (/[=+\-*/%&|.,(:?<!]/.test(t[last]) && !(t[last] === '>' || (t[last] === '-' && t[last - 1] === '-'))) continue;
+      const n = nextCodeChar(lx, i + 1);
+      if (n >= 0 && KOTLIN_CONTINUES_LINE.test(t.slice(n, n + 8)) && !(t[n] === '-' && t[n + 1] === '>')) continue;
+      return last;
+    }
+    if (/\s/.test(c)) continue;
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') {
+      if (depth === 0) return last;
+      depth--;
+    } else if (c === ';' && depth === 0) return last;
+    last = i;
+  }
+  return last;
 }
 
 /**
@@ -2220,7 +2333,12 @@ function codeSlice(lx: LexResult, start: number, end: number): string {
 function wrappedHeaderStart(lx: LexResult, block: BraceBlock): number {
   const text = lx.text;
   let from = block.headerStart;
-  if (text.slice(block.headerStart, block.openOffset).trim() === '') {
+  const lead = text.slice(block.headerStart, block.openOffset).trim();
+  if (SIGNATURE_TAIL.test(lead) && (lx.syntax.family === 'c' || lx.syntax.family === 'java')) {
+    // A wrapped signature's tail: `) -> To {`, `throws E {`, `const noexcept {` on their own line.
+    const p = lx.prevSignificant(block.headerStart);
+    if (p >= 0 && text[p] === ')') from = lx.lineStarts[lx.lineOf(p)];
+  } else if (lead === '') {
     const p = lx.prevSignificant(block.headerStart);
     if (p < 0 || ';{},([=:'.includes(text[p])) {
       return -1;
@@ -2236,6 +2354,8 @@ function wrappedHeaderStart(lx: LexResult, block: BraceBlock): number {
   }
   return from;
 }
+
+const SIGNATURE_TAIL = /^(?:->|throws\b|const\b|noexcept\b|override\b|final\b|volatile\b|&)/;
 
 /** The `(` matching the first `)` in [from, end) that has no `(` after `from`, else -1. */
 function unmatchedCloseOpener(lx: LexResult, from: number, end: number): number {
@@ -2347,7 +2467,7 @@ function functionHeaderText(header: string, languageId?: string): boolean {
   if (/^\s*(async\s+)?(def|lambda)\b/.test(header)) {
     return true;
   }
-  if (/^\s*class\b/.test(header)) {
+  if (/^\s*class\b/.test(header) || (languageId === 'kotlin' && KOTLIN_TYPE_DECLARATION.test(header))) {
     return false;
   }
   // A braced match arm, `Ok(v) => {`, binds its pattern like control flow.
@@ -2369,8 +2489,17 @@ function functionHeaderText(header: string, languageId?: string): boolean {
   if (RUST_TYPE_BODY.test(header)) {
     return false;
   }
+  if (languageId !== undefined && QUALIFIED_SIGNATURE_LANGUAGES.has(languageId) && QUALIFIED_SIGNATURE.test(header)) {
+    return true;
+  }
   return /\b(func|function)\b|=>\s*$|\)\s*(:[^)]*)?\s*$/.test(header);
 }
+
+/** `public class B(private val w: Int) {`, `data class`, `enum class`: a Kotlin type, though its header ends in `)`. */
+const KOTLIN_TYPE_DECLARATION = /^\s*(?:@[\w.]+(?:\([^()]*\))?\s+)*(?:(?:public|private|protected|internal|open|abstract|sealed|data|enum|annotation|inner|value|inline|expect|actual|final|external)\s+)*(?:class|interface|object)\b/;
+/** Java `) throws E {`; C++ `) const noexcept override {`, `) -> T {`, `) mutable {`, `) & {`. */
+const QUALIFIED_SIGNATURE = /\)\s*(?:throws\s+[\w$.<>?,\s]+|(?:(?:const|volatile|noexcept(?:\s*\([^()]*\))?|override|final|mutable|constexpr|consteval|&&?)\s*)+(?:->\s*[^{};=]+)?|->\s*[^{};=]+)\s*$/;
+const QUALIFIED_SIGNATURE_LANGUAGES = new Set(['java', 'c', 'cpp', 'cuda-cpp', 'objective-c', 'objective-cpp']);
 
 /** Does this block's header read as control flow (rather than a function signature)? */
 function isControlFlowHeader(text: string, block: BraceBlock, languageId?: string): boolean {
@@ -2504,7 +2633,7 @@ export function functionScopeOf(text: string, block: BraceBlock, languageId?: st
     // Synthetic: a lambda, a Rust closure, or a JS concise arrow (`(c) => …`, `c => …`).
     const arrow = languageId === undefined || ARROW_LANGUAGES.has(languageId);
     const c = text[block.openOffset] ?? '';
-    return isFunctionHeader(text, block, languageId) || (arrow && (c === '(' || /[\p{ID_Start}_$]/u.test(c)))
+    return isFunctionHeader(text, block, languageId) || (arrow && (c === '(' || /[\p{ID_Start}_$]/u.test(c))) || (languageId === 'kotlin' && c === '(')
       ? { start: block.openOffset, end: block.closeOffset + 1 }
       : null;
   }

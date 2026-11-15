@@ -78,6 +78,9 @@ export const TOKENS = {
   // The theme's `string` colour, for brackets in Rust strings painted at a
   // bracket-pair level. See docs/runtime.md#brackets-in-rust-comments-and-strings.
   string: { dark: '#8ecd92', light: '#257231' },
+  // The theme's builtin / constant red, for C-family `NULL`, `true` and `false` that a
+  // server types `macro`. See docs/c-jvm.md#band-1-restores.
+  constant: { dark: '#f2716c', light: '#be222d' },
 
   // --sel — ember 34%/28% wash. Identity-on-demand for OVERFLOWED (neutral)
   // bindings: caret on a neutral name lights its occurrences in the block.
@@ -151,6 +154,7 @@ export function gutterStripeUri(color: string, opacity: number, widthPct = 100):
  *   placeholder   — Rust format placeholders and Python f-string fields (band 1, always on)
  *   commentRestore — comment colour over Go doc links and brackets in Rust comments (band 1, always on)
  *   stringRestore — string colour over brackets in Rust strings (band 1, always on)
+ *   constantRestore — constant red over C-family NULL, true and false (band 1, always on)
  *   importRestore — type slate over imported modules and types (band 1, until a provider answers)
  *   shadowRestore — page colour over non-call uses of a shadowed Python builtin (band 1, same lifetime)
  *   mdHighlight   — markdown ==highlight== wash (band 1, always on; see below)
@@ -183,6 +187,7 @@ export interface DecorationPool {
   placeholder: vscode.TextEditorDecorationType;
   commentRestore: vscode.TextEditorDecorationType;
   stringRestore: vscode.TextEditorDecorationType;
+  constantRestore: vscode.TextEditorDecorationType;
   importRestore: vscode.TextEditorDecorationType;
   shadowRestore: vscode.TextEditorDecorationType;
   mdHighlight: vscode.TextEditorDecorationType;
@@ -249,6 +254,7 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     rangeBehavior: closed,
   });
   const stringRestore = colorType(pick(TOKENS.string, isDark), false);
+  const constantRestore = colorType(pick(TOKENS.constant, isDark), false);
   // After id / idg on purpose: VS Code inserts each type's CSS rule at the front of
   // the sheet and decoration colour is `!important`, so the earlier type wins an overlap.
   const importRestore = colorType(pick(TOKENS.typeSlate, isDark), false);
@@ -289,12 +295,13 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     placeholder,
     commentRestore,
     stringRestore,
+    constantRestore,
     importRestore,
     shadowRestore,
     mdHighlight,
     mdLinkPlain,
     all(): vscode.TextEditorDecorationType[] {
-      return [...this.banded(), self, placeholder, commentRestore, stringRestore, importRestore, shadowRestore, mdHighlight, mdLinkPlain];
+      return [...this.banded(), self, placeholder, commentRestore, stringRestore, constantRestore, importRestore, shadowRestore, mdHighlight, mdLinkPlain];
     },
     // The PHASE bands: withdrawn when the caret leaves the editor, restored when it
     // comes back. `self` is deliberately NOT here — it is a band-1 mark this layer

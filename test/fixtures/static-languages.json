@@ -1,5 +1,5 @@
 {
-  "measured": "2026-11-07, VS Code 1.144.1: contributes.languages of every built-in and installed extension; helm and gotmpl 2026-11-10, helm from the theme e2e harness's extensions dir; tailwindcss and handlebars 2026-11-11, VS Code 1.145.2. stylus and postcss 2026-11-12 from the theme e2e harness's extensions dir, razor 2026-11-12, VS Code 1.145.2. null: no installed extension registers the id (dtd and rnc: redhat.vscode-xml 0.29.3's public package.json; aspnetcorerazor: ms-dotnettools.csharp 11.9.40's public manifest, 2026-11-12).",
+  "measured": "2026-11-07, VS Code 1.144.1: contributes.languages of every built-in and installed extension; helm and gotmpl 2026-11-10, helm from the theme e2e harness's extensions dir; tailwindcss and handlebars 2026-11-11, VS Code 1.145.2. stylus and postcss 2026-11-12 from the theme e2e harness's extensions dir, razor 2026-11-12, VS Code 1.145.2; gradle-kotlin-dsl 2026-11-14, VS Code 1.145.2. null: no installed extension registers the id (dtd and rnc: redhat.vscode-xml 0.29.3's public package.json; aspnetcorerazor: ms-dotnettools.csharp 11.9.40's public manifest, 2026-11-12).",
   "registered": {
     "json": "vscode.json",
     "jsonc": "vscode.json",
@@ -21,8 +21,10 @@
     "go.sum": "golang.go 0.58.0",
     "go.work": "golang.go 0.58.0",
     "dockerbake": "docker.docker 0.18.0",
+    "cmake": "twxs.cmake 0.0.17",
     "cmake-cache": "twxs.cmake 0.0.17",
     "dts": "plorefice.devicetree 0.1.1",
+    "gradle-kotlin-dsl": "redhat.java 1.58.0",
     "xml": "vscode.xml",
     "xsl": "vscode.xml",
     "dtd": null,

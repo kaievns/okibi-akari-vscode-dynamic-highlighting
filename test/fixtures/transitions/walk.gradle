@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.example'
+version = '1.0.0'
+
+def junitVersion = '5.10.2'
+ext {
+    guavaVersion = '33.0.0-jre'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation "com.google.guava:guava:${guavaVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:$junitVersion"
+}
+
+application {
+    mainClass = 'com.example.Main'
+}
+
+tasks.register('hello') {
+    def greeting = 'hello'
+    doLast {
+        def count = 3
+        count.times { i ->
+            println "$greeting #$i from ${project.name}"
+        }
+    }
+}
+
+test {
+    useJUnitPlatform()
+    maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
+}

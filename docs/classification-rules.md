@@ -126,6 +126,11 @@ object literal, so it is bracketed — preceded by `{` or `,`, followed by `,` o
 Note that a setter's **parameter** (`val`) and a constructor parameter property
 (`private readonly name`) *do* tint — they are parameters, i.e. real data.
 
+C, C++, Java, Kotlin and Zig have no `{ name }` shorthand, so there a `property`
+token is never read as one: jdtls and kls type a field read bare between commas,
+`g(a, size, b)`, `property`, and it painted as data (Java 19, Kotlin 140 tints;
+[c-jvm.md](c-jvm.md#server-shapes)).
+
 In `svelte` and `astro` a `property` token that fills a code region alone, a
 shorthand attribute `<C {open}>` or a value-less `bind:open`, reads `open` too:
 the servers type both `property [declaration]`, and in the code view a form feed
@@ -173,6 +178,7 @@ statement (`headerOf` in focus.ts):
 | closes a `(` opened on an earlier line (`): void {`, `    b) {`) | the line of that `(`, repeatedly |
 | empty, an Allman brace | the previous code line, then as above, unless it ends in `;`, `{`, `}`, `,`, `(`, `[`, `=` or `:` |
 | Rust: empty, or starts with `)`, `->` or `where` | the item start: back to a code `;`, `{` or `}` at depth 0, past attributes |
+| C family and Java: starts with `->`, `throws`, `const`, `noexcept`, `override`, `final`, `volatile` or `&`, after a `)` | the line of that `)`, then as the first row |
 
 The wider header is kept only when it reads as a function or control-flow header,
 so a brace in an expression never claims the statement before it. Without it, a
@@ -503,6 +509,13 @@ both the semantic and the heuristic path. Counted, the type's `i` read as a
 parameter of the function itself, and the loop's own `i` in its body classified
 against it.
 
+In C, C++, Objective-C, Java and Kotlin a `parameter` token outside every
+function range names nothing at run time either: a prototype's, a function-pointer
+member's (`int (*xRead)(sqlite3_file*, void*, int iAmt)`), an abstract or
+interface method's, a Kotlin function type's (`f: (value: Int) -> Int`). It is
+dropped (`signatureParameter`); a Java lambda's and a Kotlin constructor's stay
+([c-jvm.md](c-jvm.md#server-shapes)).
+
 A whole TypeScript declaration file (`.d.ts`) is static content: no Focus
 scope, so nothing in it tints ([javascript.md](javascript.md#declaration-files)).
 
@@ -514,7 +527,11 @@ scope, so nothing in it tints ([javascript.md](javascript.md#declaration-files))
 palette it shares (`outermostFnOf`). They are the document symbols of kind
 Function, Method and Constructor, plus `functionScopeOf` for every block
 (parameter list → closing brace): Go func literals, Rust closures, JS callbacks,
-Python lambdas and defs, methods. A `catch`, `when` or `using` header is a statement
+Python lambdas and defs, methods, Kotlin expression bodies (`fun f(x: Int) = x * 2`,
+`(` to the end of the expression). A C++ or Java header ending in a qualifier
+(`) const`, `) noexcept`, `) -> T`, `) throws E`) is a function; a Kotlin
+`public class B(…) {`, `data class` or `enum class` is a type
+([c-jvm.md](c-jvm.md#blocks)). A `catch`, `when` or `using` header is a statement
 block, and a match arm is control flow, so neither is a function.
 
 Servers report named functions only, so before the block ranges two
@@ -535,7 +552,7 @@ found:
 
 | Declaration | Languages |
 |---|---|
-| `let` / `const` / `var` / `val` + name (`let mut x`; Go `var x int`) | `var` only in C and Java, where `const` qualifies a type |
+| `let` / `const` / `var` / `val` + name (`let mut x`; Go `var x int`) | `var` only in C and Java, where `const` qualifies a type; `def` and `var` in Groovy; in Kotlin only inside a block that is not a type body, since a top-level or member `val` is a property |
 | targets of `:=` (`a, b := f()`, Python's walrus) | all |
 | `for x in`, `for k, v in` | Python, Rust, Swift |
 | statement-start `name =`, `a, b =`, `name: T =`; `with … as x`, `except … as e` | Python (and `#`-comment languages, without annotations) |
@@ -548,6 +565,10 @@ found:
 | a destructuring pattern after the keyword: `const { a, b: c } = o`, `const [a, b] = o`, `let (a, b) = o`, `val (a, b) = p`, `let P { x, y } = p`, `if let Some(v) = o`, `while let …` | all with those keywords |
 | a match-arm pattern on its line: `Some(v) =>`, `Ok(x) \| Err(x) =>`, `n if n > 3 =>` | Rust |
 | `catch (err)`, `catch (e: Exception)`, `catch (IOException e)` | first name in JS / TS, Kotlin, Swift / Scala / Dart; else the last |
+| none in a `#` directive line and its `\` continuations, a `typedef`, a C++ `template <…>` list, or a struct, union, enum, class, interface, record or object body (`memberTest`) | C, C++, Objective-C, Java, Kotlin, Groovy ([c-jvm.md](c-jvm.md#data-identities)) |
+| lambda parameters `w ->`, `(a, b) ->`, `(String s) ->`; pattern bindings `instanceof T x`, `case T x ->`, `Point(int x, var y)` | Java, Groovy |
+| a primary-constructor parameter without `val` / `var` (`class A(x: Int) {`), unless a member `val` / `var` shares its name | Kotlin |
+| closure parameters `{ a, b -> }`, `{ String s, int n = 1 -> }` | Groovy |
 | a bare arrow parameter (`args =>`), and the names of a destructured parameter (`({ a, b = 1 }, [c, d]) =>`) | JS / TS |
 | lambda parameters: `{ a, b -> }`, `{ (k, v) -> }`; `{ a, b in }`, `{ [weak self] a in }` | Kotlin; Swift / Scala / Dart |
 | the leading names of each line of `var ( … )` / `const ( … )` | Go |
@@ -583,8 +604,11 @@ Zig's and its primitive types, and a TitleCase or one-letter capital name, a
 `@builtin`, a label, a field or enum member written in a container body, a type
 parameter, `self`, and a `const` bound to a type, namespace or function (or a
 container-level alias of one) are not candidates (`zigFacts`,
-[zig.md](zig.md#data-identities)). Elsewhere a candidate occurrence is
-a code identifier that is not a keyword, self, `_` or Python `cls`; not a member (`item.size`), path segment (`Config::new`), callee
+[zig.md](zig.md#data-identities)). In C, C++, Java, Kotlin and Groovy the keywords
+are each language's own reserved words, so `function`, `from`, `in`, `match`,
+`str`, `type` and `val` are data where they are names
+([c-jvm.md](c-jvm.md#data-identities)). Elsewhere a candidate occurrence is
+a code identifier that is not a keyword, self, `_` or Python `cls`; not a member (`item.size`, a C or PHP `p->x`; in Java, Groovy and Kotlin `->` opens a lambda or arm body, so `w -> out.merge(w)` reads `out`), path segment (`Config::new`), callee
 (`fetch(`, an optional call's `cb?.(`), macro (`println!(`) or argument label; and not a name declared by
 `function`, `class`, `def`, `fn`, `type`, `struct`, `import` and similar. Python
 imports are the exception to that last rule: they are resolved per occurrence,

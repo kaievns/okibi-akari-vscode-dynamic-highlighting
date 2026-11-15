@@ -17,7 +17,7 @@
  */
 
 import { OffsetRange, Classification, isArgLabel, pyScopeAt, pySuiteTable } from './classify';
-import { LexId, LexResult, lexFor } from './lex';
+import { LexId, LexResult, lexFor, selfWords } from './lex';
 import { LuaFacts, luaFacts } from './lua';
 import { rubyEscapeRisk } from './ruby';
 import { scanBlocks } from './focus';
@@ -47,8 +47,132 @@ export function lexicalRisk(text: string, block: OffsetRange, languageId?: strin
       result.danger.push(range);
     }
   }
+  const casts = languageId !== undefined ? CAST_LANGUAGES.get(languageId) : undefined;
+  if (casts) {
+    result.danger.push(...casts(lx, block));
+    result.danger.sort((a, b) => a.start - b.start);
+  }
   return result;
 }
+
+const PRIMITIVE = /^(?:void|char|short|int|long|float|double|bool|_Bool|unsigned|signed|byte|boolean)$/;
+const QUALIFIER = /^(?:const|volatile|struct|union|enum|class|typename|unsigned|signed|long|short)$/;
+
+/**
+ * `(T *)x`, `(const T *)x`, `(T &)x` in C and C++: a C-style cast to a pointer or
+ * reference type, the C spelling of `reinterpret_cast` and `const_cast`. A value
+ * cast (`(int)d`) converts, like `static_cast`, and is not marked
+ * (docs/risk-marks.md#danger-words).
+ */
+function cPointerCasts(lx: LexResult, block: OffsetRange): OffsetRange[] {
+  const out: OffsetRange[] = [];
+  const t = lx.text;
+  for (let k = lx.punctFrom(block.start); k < lx.punct.length && lx.punct[k] < block.end; k++) {
+    const open = lx.punct[k];
+    if (t[open] !== '(') continue;
+    const close = closeParen(lx, k);
+    if (close < 0 || close - open > 120) continue;
+    const inner = t.slice(open + 1, close);
+    const m = /^\s*((?:[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*(?:\s*<[^()<>;{}]*>)?\s+)*[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*(?:\s*<[^()<>;{}]*>)?)\s*((?:[*&]\s*(?:const\s*)?)+)$/.exec(inner);
+    if (!m || /[^\s*&]/.test(m[2].replace(/const/g, ''))) continue;
+    if (!lx.identsIn(open, close).every((id) => lx.isCode(id.offset))) continue;
+    const p = lx.prevSignificant(open);
+    if (p >= 0 && /[\w)\]]/.test(t[p]) && !/\b(?:return|case|else)$/.test(t.slice(Math.max(0, p - 6), p + 1))) continue;
+    const n = nextCodeIndex(lx, close + 1);
+    if (n < 0 || !/[A-Za-z_(&*~!"'0-9]/.test(t[n])) continue;
+    const words = m[1].split(/[^\w]+/).filter(Boolean);
+    if (words.every((w) => QUALIFIER.test(w))) continue;
+    out.push({ start: open, end: close + 1 });
+  }
+  return out;
+}
+
+/** Java `(Type) x`: a reference cast, checked at run time like Kotlin's `as`; `(int) d` converts. */
+function javaCasts(lx: LexResult, block: OffsetRange): OffsetRange[] {
+  const out: OffsetRange[] = [];
+  const t = lx.text;
+  for (let k = lx.punctFrom(block.start); k < lx.punct.length && lx.punct[k] < block.end; k++) {
+    const open = lx.punct[k];
+    if (t[open] !== '(') continue;
+    const close = closeParen(lx, k);
+    if (close < 0 || close - open > 160) continue;
+    const inner = t.slice(open + 1, close).trim();
+    if (!/^[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*(?:\s*<[^()]*>)?(?:\s*\[\s*\])*$/.test(inner)) continue;
+    const head = inner.split(/[\s.<\[]/).pop() ?? inner;
+    if (PRIMITIVE.test(inner.replace(/\s*\[\s*\]/g, '')) && !/\[/.test(inner)) continue;
+    const last = inner.replace(/<.*>|\[\s*\]/g, '').split('.').pop()!.trim();
+    if (!/^[A-Z]/.test(last) || /^[A-Z][A-Z0-9_]+$/.test(last) || head === '') continue;
+    const p = lx.prevSignificant(open);
+    if (p >= 0 && /[\w$)\]]/.test(t[p]) && !/\breturn$/.test(t.slice(Math.max(0, p - 5), p + 1))) continue;
+    const n = nextCodeIndex(lx, close + 1);
+    if (n < 0 || !/[A-Za-z_$("'0-9!~]/.test(t[n])) continue;
+    out.push({ start: open, end: close + 1 });
+  }
+  return out;
+}
+
+/** Kotlin `x!!`: the non-null assertion turns the type system's null check off at that read. */
+function kotlinAssertions(lx: LexResult, block: OffsetRange): OffsetRange[] {
+  const out: OffsetRange[] = [];
+  const t = lx.text;
+  for (let i = t.indexOf('!!', block.start); i >= 0 && i < block.end; i = t.indexOf('!!', i + 2)) {
+    if (lx.isCode(i) && t[i + 2] !== '=') out.push({ start: i, end: i + 2 });
+  }
+  return out;
+}
+
+/** `@SuppressWarnings("unchecked")` / `@Suppress("UNCHECKED_CAST")`: the compiler's own cast check, switched off. */
+function uncheckedSuppressions(lx: LexResult, block: OffsetRange): OffsetRange[] {
+  const out: OffsetRange[] = [];
+  const t = lx.text;
+  for (const id of lx.identsIn(block.start, block.end)) {
+    if ((id.name !== 'SuppressWarnings' && id.name !== 'Suppress') || t[id.offset - 1] !== '@') continue;
+    const open = nextCodeIndex(lx, id.offset + id.length);
+    if (open < 0 || t[open] !== '(') continue;
+    const args = t.slice(open, t.indexOf(')', open) + 1);
+    if (/"(?:unchecked|rawtypes|UNCHECKED_CAST)"/.test(args)) out.push({ start: id.offset - 1, end: id.offset + id.length });
+  }
+  return out;
+}
+
+function closeParen(lx: LexResult, k: number): number {
+  const t = lx.text;
+  let depth = 0;
+  for (let j = k; j < lx.punct.length && j - k < 64; j++) {
+    const c = t[lx.punct[j]];
+    if (c === '(') depth++;
+    else if (c === ')' && --depth === 0) return lx.punct[j];
+    else if (c === ';' || c === '{' || c === '}') return -1;
+  }
+  return -1;
+}
+
+function nextCodeIndex(lx: LexResult, i: number): number {
+  const t = lx.text;
+  while (i < t.length) {
+    if (isBlank(t[i])) {
+      i++;
+      continue;
+    }
+    const r = lx.regionAt(i);
+    if (r === 'comment' || r === 'doc') {
+      i = lx.spanAt(i)!.end;
+      continue;
+    }
+    return i;
+  }
+  return -1;
+}
+
+type CastRule = (lx: LexResult, block: OffsetRange) => OffsetRange[];
+const cCasts: CastRule = cPointerCasts;
+const jvmCasts: CastRule = (lx, b) => [...javaCasts(lx, b), ...uncheckedSuppressions(lx, b)];
+const ktCasts: CastRule = (lx, b) => [...kotlinAssertions(lx, b), ...uncheckedSuppressions(lx, b)];
+/** Danger marks that are not one identifier: casts written with parentheses, Kotlin's `!!`, suppressed cast checks. */
+const CAST_LANGUAGES = new Map<string, CastRule>([
+  ['c', cCasts], ['cpp', cCasts], ['cuda-cpp', cCasts], ['objective-c', cCasts], ['objective-cpp', cCasts],
+  ['java', jvmCasts], ['kotlin', ktCasts],
+]);
 
 // ── shared scanning helpers ──────────────────────────────────────────────────
 
@@ -192,6 +316,9 @@ function importAwareCast(lx: LexResult, id: LexId): boolean {
   return !/^\s*import\b/.test(text.slice(lineStart, id.offset));
 }
 
+/** C++ `reinterpret_cast<T>` and `const_cast<T>`: Zig's `@ptrCast` and `@constCast`. `static_cast`, `dynamic_cast` and `std::bit_cast` are checked. */
+const cppCast: DangerRule = (lx, id) => (id.name === 'reinterpret_cast' || id.name === 'const_cast') && lx.text[nextIndex(lx.text, id.offset + id.length)] === '<';
+
 const onlyAs = (rule: DangerRule): DangerRule => (lx, id) => id.name === 'as' && rule(lx, id);
 const tsDanger: DangerRule = (lx, id) =>
   (id.name === 'as' && tsCast(lx, id)) || (id.name === 'any' && tsAnyType(lx, id));
@@ -217,6 +344,9 @@ const DANGER_RULES = new Map<string, DangerRule>([
   ['dart', onlyAs(importAwareCast)],
   ['swift', onlyAs(importAwareCast)],
   ['zig', (_lx, id) => ZIG_DANGER.has(id.name)],
+  ['cpp', cppCast],
+  ['cuda-cpp', cppCast],
+  ['objective-cpp', cppCast],
 ]);
 
 // ── escaping writes ──────────────────────────────────────────────────────────
@@ -505,7 +635,8 @@ export function escapeRisk(
   const regions = c.excludeRanges && c.excludeRanges.length > 0 ? gaps(block, c.excludeRanges) : [block];
   const outerNames: ReadonlySet<string> =
     family === 'python' ? pyOuterNames(lx, block, c.enclosingFn) : EMPTY_SET;
-  const selfRoots = family === 'python' ? PY_SELF_ROOTS : family === 'js' ? JS_SELF_ROOTS : family === 'zig' ? ZIG_SELF_ROOTS : SELF_ROOTS;
+  const selfRoots = family === 'python' ? PY_SELF_ROOTS : family === 'js' ? JS_SELF_ROOTS : family === 'zig' ? ZIG_SELF_ROOTS
+    : family === 'c' || family === 'java' || family === 'kotlin' ? selfWords(lx.syntax) : SELF_ROOTS;
   if (family === 'ruby') {
     return rubyEscapeRisk(lx, block, regions, scanBlocks(text, languageId));
   }

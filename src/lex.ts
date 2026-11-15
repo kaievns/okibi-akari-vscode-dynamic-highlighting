@@ -44,13 +44,15 @@ export interface LangSyntax {
   readonly shellHash: boolean;
   /** PHP inside a page's view: `#` comments, multi-line strings, heredocs, `$name` and `{$…}` holes. */
   readonly php: boolean;
+  /** Groovy: `'` and `'''` strings without holes, GStrings with `$a.b` and `${…}` holes, slashy and dollar-slashy strings. */
+  readonly groovy: boolean;
 }
 
 const SYNTAX_BY_ID: Record<string, LangSyntax> = {};
 const def = (ids: string[], s: LangSyntax): void => {
   for (const id of ids) SYNTAX_BY_ID[id] = s;
 };
-const base = { jsx: false, cppRaw: false, shellHash: false, php: false };
+const base = { jsx: false, cppRaw: false, shellHash: false, php: false, groovy: false };
 def(['typescript', 'typescript-declaration'], { ...base, family: 'js', key: 'ts' });
 def(['javascript', 'javascriptreact', 'typescriptreact'], { ...base, family: 'js', key: 'jsx', jsx: true });
 /** An HTML document's script view or a component's code view (src/html.ts): each region lexed as `javascript` on its own. */
@@ -60,9 +62,12 @@ def(['php'], { ...base, family: 'default', key: 'php', php: true });
 def(['go'], { ...base, family: 'go', key: 'go' });
 def(['python'], { ...base, family: 'python', key: 'python' });
 def(['rust'], { ...base, family: 'rust', key: 'rust' });
-def(['c', 'objective-c'], { ...base, family: 'c', key: 'c' });
-def(['cpp', 'cuda-cpp', 'objective-cpp'], { ...base, family: 'c', key: 'cpp', cppRaw: true });
+def(['c'], { ...base, family: 'c', key: 'c' });
+def(['objective-c'], { ...base, family: 'c', key: 'objc' });
+def(['cpp', 'cuda-cpp'], { ...base, family: 'c', key: 'cpp', cppRaw: true });
+def(['objective-cpp'], { ...base, family: 'c', key: 'objcpp', cppRaw: true });
 def(['java'], { ...base, family: 'java', key: 'java' });
+def(['groovy'], { ...base, family: 'java', key: 'groovy', groovy: true });
 def(['kotlin'], { ...base, family: 'kotlin', key: 'kotlin' });
 def(['swift', 'scala', 'dart'], { ...base, family: 'nested', key: 'nested' });
 def(['perl', 'r', 'julia', 'elixir', 'coffeescript', 'powershell'], { ...base, family: 'hash', key: 'hash' });
@@ -71,6 +76,30 @@ def(['lua'], { ...base, family: 'lua', key: 'lua' });
 def(['ruby'], { ...base, family: 'ruby', key: 'ruby' });
 def(['zig', 'zon'], { ...base, family: 'zig', key: 'zig' });
 const DEFAULT_SYNTAX: LangSyntax = { ...base, family: 'default', key: 'default' };
+
+/** C++ and Objective-C++: templates, `this`, the C++ keywords. */
+export const isCppSyntax = (s: LangSyntax): boolean => s.key === 'cpp' || s.key === 'objcpp';
+
+const SELF_THIS = new Set(['self', 'this']);
+const THIS = new Set(['this']);
+const SELF = new Set(['self']);
+const NONE = new Set<string>();
+/** The receiver keywords of a syntax: in C both are names, in C++, Java and Kotlin `self` is. */
+export function selfWords(s: LangSyntax): ReadonlySet<string> {
+  switch (s.family) {
+    case 'js':
+    case 'java':
+    case 'kotlin':
+      return THIS;
+    case 'zig':
+    case 'ruby':
+      return SELF;
+    case 'c':
+      return s.key === 'c' ? NONE : s.key === 'objc' ? SELF : s.key === 'cpp' ? THIS : SELF_THIS;
+    default:
+      return SELF_THIS;
+  }
+}
 
 export function syntaxFor(languageId?: string): LangSyntax {
   return (languageId !== undefined && SYNTAX_BY_ID[languageId]) || DEFAULT_SYNTAX;
@@ -256,7 +285,7 @@ class Lexer {
 
   run(): void {
     let i = 0;
-    if (this.t.startsWith('#!') && (this.fam === 'js' || this.fam === 'default' || this.fam === 'lua')) {
+    if (this.t.startsWith('#!') && (this.fam === 'js' || this.fam === 'default' || this.fam === 'lua' || this.syn.groovy)) {
       i = this.lineComment(0);
     }
     this.code(i, Stop.Eof);
@@ -360,6 +389,10 @@ class Lexer {
         i += next === CH.lf ? 2 : 3;
         continue;
       }
+      if (this.syn.groovy && c === CH.dollar && next === CH.slash && this.exprStart) {
+        i = this.groovySlashy(i, i + 2, true);
+        continue;
+      }
       if (idStartWidth(t, i) > 0) {
         i = this.identifier(i);
         continue;
@@ -428,6 +461,10 @@ class Lexer {
               i = r;
               continue;
             }
+          }
+          if (this.syn.groovy && this.exprStart) {
+            i = this.groovySlashy(i, i + 1, false);
+            continue;
           }
           this.exprStart = true;
           this.stmtStart = false;
@@ -1330,7 +1367,8 @@ class Lexer {
         break;
       case 'java':
       case 'nested':
-        if (c === CH.bq) r = -1;
+        if (this.syn.groovy) r = c === CH.bq ? -1 : this.groovyString(start, q);
+        else if (c === CH.bq) r = -1;
         else if (c === CH.dq && this.triple(q)) r = this.tripleString(start, q, true);
         else r = this.plain(start, q, false, true);
         break;
@@ -1720,6 +1758,109 @@ class Lexer {
     return end;
   }
 
+  /**
+   * Groovy `'…'` and `'''…'''` (no holes), `"…"` and `"""…"""` (GStrings: `$a`,
+   * `$a.b.c` and `${…}` holes). The one-quote forms end at a line break.
+   */
+  private groovyString(start: number, q: number): number {
+    const t = this.t;
+    const n = this.n;
+    const quote = t.charCodeAt(q);
+    const triple = this.triple(q);
+    const gstring = quote === CH.dq;
+    let seg = start;
+    let j = q + (triple ? 3 : 1);
+    while (j < n) {
+      const c = t.charCodeAt(j);
+      if (c === CH.bslash) {
+        j += this.escapeWidth(j);
+        continue;
+      }
+      if (c === quote && (!triple || this.triple(j))) {
+        let end = j + (triple ? 3 : 1);
+        while (triple && t.charCodeAt(end) === quote) end++;
+        this.span(seg, end, 'string');
+        return end;
+      }
+      if (!triple && this.newlineAt(j) > 0) break;
+      if (gstring && c === CH.dollar) {
+        const r = this.gstringHole(seg, j, triple ? Stop.Hole : Stop.HoleLine);
+        if (r >= 0) {
+          seg = j = r;
+          continue;
+        }
+      }
+      j++;
+    }
+    const end = Math.min(j, n);
+    this.span(seg, end, 'string');
+    return end;
+  }
+
+  /**
+   * A GString hole at the `$` at `j`: the string up to it becomes a span, and the
+   * offset the string resumes from is returned; -1 when the `$` is text.
+   */
+  private gstringHole(seg: number, j: number, stop: Stop): number {
+    const t = this.t;
+    if (this.nest >= MAX_NEST) return -1;
+    if (t.charCodeAt(j + 1) === CH.lbrace) {
+      this.span(seg, j + 2, 'string');
+      return Math.min(this.hole(j + 2, stop), this.n);
+    }
+    if (idStartWidth(t, j + 1) === 0 || t.charCodeAt(j + 1) === CH.dollar) return -1;
+    this.span(seg, j + 1, 'string');
+    let end = j + 1;
+    for (;;) {
+      const at = end;
+      end = scanIdent(t, at, false);
+      this.idents.push({ name: t.slice(at, end), offset: at, length: end - at });
+      if (t.charCodeAt(end) !== CH.dot || idStartWidth(t, end + 1) === 0 || t.charCodeAt(end + 1) === CH.dollar) break;
+      end++;
+    }
+    this.holes.push({ start: j + 1, end });
+    return end;
+  }
+
+  /**
+   * Groovy slashy `/…/` (a `/` in expression position; `\/` is a slash) and
+   * dollar-slashy `$/…/$` (`$$` and `$/` escape) strings: multi-line, with GString holes.
+   */
+  private groovySlashy(start: number, from: number, dollar: boolean): number {
+    const t = this.t;
+    const n = this.n;
+    let seg = start;
+    let j = from;
+    while (j < n) {
+      const c = t.charCodeAt(j);
+      if (dollar && c === CH.dollar && (t.charCodeAt(j + 1) === CH.dollar || t.charCodeAt(j + 1) === CH.slash)) {
+        j += 2;
+        continue;
+      }
+      if (!dollar && c === CH.bslash && t.charCodeAt(j + 1) === CH.slash) {
+        j += 2;
+        continue;
+      }
+      if (c === CH.slash && (!dollar || t.charCodeAt(j + 1) === CH.dollar)) {
+        const end = j + (dollar ? 2 : 1);
+        this.span(seg, end, 'string');
+        this.exprStart = false;
+        return end;
+      }
+      if (c === CH.dollar) {
+        const r = this.gstringHole(seg, j, Stop.Hole);
+        if (r >= 0) {
+          seg = j = r;
+          continue;
+        }
+      }
+      j++;
+    }
+    this.span(seg, n, 'string');
+    this.exprStart = false;
+    return n;
+  }
+
   /** Kotlin `` `name with spaces` `` is an identifier. */
   private backtickIdent(q: number): number {
     const t = this.t;
@@ -1747,7 +1888,7 @@ class Lexer {
     }
     const name = t.slice(i, end);
     this.idents.push({ name, offset: i, length: end - i });
-    this.exprStart = this.fam === 'js' && JS_EXPR_KEYWORDS.has(name) && t.charCodeAt(i - 1) !== CH.dot;
+    this.exprStart = (this.fam === 'js' || this.syn.groovy) && JS_EXPR_KEYWORDS.has(name) && t.charCodeAt(i - 1) !== CH.dot;
     this.stmtStart = false;
     return end;
   }

@@ -288,6 +288,58 @@ test(`${ZIG_WALKS} random walks over walk.zig and walk.zon leave no leftovers`, 
 test(`${ZIG_WALKS} walks that unclose and reclose a Zig string, a \\\\ line or a block leave no leftovers`, () =>
   walks(h.generateZigReclose, ZIG_WALKS, RECLOSE_STEPS, SEED0, 1 / 4));
 
+const CJVM_WALKS = Number(process.env.OKIBI_CJVM_WALKS ?? 120);
+
+test(`${CJVM_WALKS} random walks over walk.c, walk.cpp, walk.java, walk.kt and walk.groovy, with CMake and Gradle scripts, leave no leftovers`, async (t) => {
+  const shown = { tint: 0, clay: 0, riskEscape: 0, riskDanger: 0, self: 0, constantRestore: 0, ktTemplate: 0 };
+  await walks(h.generateCjvm, CJVM_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    for (const e of r.got.editors) {
+      if (!/\.(c|cpp|java|kt|groovy)$/.test(e.uri)) continue;
+      const roles = new Set(Object.keys(e.out ?? {}).map((k) => k.split(' ')[0]));
+      if ([...roles].some((x) => /^(id|idg)\d$/.test(x))) shown.tint++;
+      if (roles.has('numberEngaged')) shown.clay++;
+      for (const k of ['riskEscape', 'riskDanger', 'self']) if (roles.has(k)) shown[k]++;
+      if (e.uri.endsWith('.c')) {
+        const text = w.docs.find((d) => d.uri.toString() === e.uri).getText();
+        const words = Object.entries(e.out ?? {}).filter(([k]) => k.startsWith('self ')).flatMap(([, iv]) => iv.map(([a, b]) => text.slice(a, b)));
+        assert.ok(words.every((x) => x === 'bool'), `step ${i}: C has no receiver keyword; its keyword-grey restore is \`bool\` alone: ${words.join(' ')}`);
+      }
+      if (roles.has('constantRestore')) shown.constantRestore++;
+      if (e.uri.endsWith('.kt') && roles.has('placeholder')) shown.ktTemplate++;
+    }
+  });
+  const seen = Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ');
+  if (DEFAULT_RUN && CJVM_WALKS === 120) for (const [k, n] of Object.entries(shown)) assert.ok(n > 0, `${k}: ${seen}`);
+  t.diagnostic(`C, C++, Java, Kotlin and Groovy painted, in steps: ${seen}`);
+});
+
+const CANCEL_WALKS = Number(process.env.OKIBI_CANCEL_WALKS ?? 80);
+
+test(`${CANCEL_WALKS} random walks over walk.c and walk.cpp, cpptools cancelling the companion's requests, clangd or no server, leave no leftovers`, async (t) => {
+  const byServer = { cpptools: { steps: 0, tint: 0, held: 0 }, clangd: { steps: 0, tint: 0, held: 0 }, none: { steps: 0, tint: 0, held: 0 } };
+  let cancelled = 0;
+  let last = null;
+  await walks(h.generateCjvmCancel, CANCEL_WALKS, STEPS, SEED0, 1 / 4, (i, ev, r, w) => {
+    const s = byServer[w.cfg.server];
+    s.steps++;
+    if (r.got.editors.some((e) => /\.(c|cpp)$/.test(e.uri) && Object.keys(e.out ?? {}).some((k) => /^(id|idg)\d /.test(k)))) s.tint++;
+    // A cancelled request is superseded, not an empty answer: band 2 never holds on one.
+    if ([...w.d.classCache.values()].some((e) => e.hold)) s.held++;
+    if (w !== last) {
+      cancelled += last?.cancelled ?? 0;
+      last = w;
+    }
+  });
+  cancelled += last?.cancelled ?? 0;
+  const seen = Object.entries(byServer).map(([k, v]) => `${k} ${v.tint} of ${v.steps}`).join(', ');
+  assert.equal(byServer.cpptools.held, 0, `steps holding band 2 under cpptools: ${byServer.cpptools.held}`);
+  if (DEFAULT_RUN && CANCEL_WALKS === 80) {
+    for (const [k, v] of Object.entries(byServer)) assert.ok(v.tint > 0, `${k}: ${seen}`);
+    assert.ok(cancelled > 50, `cpptools cancelled ${cancelled} requests`);
+  }
+  t.diagnostic(`steps with a tint: ${seen}; requests cancelled: ${cancelled}`);
+});
+
 const PROSE_WALKS = Number(process.env.OKIBI_PROSE_WALKS ?? 100);
 
 test(`${PROSE_WALKS} random walks over the markdown-derived files leave no leftovers`, async (t) => {

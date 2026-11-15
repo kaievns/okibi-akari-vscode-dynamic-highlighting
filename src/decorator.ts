@@ -44,7 +44,8 @@ import {
   inSortedRanges,
   BraceBlock,
 } from './focus';
-import { LexId, LexResult, forgetLex, lexFor, relex, rememberLex, syntaxFor } from './lex';
+import { LexId, LexResult, forgetLex, lexFor, relex, rememberLex, selfWords, syntaxFor } from './lex';
+import { cMacroRestores, kotlinTemplateSpans } from './cjvm';
 import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL, isTypingEdit } from './phases';
 import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool, decorationType, rangeBehaviorOf } from './tokens';
 import { mayForceMove, rangesMovedBy } from './tracking';
@@ -132,7 +133,8 @@ function tabUris(tab: { input: unknown }): string[] {
     .map((u) => u.toString());
 }
 
-const PLACEHOLDER_SCANS: Record<string, ((text: string) => Span[]) | undefined> = {
+const PLACEHOLDER_SCANS: Record<string, ((text: string, lex: LexResult) => Span[]) | undefined> = {
+  kotlin: (_text, lex) => kotlinTemplateSpans(lex),
   rust: rustPlaceholderSpans,
   python: pythonPlaceholderSpans,
   lua: luaPlaceholderSpans,
@@ -231,6 +233,11 @@ export class Decorator implements vscode.Disposable {
     vscode.TextDocument,
     { version: number; paths: boolean; ranges: vscode.Range[] }
   >();
+  // C-family NULL / true / false ranges per document version, for the same reason.
+  private constantCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; ranges: vscode.Range[] }
+  >();
   // Comment-restore ranges (Go doc links, brackets in Rust comments) per document version, for the same reason.
   private commentRestoreCache = new WeakMap<
     vscode.TextDocument,
@@ -314,6 +321,8 @@ export class Decorator implements vscode.Disposable {
     escape?: vscode.Range[];
   } | undefined;
   private classifyToken: vscode.CancellationTokenSource | undefined;
+  /** The classification in flight: a second request for its cache key awaits it instead of restarting it. */
+  private classifying: { key: string; token: vscode.CancellationToken; done: Promise<void> } | undefined;
   // The classifier state each document's last band-1 render read. A classify compares the
   // state after its answer with this, not with the state when it started: answers to
   // overlapping classifies land out of order, and each started from the same state.
@@ -907,10 +916,28 @@ export class Decorator implements vscode.Disposable {
       return;
     }
 
+    if (this.classifying?.key === key && !this.classifying.token.isCancellationRequested) {
+      return this.classifying.done;
+    }
     this.classifyToken?.cancel();
     this.classifyToken = new vscode.CancellationTokenSource();
     const token = this.classifyToken.token;
+    const done = this.classifyInto(doc, block, focusKey, key, token);
+    this.classifying = { key, token, done };
+    try {
+      await done;
+    } finally {
+      if (this.classifying?.done === done) this.classifying = undefined;
+    }
+  }
 
+  private async classifyInto(
+    doc: vscode.TextDocument,
+    block: BraceBlock,
+    focusKey: string,
+    key: string,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
     let scoped: { focused: Classification; coloring: ScopeColoring; semantic: SemanticState } | null;
     try {
       scoped = await this.classifier.classifyScope(
@@ -989,6 +1016,7 @@ export class Decorator implements vscode.Disposable {
       this.dbg(`retry: re-ask the server about ${doc.fileName.split('/').pop()} after ${delay} ms`);
       this.classifier.noteColdRetry(doc);
       this.dropPlansFor(doc);
+      this.classifying = undefined;
       void this.runClassify(doc);
     }, delay);
   }
@@ -1153,6 +1181,7 @@ export class Decorator implements vscode.Disposable {
     this.band1Seen.set(doc, this.band1Inputs(doc));
     this.renderMarkdownMarks(editor, doc);
     this.renderSelf(editor, doc);
+    this.renderConstantRestore(editor, doc);
     this.renderPlaceholders(editor, doc);
     this.renderCommentRestore(editor, doc);
     this.renderStringRestore(editor, doc);
@@ -1266,7 +1295,8 @@ export class Decorator implements vscode.Disposable {
    * (docs/ruby.md#band-1-restores); JavaScript's `self` is an ordinary name
    * (docs/javascript.md#band-1-restores); zls types Zig's `self` `parameter`, and its
    * `this` and a member, field or enum member named `self` are ordinary names
-   * (docs/zig.md#band-1-restores). Cached per document version.
+   * (docs/zig.md#band-1-restores). A C-family `bool` takes it too: cpptools and clangd
+   * send it `macro`, a bold call (docs/c-jvm.md#band-1-restores). Cached per document version.
    */
   private renderSelf(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
     if (isNonFlowLanguage(band1LangOf(doc)) || langOf(doc) === 'php') {
@@ -1282,12 +1312,13 @@ export class Decorator implements vscode.Disposable {
       ranges = [];
       const lx = this.textStateFor(doc).lex;
       const family = lx.syntax.family;
+      const words = selfWords(lx.syntax);
       const keyword = (id: LexId): boolean => family === 'ruby' ? id.name === 'self' && rubyKeywordSelf(lx, id)
-        : family === 'js' ? id.name === 'this'
-          : family === 'zig' ? id.name === 'self' && zigKeywordSelf(lx, id)
-            : id.name === 'self' || id.name === 'this';
+        : family === 'zig' ? id.name === 'self' && zigKeywordSelf(lx, id)
+          : words.has(id.name);
+      const typeMacros = new Set(family === 'c' ? cMacroRestores(lx).keywords.map((r) => r.start) : []);
       for (const id of lx.idents) {
-        if (keyword(id) || (paths && RUST_PATH_KEYWORDS.has(id.name))) {
+        if (keyword(id) || (paths && RUST_PATH_KEYWORDS.has(id.name)) || typeMacros.has(id.offset)) {
           ranges.push(this.toRange(doc, { start: id.offset, end: id.offset + id.length }));
         }
       }
@@ -1298,8 +1329,34 @@ export class Decorator implements vscode.Disposable {
   }
 
   /**
+   * Paint C-family `NULL`, `true` and `false` constant red, file-wide and
+   * phase-independent: cpptools and clangd send `macro` over each, a bold call, and no
+   * theme key tells them from another macro. The paint is the grammar's, so with no
+   * server it changes nothing (docs/c-jvm.md#band-1-restores); `bool` is renderSelf's.
+   * Cached per document version.
+   */
+  private renderConstantRestore(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    const lx = isNonFlowLanguage(band1LangOf(doc)) ? undefined : this.textStateFor(doc).lex;
+    if (!lx || lx.syntax.family !== 'c') {
+      this.applyType(editor, this.pool.constantRestore, []);
+      return;
+    }
+    const cached = this.constantCache.get(doc);
+    let ranges: vscode.Range[];
+    if (cached && cached.version === doc.version) {
+      ranges = cached.ranges;
+    } else {
+      ranges = cMacroRestores(lx).constants.map((r) => this.toRange(doc, r));
+      this.constantCache.set(doc, { version: doc.version, ranges });
+    }
+    this.dbg(`  band1 constants: ${ranges.length} ranges (phase-independent)`);
+    this.applyType(editor, this.pool.constantRestore, ranges);
+  }
+
+  /**
    * Paint format placeholders at member steel, file-wide and phase-independent, in
-   * Rust (rust-analyzer's one `string` token covers the holes), Python f-strings
+   * Kotlin (kotlin-language-server types a `$name` template `variable`), Rust
+   * (rust-analyzer's one `string` token covers the holes), Python f-strings
    * (bracket-pair colorization paints the field braces), Lua and Zig while
    * lua-language-server or zls types their string literals, Ruby interpolation and JavaScript
    * template holes (bracket-pair colorization paints `#{` `}` and `${` `}`). Go and
@@ -1320,7 +1377,8 @@ export class Decorator implements vscode.Disposable {
       ranges = cached.ranges;
     } else {
       // A component's scan reads its scripts' languages off the document itself.
-      ranges = scan(COMPONENT_LANGUAGES.has(langOf(doc)) ? doc.getText() : this.textFor(doc)).map((s) => this.toRange(doc, s));
+      const state = this.textStateFor(doc);
+      ranges = scan(COMPONENT_LANGUAGES.has(langOf(doc)) ? doc.getText() : state.text, state.lex).map((s) => this.toRange(doc, s));
       this.placeholderCache.set(doc, { version: doc.version, ranges });
     }
     this.dbg(`  band1 placeholders: ${ranges.length} ranges (${langOf(doc)})`);

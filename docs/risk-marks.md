@@ -210,7 +210,12 @@ is unchanged.
 |---|---|---|
 | `typescript`, `typescriptreact` | `as` casts; `any` in type position | `import { a as b }`, `import * as ns`, `export { a as b }`, `export * as ns`, `as const`, `.as` / `.any` members, `any(…)` calls, `{ any: … }` keys, bindings named `any` or `as` |
 | `rust` | `as` casts | `use … as`, `extern crate … as`, `<T as Trait>::` |
-| `kotlin`, `swift`, `dart` | `as` casts, `as?` and `as!` included | `import … as` |
+| `kotlin` | `as` casts, `as?` included; `x!!`; `@Suppress("UNCHECKED_CAST")` | `import … as`, `!=` |
+| `swift`, `dart` | `as` casts, `as?` and `as!` included | `import … as` |
+| `c`, `objective-c` | a cast to a pointer type, `(T *)x`, `(const T *)x` | value casts, `(int)d`, `(void)x` ([c-jvm.md](c-jvm.md#danger-marks)) |
+| `cpp`, `cuda-cpp`, `objective-cpp` | `reinterpret_cast<…>`, `const_cast<…>`; a C cast to a pointer or reference type | `static_cast`, `dynamic_cast`, `std::bit_cast`, value casts |
+| `java` | a reference cast, `(List<String>) raw`; `@SuppressWarnings("unchecked")` and `"rawtypes"` | primitive casts, `(int) d` |
+| `groovy` | none | |
 | `python` | none | `import … as`, `with … as`, `except … as`, `case … as`, `any()` |
 | `go` | none | `any` (see below) |
 | `vue`, `svelte`, `astro` | TypeScript's, in every code region of the component ([components.md](components.md#marks)) | TypeScript's, and a Svelte `{#each xs as x}`'s `as`, which is markup |

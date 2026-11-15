@@ -1,0 +1,101 @@
+corpus,files,measure,reference,before,after
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,blocks sampled (up to 40 per file),clangd 22.1.8,488,488
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,"tints, no server",clangd 22.1.8,22031,21587
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,"tints on no data token of the reference, no server",clangd 22.1.8,3628,2777
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,"data tokens of the reference left untinted, no server",clangd 22.1.8,970,363
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,tints with the reference tokens,clangd 22.1.8,18362,18241
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,"tints on no data token of the reference, with its tokens",clangd 22.1.8,0,0
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,blocks whose tints change when the server answers,clangd 22.1.8,206,181
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,escape marks with the reference tokens,clangd 22.1.8,855,854
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,escape marks on a reference declaration,clangd 22.1.8,9,9
+the same 32 files,32,blocks sampled (up to 40 per file),clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),488,488
+the same 32 files,32,"tints, no server",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),22069,21587
+the same 32 files,32,"tints on no data token of the reference, no server",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),3639,2777
+the same 32 files,32,"data tokens of the reference left untinted, no server",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),46688,354
+the same 32 files,32,tints with the reference tokens,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),63467,18237
+the same 32 files,32,"tints on no data token of the reference, with its tokens",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),0,0
+the same 32 files,32,blocks whose tints change when the server answers,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),347,180
+the same 32 files,32,escape marks with the reference tokens,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),1661,855
+the same 32 files,32,escape marks on a reference declaration,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),104,10
+"the same corpus, 29 files cpptools answered in full",29,blocks sampled (up to 40 per file),ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,446,446
+"the same corpus, 29 files cpptools answered in full",29,"tints, no server",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,22274,21586
+"the same corpus, 29 files cpptools answered in full",29,"tints on no data token of the reference, no server",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,3295,2414
+"the same corpus, 29 files cpptools answered in full",29,"data tokens of the reference left untinted, no server",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,46588,350
+"the same corpus, 29 files cpptools answered in full",29,tints with the reference tokens,ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,63818,18589
+"the same corpus, 29 files cpptools answered in full",29,"tints on no data token of the reference, with its tokens",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,0,0
+"the same corpus, 29 files cpptools answered in full",29,blocks whose tints change when the server answers,ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,342,146
+"the same corpus, 29 files cpptools answered in full",29,escape marks with the reference tokens,ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,1663,857
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,blocks sampled (up to 40 per file),clangd 22.1.8,551,551
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,"tints, no server",clangd 22.1.8,29297,5026
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,"tints on no data token of the reference, no server",clangd 22.1.8,20857,1401
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,"data tokens of the reference left untinted, no server",clangd 22.1.8,1455,511
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,tints with the reference tokens,clangd 22.1.8,8238,3843
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,"tints on no data token of the reference, with its tokens",clangd 22.1.8,0,0
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,blocks whose tints change when the server answers,clangd 22.1.8,369,230
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,escape marks with the reference tokens,clangd 22.1.8,162,152
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,escape marks on a reference declaration,clangd 22.1.8,2,2
+the same 21 files,21,blocks sampled (up to 40 per file),clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),551,551
+the same 21 files,21,"tints, no server",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),29350,5026
+the same 21 files,21,"tints on no data token of the reference, no server",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),20838,1401
+the same 21 files,21,"data tokens of the reference left untinted, no server",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),17985,749
+the same 21 files,21,tints with the reference tokens,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),24846,4122
+the same 21 files,21,"tints on no data token of the reference, with its tokens",clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),6,0
+the same 21 files,21,blocks whose tints change when the server answers,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),468,234
+the same 21 files,21,escape marks with the reference tokens,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),658,161
+the same 21 files,21,escape marks on a reference declaration,clangd 22.1.8 tokens with declaration and definition removed (the cpptools shape),329,10
+"the same corpus, 17 files cpptools answered in full",17,blocks sampled (up to 40 per file),ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,513,513
+"the same corpus, 17 files cpptools answered in full",17,"tints, no server",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,25683,4700
+"the same corpus, 17 files cpptools answered in full",17,"tints on no data token of the reference, no server",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,21824,2312
+"the same corpus, 17 files cpptools answered in full",17,"data tokens of the reference left untinted, no server",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,14601,594
+"the same corpus, 17 files cpptools answered in full",17,tints with the reference tokens,ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,17327,2819
+"the same corpus, 17 files cpptools answered in full",17,"tints on no data token of the reference, with its tokens",ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,4,0
+"the same corpus, 17 files cpptools answered in full",17,blocks whose tints change when the server answers,ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,436,248
+"the same corpus, 17 files cpptools answered in full",17,escape marks with the reference tokens,ms-vscode.cpptools 1.35.6 in VS Code 1.145.2,437,103
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,blocks sampled (up to 40 per file),jdtls 1.63.0 (redhat.java 1.58.0),525,525
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,"tints, no server",jdtls 1.63.0 (redhat.java 1.58.0),9933,5618
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,"tints on no data token of the reference, no server",jdtls 1.63.0 (redhat.java 1.58.0),4995,469
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,"data tokens of the reference left untinted, no server",jdtls 1.63.0 (redhat.java 1.58.0),606,75
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,tints with the reference tokens,jdtls 1.63.0 (redhat.java 1.58.0),5259,5167
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,"tints on no data token of the reference, with its tokens",jdtls 1.63.0 (redhat.java 1.58.0),19,0
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,blocks whose tints change when the server answers,jdtls 1.63.0 (redhat.java 1.58.0),285,97
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,escape marks with the reference tokens,jdtls 1.63.0 (redhat.java 1.58.0),188,186
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,escape marks on a reference declaration,jdtls 1.63.0 (redhat.java 1.58.0),0,0
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,blocks sampled (up to 40 per file),"kotlin-language-server 1.3.13, its two defects normalised",830,920
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,"tints, no server","kotlin-language-server 1.3.13, its two defects normalised",18468,7866
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,"tints on no data token of the reference, no server","kotlin-language-server 1.3.13, its two defects normalised",10744,1234
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,"data tokens of the reference left untinted, no server","kotlin-language-server 1.3.13, its two defects normalised",4931,693
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,tints with the reference tokens,"kotlin-language-server 1.3.13, its two defects normalised",10542,6974
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,"tints on no data token of the reference, with its tokens","kotlin-language-server 1.3.13, its two defects normalised",368,0
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,blocks whose tints change when the server answers,"kotlin-language-server 1.3.13, its two defects normalised",658,244
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,escape marks with the reference tokens,"kotlin-language-server 1.3.13, its two defects normalised",456,245
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,escape marks on a reference declaration,"kotlin-language-server 1.3.13, its two defects normalised",0,0
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,danger marks,lexicalRisk over the whole file,0,170
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,function scopes,functionScopeOf over scanBlocks,205,205
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,function scopes with a danger mark,lexicalRisk over the whole file,0,53
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,danger marks: (cast),lexicalRisk over the whole file,0,170
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,danger marks,lexicalRisk over the whole file,0,49
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,function scopes,functionScopeOf over scanBlocks,1037,1820
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,function scopes with a danger mark,lexicalRisk over the whole file,0,35
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,danger marks: reinterpret_cast,lexicalRisk over the whole file,0,24
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,danger marks: const_cast,lexicalRisk over the whole file,0,15
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,danger marks: (cast),lexicalRisk over the whole file,0,10
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,danger marks,lexicalRisk over the whole file,0,114
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,function scopes,functionScopeOf over scanBlocks,700,753
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,function scopes with a danger mark,lexicalRisk over the whole file,0,61
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,danger marks: (cast),lexicalRisk over the whole file,0,74
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,danger marks: @SuppressWarnings,lexicalRisk over the whole file,0,40
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,danger marks,lexicalRisk over the whole file,52,94
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,function scopes,functionScopeOf over scanBlocks,688,1195
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,function scopes with a danger mark,lexicalRisk over the whole file,37,67
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,danger marks: as,lexicalRisk over the whole file,52,52
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,danger marks: @Suppress,lexicalRisk over the whole file,0,24
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,danger marks: !!,lexicalRisk over the whole file,0,18
+Gradle documentation snippets in gradle/gradle at ec46ae6 (22 .gradle),22,declarations per 100 lines (def / val / var / Type name =),lexical count,,0
+Gradle documentation snippets in gradle/gradle at ec46ae6 (22 .gradle.kts),22,declarations per 100 lines (def / val / var / Type name =),lexical count,,0
+"public Groovy sources: groovy-swing, groovy-console, groovy-templates, Jenkins (129 .groovy)",129,declarations per 100 lines (def / val / var / Type name =),lexical count,,4.68
+kotlinpoet and Kotlin stdlib (44 .kt),44,declarations per 100 lines (def / val / var / Type name =),lexical count,,7.63
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,implicit it uses,lexical count,,118
+kotlinpoet (38); Kotlin stdlib (6); kotlinpoet Gradle Kotlin scripts (3); synthetic (2),49,implicit it uses with a kls token,kotlin-language-server 1.3.13,,14
+"zlib sources and headers (26); curl.h, sqlite3.h, pthread.h, stdio.h (4); synthetic (2)",32,"wrong tints, no server, inside #if / #ifdef / #ifndef",clangd 22.1.8,,2437
+fmt (10); libc++ (4); LLVM ADT headers (5); synthetic (2),21,"wrong tints, no server, inside #if / #ifdef / #ifndef",clangd 22.1.8,,1242
+OpenJDK java.base and jdk.internal sources (16); synthetic (2),18,"wrong tints, no server, where jdtls sends no token",jdtls 1.63.0 (redhat.java 1.58.0),,366

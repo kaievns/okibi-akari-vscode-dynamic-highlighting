@@ -25,7 +25,7 @@
  * definition-provider round trips).
  */
 
-import { LexId, LexResult, bangCalls, blankGap, commaGap, jsxTags, lexFor } from './lex';
+import { LangSyntax, LexId, LexResult, bangCalls, blankGap, commaGap, isCppSyntax, jsxTags, lexFor, selfWords } from './lex';
 import { MODULE_OPEN, REGION_MARK, viewRegions } from './html';
 import { jsNamespaceNames, pyImportOffsets } from './imports';
 import { BraceBlock, functionScopeOf, inSortedRanges, isPatternBrace, scanBlocks, scopeRegionFor, typeArrowsOf } from './focus';
@@ -34,6 +34,7 @@ import { rustInlineArgs } from './placeholders';
 import { LUA_KEYWORDS, LUA_STD, luaCallee, luaFacts } from './lua';
 import { rubyFacts, rubyTokens } from './ruby';
 import { isZigReserved, isZigTypeName, zigFacts } from './zig';
+import { cDirectiveRanges, cTypedefRanges, cppTemplateParams, javaLambdaParams, javaPatterns, kotlinCtorParams, kotlinCtorProperty, kotlinLocal, kotlinTokens, memberTest, signatureParameter, groovyClosureParams } from './cjvm';
 
 export type Cls = 'block' | 'fn' | 'out' | 'self';
 export type ClassSource = 'lsp' | 'heuristic' | 'mixed';
@@ -468,6 +469,15 @@ export function buildFileIndex(
   const shorthandRegions = languageId === 'svelte' || languageId === 'astro';
   // ruby-lsp types reads only; declarations and writes come from the bindings (docs/ruby.md).
   if (lx.syntax.family === 'ruby') tokens = rubyTokens(lx, tokens);
+  const signatureFamily = lx.syntax.family === 'c' || lx.syntax.family === 'java' || lx.syntax.family === 'kotlin';
+  // cpptools sends no `declaration` modifier: the declaration sites are the lexical ones (docs/c-jvm.md).
+  if (lx.syntax.family === 'c' && tokens.length > 0 && !tokens.some((t) => t.modifiers.includes('declaration'))) {
+    const sites = heuristicBaseFor(lx, languageId, undefined).declSites;
+    tokens = tokens.map((t) => sites.has(t.offset) && TINTABLE_TYPES.has(t.type) ? { ...t, modifiers: [...t.modifiers, 'declaration'] } : t);
+  }
+  if (lx.syntax.family === 'kotlin') {
+    tokens = kotlinTokens(lx, tokens, memberTest(lx, scanBlocks(text, languageId)));
+  }
 
   for (const tok of tokens) {
     // gopls types `[Name]` doc links inside `//` comments as plain variables, so the
@@ -498,13 +508,16 @@ export function buildFileIndex(
     // object-shorthand (`{ name }`) is a real read of a binding and tints like it.
     const tintable =
       TINTABLE_TYPES.has(tok.type) ||
-      (tok.type === 'property' && lx.syntax.family !== 'zig' && isShorthandPropertyRead(text, tok.offset, tok.length, tok.modifiers, shorthandRegions));
+      (tok.type === 'property' && !NO_SHORTHAND_FAMILIES.has(lx.syntax.family) && isShorthandPropertyRead(text, tok.offset, tok.length, tok.modifiers, shorthandRegions));
     if (!tintable) {
+      continue;
+    }
+    if (tok.type === 'parameter' && signatureFamily && signatureParameter(lx, tok.offset, (o) => insideAnyFn(o, fnRanges))) {
       continue;
     }
     // `self` / `this` are lexed separately below; band 1 paints them. Outside a
     // cargo workspace rust-analyzer types a `self` USE as tintable `const`.
-    if (isSelfName(tok.name, lx.syntax.family) || jsSurface?.has(tok.name)) {
+    if (isSelfName(tok.name, lx.syntax.family, lx.syntax) || jsSurface?.has(tok.name)) {
       continue;
     }
     // Builtins (console, Math…) are library surface, not this file's data.
@@ -560,7 +573,7 @@ export function buildFileIndex(
   // the classification).
   const selfWanted = new Set<string>();
   for (const name of SELF_NAMES) {
-    if (isSelfName(name, lx.syntax.family)) selfWanted.add(name);
+    if (isSelfName(name, lx.syntax.family, lx.syntax)) selfWanted.add(name);
   }
   for (const id of lx.idents) {
     if (selfWanted.has(id.name)) {
@@ -589,7 +602,7 @@ export function buildFileIndex(
       if (typed < tokens.length && tokens[typed].offset === id.offset) {
         continue;
       }
-      if (!occurrences.has(id.name) || isSelfName(id.name)) {
+      if (!occurrences.has(id.name) || isSelfName(id.name, lx.syntax.family, lx.syntax)) {
         continue; // only extend a KNOWN binding; never mint one from a macro arg
       }
       if (isMemberOrLabelPosition(lx, id.offset, id.length)) {
@@ -897,6 +910,9 @@ function macroArgRanges(text: string, lx: LexResult): OffsetRange[] {
  */
 const TINTABLE_TYPES = new Set(['variable', 'parameter', 'const']);
 
+/** Languages with no `{ name }` shorthand: a bare `property` there is a member read (`f(a, size, b)`), never a binding. */
+const NO_SHORTHAND_FAMILIES = new Set(['zig', 'c', 'java', 'kotlin']);
+
 /**
  * `const` is tintable for RUST because it means exactly one thing: a genuine
  * constant (`const MAX_RETRIES: u32 = 3;` and its reads). rust-analyzer types it
@@ -986,6 +1002,51 @@ const HEURISTIC_KEYWORDS = new Set([
 ]);
 
 
+/**
+ * Each C-family, Java, Groovy and Kotlin keyword list replaces the cross-language
+ * one: there `from`, `in`, `val`, `match`, `type`, `str` and `function` are ordinary names.
+ */
+const C_KEYWORDS = new Set([
+  'auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extern',
+  'float', 'for', 'goto', 'if', 'inline', 'int', 'long', 'register', 'restrict', 'return', 'short', 'signed',
+  'sizeof', 'static', 'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while',
+  'bool', 'true', 'false', 'nullptr', 'constexpr', 'alignas', 'alignof', 'static_assert', 'thread_local',
+  'typeof', 'typeof_unqual', 'defined', '_Bool', '_Atomic', '_Noreturn', '_Static_assert', '_Thread_local',
+  '_Alignas', '_Alignof', '_Generic', '_Complex', '__attribute__', '__declspec', '__restrict', '__inline',
+  '__asm__', 'asm',
+]);
+const CPP_KEYWORDS = new Set([...C_KEYWORDS,
+  'and', 'and_eq', 'bitand', 'bitor', 'catch', 'char8_t', 'char16_t', 'char32_t', 'class', 'compl', 'concept',
+  'consteval', 'constinit', 'const_cast', 'co_await', 'co_return', 'co_yield', 'decltype', 'delete',
+  'dynamic_cast', 'explicit', 'export', 'friend', 'mutable', 'namespace', 'new', 'noexcept', 'not', 'not_eq',
+  'operator', 'or', 'or_eq', 'private', 'protected', 'public', 'reinterpret_cast', 'requires', 'static_cast',
+  'template', 'this', 'throw', 'try', 'typeid', 'typename', 'using', 'virtual', 'wchar_t', 'xor', 'xor_eq',
+  'override',
+]);
+const JAVA_KEYWORDS = new Set([
+  'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'const', 'continue',
+  'default', 'do', 'double', 'else', 'enum', 'extends', 'final', 'finally', 'float', 'for', 'goto', 'if',
+  'implements', 'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new', 'package', 'private',
+  'protected', 'public', 'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this',
+  'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while', 'true', 'false', 'null', 'var',
+  'sealed', 'permits',
+]);
+const KOTLIN_KEYWORDS = new Set([
+  'as', 'break', 'class', 'continue', 'do', 'else', 'false', 'for', 'fun', 'if', 'in', 'interface', 'is',
+  'null', 'object', 'package', 'return', 'super', 'this', 'throw', 'true', 'try', 'typealias', 'typeof',
+  'val', 'var', 'when', 'while', 'override', 'lateinit', 'companion', 'suspend', 'tailrec', 'reified',
+  'crossinline', 'noinline', 'vararg', 'internal', 'constructor', 'private', 'protected', 'public', 'import',
+]);
+const GROOVY_KEYWORDS = new Set([...JAVA_KEYWORDS, 'def', 'in', 'as', 'trait', 'threadsafe']);
+function familyKeywords(lx: LexResult): Set<string> | undefined {
+  switch (lx.syntax.family) {
+    case 'c': return isCppSyntax(lx.syntax) ? CPP_KEYWORDS : C_KEYWORDS;
+    case 'java': return lx.syntax.groovy ? GROOVY_KEYWORDS : JAVA_KEYWORDS;
+    case 'kotlin': return KOTLIN_KEYWORDS;
+    default: return undefined;
+  }
+}
+
 /** Compute the start offset of each line, so (line,char) → absolute offset. */
 export function lineStartOffsets(text: string): number[] {
   const starts = [0];
@@ -1028,14 +1089,17 @@ export function decodeSemanticTokens(
   const out: DecodedToken[] = [];
   let line = 0;
   let char = 0;
+  let ordered = true;
   for (let i = 0; i + 4 < data.length; i += 5) {
-    const dLine = data[i];
-    const dChar = data[i + 1];
+    // jdtls and kotlin-language-server send some tokens before the one ahead of them,
+    // a negative delta the Uint32Array wraps (docs/c-jvm.md#server-shapes).
+    const dLine = data[i] | 0;
+    const dChar = data[i + 1] | 0;
     const length = data[i + 2];
     const typeIdx = data[i + 3];
     const modBits = data[i + 4];
 
-    if (dLine > 0) {
+    if (dLine !== 0) {
       line += dLine;
       char = dChar;
     } else {
@@ -1055,9 +1119,12 @@ export function decodeSemanticTokens(
         modifiers.push(tokenModifiers[b]);
       }
     }
+    if (out.length > 0 && offset < out[out.length - 1].offset) {
+      ordered = false;
+    }
     out.push({ name, offset, length, type, modifiers });
   }
-  return out;
+  return ordered ? out : out.sort((a, b) => a.offset - b.offset);
 }
 
 function inRange(offset: number, range: OffsetRange): boolean {
@@ -1269,7 +1336,8 @@ export function outermostFnOf(fnRanges: OffsetRange[], offset: number): OffsetRa
   return best;
 }
 
-function isSelfName(name: string, family?: string): boolean {
+function isSelfName(name: string, family?: string, syntax?: LangSyntax): boolean {
+  if (syntax && (family === 'c' || family === 'java' || family === 'kotlin')) return selfWords(syntax).has(name);
   if (family === 'js') return name === 'this';
   if (family === 'zig') return name === 'self';
   return SELF_NAMES.has(name) || name.startsWith('@');
@@ -1565,7 +1633,7 @@ export function classifyFromSemantic(
   }
 
   for (const [name, agg] of blockAgg) {
-    if (isSelfName(name, fileIndex.lex.syntax.family)) {
+    if (isSelfName(name, fileIndex.lex.syntax.family, fileIndex.lex.syntax)) {
       byName.set(name, {
         cls: 'self',
         freqInBlock: agg.freq,
@@ -1939,6 +2007,8 @@ const NO_DECL_KEYWORDS = new Set<string>();
 /** `const` qualifies a type in C and C++, so only `var` (Java, C#) introduces a name. */
 const C_DECL_KEYWORDS = new Set(['var']);
 const NESTED_DECL_KEYWORDS = new Set(['const', 'let', 'var', 'val', 'final']);
+/** Groovy `def x = …` declares a variable, `def f(…)` a method. */
+const GROOVY_DECL_KEYWORDS = new Set(['def', 'var']);
 /** Words that put an expression, not a declared name, after a type-like identifier. */
 const C_EXPR_WORDS = new Set([
   'return', 'case', 'new', 'throw', 'else', 'goto', 'sizeof', 'typeof', 'delete', 'in', 'instanceof',
@@ -2017,10 +2087,10 @@ function heuristicCandidate(lx: LexResult, id: LexId, nonData: Set<string>): boo
   }
   const zig = lx.syntax.family === 'zig';
   if (zig ? isZigReserved(id.name) || isZigTypeName(id.name) || zigFacts(lx).nonDataAt.has(id.offset) || zigFacts(lx).nonDataUse(id.name, id.offset)
-    : HEURISTIC_KEYWORDS.has(id.name)) {
+    : (familyKeywords(lx) ?? HEURISTIC_KEYWORDS).has(id.name)) {
     return false;
   }
-  if (id.name === '_' || isSelfName(id.name, lx.syntax.family) || nonData.has(id.name)) {
+  if (id.name === '_' || isSelfName(id.name, lx.syntax.family, lx.syntax) || nonData.has(id.name)) {
     return false;
   }
   if (lx.syntax.family === 'python' && id.name === 'cls') {
@@ -2032,7 +2102,9 @@ function heuristicCandidate(lx: LexResult, id: LexId, nonData: Set<string>): boo
   }
   let p = id.offset - 1;
   while (p >= 0 && (text[p] === ' ' || text[p] === '\t')) p--;
-  if (p >= 1 && ((text[p] === ':' && text[p - 1] === ':') || (text[p] === '>' && text[p - 1] === '-'))) {
+  // In Java, Groovy and Kotlin `->` opens a lambda or arm body, not a member or return type.
+  const arrowBody = lx.syntax.family === 'java' || lx.syntax.family === 'kotlin';
+  if (p >= 1 && ((text[p] === ':' && text[p - 1] === ':') || (!arrowBody && text[p] === '>' && text[p - 1] === '-'))) {
     return false;
   }
   let n = id.offset + id.length;
@@ -2150,7 +2222,8 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
     if (importOffsets && ids[i - 1].name === 'import') {
       continue;
     }
-    if (NON_DATA_KEYWORDS.has(ids[i - 1].name) && blankGap(text, ids[i - 1].offset + ids[i - 1].length, ids[i].offset)) {
+    if (NON_DATA_KEYWORDS.has(ids[i - 1].name) && blankGap(text, ids[i - 1].offset + ids[i - 1].length, ids[i].offset)
+      && !(lx.syntax.groovy && ids[i - 1].name === 'def' && text[nextSignificant(lx, ids[i].offset + ids[i].length)] !== '(')) {
       nonData.add(ids[i].name);
     }
   }
@@ -2166,7 +2239,12 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
   const occurrences = new Map<string, OffsetRange[]>();
   const firstFileOffset = new Map<string, number>();
   const candidateAt = new Set<number>();
-  const typeParams = mergeRanges(typeArrowsOf(lx, languageId).params);
+  const cFamily = family === 'c';
+  const typeParams = mergeRanges([
+    ...typeArrowsOf(lx, languageId).params,
+    ...(cFamily ? cDirectiveRanges(lx) : []),
+    ...(isCppSyntax(lx.syntax) ? cppTemplateParams(lx) : []),
+  ]);
   for (const id of ids) {
     if (!heuristicCandidate(lx, id, nonData) || inSortedRanges(typeParams, id.offset) || importOffsets?.has(id.offset)) {
       continue;
@@ -2198,6 +2276,15 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
       declOffsets.set(id.name, [id.offset]);
     }
   };
+  // A declaration in a type body is a member, and a typedef names a type: band 1's, never data.
+  const typedFamily = family === 'c' || family === 'java' || family === 'kotlin';
+  const member = typedFamily ? memberTest(lx, blocks ?? scanBlocks(text, languageId)) : undefined;
+  const typedefs = cFamily ? mergeRanges(cTypedefRanges(lx)) : [];
+  const declareVar = (id: LexId): void => {
+    if (member?.(id.offset) || (typedefs.length > 0 && inSortedRanges(typedefs, id.offset))) return;
+    if (family === 'kotlin' && !kotlinLocal(lx, id.offset, member!)) return;
+    declare(id);
+  };
   const nextChar = (id: LexId): { c: string; c2: string; at: number } => {
     const at = nextSignificant(lx, id.offset + id.length);
     return { c: at >= 0 ? text[at] : '', c2: at >= 0 ? text[at + 1] ?? '' : '', at };
@@ -2214,7 +2301,7 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
     return j;
   };
 
-  const keywords = dataDeclKeywords(family);
+  const keywords = lx.syntax.groovy ? GROOVY_DECL_KEYWORDS : dataDeclKeywords(family);
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
     const next = ids[i + 1];
@@ -2231,8 +2318,9 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
       const shaped = family === 'go'
         || (c === ':' && c2 !== ':') || c === '=' || c === ',' || c === ';' || c === ')'
         || ids[k + 1]?.name === 'in' || ids[k + 1]?.name === 'of';
-      if (shaped && !(family === 'js' && c === '=' && jsNonDataInit(lx, nextSignificant(lx, target.offset + target.length)))) {
-        declare(target);
+      if (shaped && !(family === 'js' && c === '=' && jsNonDataInit(lx, nextSignificant(lx, target.offset + target.length)))
+        && !(family === 'kotlin' && kotlinCtorProperty(lx, id.offset))) {
+        declareVar(target);
       }
     }
     // `for i in`, `for k, v in`.
@@ -2240,6 +2328,18 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
       const last = commaRun(i + 1);
       if (ids[last + 1]?.name === 'in') {
         for (let j = i + 1; j <= last; j++) declare(ids[j]);
+      }
+    }
+    // Kotlin and Groovy `for (x in xs)`, Kotlin `for ((k, v) in m)`.
+    if (id.name === 'for' && (family === 'kotlin' || lx.syntax.groovy) && next) {
+      const open = nextSignificant(lx, id.offset + id.length);
+      const inner = open >= 0 && text[open] === '(' ? nextSignificant(lx, open + 1) : -1;
+      if (inner >= 0 && text[inner] === '(') {
+        const close = closeAfter(lx, inner);
+        const n = close > inner ? nextSignificant(lx, close + 1) : -1;
+        if (n >= 0 && text.startsWith('in', n) && !isWordChar(text[n + 2])) for (const b of patternBindings(lx, inner, close, false)) declare(b);
+      } else if (inner >= 0 && next.offset === inner && ids[i + 2]?.name === 'in') {
+        declare(next);
       }
     }
     // Go `a, b := f()`, Python's walrus.
@@ -2267,7 +2367,13 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
     perLang.set(languageId ?? '', base);
     return base;
   }
-  declareShapes(lx, keywords, declare);
+  declareShapes(lx, keywords, declare, declareVar);
+  if (family === 'java') {
+    javaLambdaParams(lx, declare);
+    javaPatterns(lx, declare);
+  }
+  if (family === 'kotlin') kotlinCtorParams(lx, declare);
+  if (lx.syntax.groovy) groovyClosureParams(lx, declare);
   if (lx.syntax.key === 'view') patternDeclarations(lx, declare);
   if (zig) {
     for (const id of zig.captures) declare(id);
@@ -2281,7 +2387,7 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
         && !keywords.has(ids[i - 1].name)) || pc === ']';
       const { c, c2 } = nextChar(id);
       if (typed && ((c === '=' && c2 !== '=') || c === ';' || c === '[' || (c === ':' && c2 !== ':'))) {
-        declare(id);
+        declareVar(id);
       }
     }
   }
@@ -2388,7 +2494,7 @@ function patternBindings(lx: LexResult, start: number, end: number, rust: boolea
  * groups, C-family declarator lists and `*` / `&` / generic-typed declarators,
  * Python bracketed and starred targets, and PHP `$name =` statements.
  */
-function declareShapes(lx: LexResult, keywords: Set<string>, declare: (id: LexId) => void): void {
+function declareShapes(lx: LexResult, keywords: Set<string>, declare: (id: LexId) => void, declareVar = declare): void {
   const text = lx.text;
   const family = lx.syntax.family;
   const ids = lx.idents;
@@ -2413,8 +2519,23 @@ function declareShapes(lx: LexResult, keywords: Set<string>, declare: (id: LexId
       if (open >= 0 && (text[open] === '(' || text[open] === '[' || text[open] === '{') && lx.isCode(open)) {
         const end = closeAfter(lx, open);
         if (end > open && !(family === 'js' && jsNonDataInit(lx, nextSignificant(lx, end)))) {
-          for (const b of patternBindings(lx, from, end, rust)) declare(b);
+          for (const b of patternBindings(lx, from, end, rust)) declareVar(b);
         }
+      }
+    }
+    // C++ `auto` declarations the declarator rule skips, `auto` being a keyword: structured
+    // bindings (`auto [a, b] = p`, `const auto& [k, v] : m`) and a reference or pointer to
+    // `auto`, a range-for's included (`for (const auto& x : xs)`, `auto* p = q;`).
+    if (id.name === 'auto' && (lx.syntax.key === 'cpp' || lx.syntax.key === 'objcpp')) {
+      let open = nextSignificant(lx, id.offset + id.length);
+      while (open >= 0 && (text[open] === '&' || text[open] === '*')) open = nextSignificant(lx, open + 1);
+      if (open >= 0 && text[open] === '[' && lx.isCode(open)) {
+        const end = closeAfter(lx, open);
+        if (end > open) for (const b of patternBindings(lx, open, end, false)) declareVar(b);
+      } else if (open >= 0 && ids[i + 1] && ids[i + 1].offset === open) {
+        const n = nextSignificant(lx, open + ids[i + 1].length);
+        const c = n >= 0 ? text[n] : '';
+        if ((c === '=' && plainEquals(text, n)) || (c === ':' && text[n + 1] !== ':') || c === ';' || c === ',') declareVar(ids[i + 1]);
       }
     }
     // `catch (err)`, `catch (e: Exception)`, `catch (IOException e)`.
@@ -2455,7 +2576,7 @@ function declareShapes(lx: LexResult, keywords: Set<string>, declare: (id: LexId
     declareGoGroups(lx, declare);
   }
   if (family === 'c' || family === 'java' || family === 'default') {
-    declareCDeclarators(lx, keywords, declare);
+    declareCDeclarators(lx, keywords, declareVar);
   }
   if (family === 'python') {
     declarePyTargets(lx, declare);
@@ -2863,7 +2984,7 @@ export function classifyFromHeuristic(
 
   const blockAgg = new Map<string, { freq: number; first: number }>();
   for (const id of lx.identsIn(block.start, block.end)) {
-    if (inSortedRanges(excluded, id.offset) || (!isSelfName(id.name, lx.syntax.family) && !base.candidateAt.has(id.offset))) {
+    if (inSortedRanges(excluded, id.offset) || (!isSelfName(id.name, lx.syntax.family, lx.syntax) && !base.candidateAt.has(id.offset))) {
       continue;
     }
     const agg = blockAgg.get(id.name);
@@ -2876,7 +2997,7 @@ export function classifyFromHeuristic(
 
   const byName = new Map<string, NameInfo>();
   for (const [name, agg] of blockAgg) {
-    if (isSelfName(name, lx.syntax.family)) {
+    if (isSelfName(name, lx.syntax.family, lx.syntax)) {
       byName.set(name, {
         cls: 'self',
         freqInBlock: agg.freq,

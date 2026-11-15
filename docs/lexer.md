@@ -20,7 +20,7 @@ syntaxFor(languageId?): LangSyntax
 | Field / method | Meaning |
 |---|---|
 | `spans` | sorted, non-overlapping non-code spans, region `comment` / `doc` / `string` |
-| `holes` | code regions inside strings: `${…}`, f-string `{…}`, Kotlin `$x` / `${…}`, Ruby `#{…}` / `#@x` / `#$x` |
+| `holes` | code regions inside strings: `${…}`, f-string `{…}`, Kotlin `$x` / `${…}`, Groovy `$a.b` / `${…}`, Ruby `#{…}` / `#@x` / `#$x` |
 | `idents` | code identifiers in document order, holes included |
 | `numbers` | code numeric literals |
 | `punct` | offsets of code `{ } ( ) [ ] , ; :` |
@@ -48,9 +48,10 @@ from that layout.
 | `go` | `//`, `/* */` | `"` single-line; `` ` `` raw, multi-line, no escapes | rune | — |
 | `python` | `#` | prefixes `[rRbBuUfFtT]{1,2}`; `'` `"` single-line; `'''` `"""` multi-line; `f`/`t` holes with `!conv` and `:spec` (nested fields), `{{` literal, `\N{…}` named escape | string | a triple-quoted, non-f string in statement position is `doc`; `\` + newline in code continues the line |
 | `rust` | `//`, `///`, `//!`, nested `/* */` | `"` `b"` `c"` multi-line with escapes; `r#*"…"#*`, `br`, `cr` raw | char or lifetime | `'x'`, `'\''`, `'\u{…}'`, `'\x41'`, `b'x'` are chars; `'a`, `'static`, `'outer` are lifetimes (code, not identifiers); `r#ident` is one identifier |
-| `c`, `objective-c` | `//` (a trailing `\` continues it), `/* */` | `"` single-line (`\` + newline continues); `u8` `u` `U` `L` prefixes | char | `#` at line start is a directive: the directive name is not an identifier, `#include <x>` is a string, `#if 0` up to its `#else`/`#elif`/`#endif` is a comment; `1'000` digit separators |
-| `cpp`, `cuda-cpp`, `objective-cpp` | same | same, plus `R"d(…)d"` raw (with prefixes) | char | same |
+| `c`, `objective-c` (keys `c`, `objc`) | `//` (a trailing `\` continues it), `/* */` | `"` single-line (`\` + newline continues); `u8` `u` `U` `L` prefixes | char | `#` at line start is a directive: the directive name is not an identifier, `#include <x>` is a string, `#if 0` up to its `#else`/`#elif`/`#endif` is a comment; `1'000` digit separators |
+| `cpp`, `cuda-cpp`, `objective-cpp` (keys `cpp`, `objcpp`) | same | same, plus `R"d(…)d"` raw (with prefixes) | char | same |
 | `java` | `//`, `/* */` | `"` single-line; `"""` text block | char | — |
+| `groovy` (`java` family) | `//`, `/* */`; `#!` on the first line | `'` single-line and `'''` multi-line, escapes, no holes; `"` single-line and `"""` multi-line GStrings with `$a`, `$a.b.c` and `${…}` holes; `/…/` slashy where an expression starts (`\/` is a slash) and `$/…/$` dollar-slashy (`$$`, `$/` escape), both multi-line with holes | string | a `/` after a name, a number or a closing bracket is division ([c-jvm.md](c-jvm.md#lexer)) |
 | `kotlin` | `//`, nested `/* */` | `"` single-line with escapes; `"""` raw (closes on the last 3 of a quote run); both interpolate `$name` and `${…}` | char | `` `name with spaces` `` is one identifier |
 | `swift`, `scala`, `dart` | `//`, nested `/* */` | `'` `"` single-line; `"""` multi-line | string | — |
 | `shellscript` | `#` at word start | `"` multi-line with escapes; `'` multi-line, no escapes | string | — |

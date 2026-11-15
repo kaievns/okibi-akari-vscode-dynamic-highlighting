@@ -18,6 +18,7 @@ no server calls.
 |---|---|
 | A second classify of the same version starts while the fetch is in flight | It awaits the same promise. Fast caret moves under a 300 ms server send 1 request, not 1 per block. |
 | The caller is cancelled (the caret moved on) | The fetch still completes and is cached; only that caller drops its result. |
+| A second classify of the same block and version starts while one is in flight | It awaits that one (`Decorator.classifying`) instead of cancelling it. The constructor's refresh and `onSelection` schedule a 60 ms classify of the block a caller is already awaiting; when the first took longer than 60 ms, the second cancelled it before it cached its plan, and the caller's render painted nothing (`test/javascript.test.js`'s `bare and destructured arrow parameters` failed under load, 3 times on record, each run 77 to 97 ms long. Fired at each of the test's first 7 event-loop turns instead of after 60 ms, the timer failed it at HEAD in turns 0 to 2 and never with the join, at any of 21 turns; 89 loaded runs of the file with the join passed). A cold-server retry drops the record and asks again. |
 | The document changed before the answer arrived | The bundle is returned uncached, stamped with the version it was asked for. `classifyScope` returns null, so nothing paints. The tokens are not decoded: `answerStateOf` reads from the raw data whether the answer had any, and in Rust the path keywords; in Lua `typesStringLiterals` reads whether it typed string literals. That is all such an answer is used for. If a newer version has already been answered, the old answer also leaves `semanticOk`, the path keywords and the string-literal state as that answer set them. |
 | A keystroke is waiting when the answer arrives | Before the whole-file work (`buildFileIndex` with tokens, the heuristic's file-wide base without) the classifier yields one turn of the event loop (`setImmediate`), so the edit runs first and the version check then skips that work. A classification overtaken this way does not paint; the stale-hold keeps the tints on screen until the next one. |
 | An edit lands | `onEdit` cancels the classify in flight. In any painted document, active or not, it drops the bundle and what else belongs to the old version ([Memory](#memory)). The next classify fetches for the new version. |
@@ -85,6 +86,20 @@ tints that came from semantic tokens: a heuristic plan painted during `none`,
 before the provider registered, comes off at the first `empty` answer instead
 of standing in for the server while it indexes. Mid-typing, an `empty` answer
 for the new version keeps the previous version's semantic tints.
+
+A request the provider rejects as cancelled (`Canceled`) is no answer of any state:
+cpptools rejects a waiting request when another for the file arrives, the editor's
+own included. The fetch stays in flight and asks again after 1.5 s, 3 s and 6 s
+(`Classifier.cancelRetrySchedule`) while the document version holds, with no hold and
+no cold retry; only a provider still cancelling after 10.5 s answers `empty`
+([c-jvm.md](c-jvm.md#server-shapes)).
+
+A C or C++ answer with tokens is provisional: cpptools answers a version with its
+first IntelliSense batch and adds the rest without a request. It is asked again
+after 250 ms, 500 ms, 500 ms, 1 s, 1 s and 2 s (`Classifier.confirmSchedule`) until
+two answers in a row carry the same data, with no hold; an answer that differs
+from the last starts the waits again, at most 12 requests a version. Band 2 paints
+each answer as it comes, and the confirms spend no cold retry.
 
 `none` is not held, because it also means "this language has no provider", and
 holding would leave such a file blank for 30 s. The cost is a heuristic paint
@@ -185,7 +200,7 @@ for the next relaxation, up to 24 s.
 
 | Marks | Editors |
 |---|---|
-| Band 1: `self` / `this`, Rust `Self` / `crate` / `super`, Rust format placeholders, Python f-string fields, Ruby `#{` / `}`, Go doc links, brackets in Rust comments and strings, markdown washes, the Lua module and shadow restores, the Ruby shadow restore | every visible source editor |
+| Band 1: `self` / `this`, Rust `Self` / `crate` / `super`, C-family `NULL` / `true` / `false` / `bool`, Kotlin `$name` templates, Rust format placeholders, Python f-string fields, Ruby `#{` / `}`, Go doc links, brackets in Rust comments and strings, markdown washes, the Lua module and shadow restores, the Ruby shadow restore | every visible source editor |
 | Band 1: Lua and Zig format placeholders | every visible source editor, while the document's last answer types its string literals ([lua.md](lua.md#band-1-restores), [zig.md](zig.md#band-1-restores)) |
 | Band 1: the import restore (Python, Go, Zig), the shadow restore (Python) | every visible source editor, until a provider answers for the document |
 | Gutter, band 2, clay numbers, band 3 | the active editor only |
@@ -473,6 +488,13 @@ The changes, by effect:
 10k lines, so the debounce change, which moves when a repaint happens and not
 what it paints, does not reach it.
 
+The C and JVM change re-records the `render`, `edits` and `editsNoServer` hashes
+of all 16 inputs, for band 1's new `constantRestore` type alone: each dumped
+snapshot gains it, empty, since no input is C-family, and each session one more
+`setDecorations` call, its first clear. Every other dumped line holds, and the
+`structure`, `semantic` and `heuristic` hashes with them (`PERF_GOLDEN_DUMP`,
+HEAD 588ed19 against the change).
+
 ### Typing
 
 `node test/bench-typing.js [--no-lsp | --latency 150]`: 40 keys at log-normal
@@ -590,7 +612,8 @@ final state. A difference is a leftover. The harness is
 The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
 `walk.lua`, `walk.rb`, `walk.js`, `walk.html`, `walk.vue`, `walk.svelte`,
-`walk.astro`, `walk.tsx`, `walk.jsx`, `walk.zig`, the markdown-derived files and the Docker
+`walk.astro`, `walk.tsx`, `walk.jsx`, `walk.zig`, `walk.c`, `walk.cpp`, `walk.java`,
+`walk.kt`, `walk.groovy`, the markdown-derived files and the Docker
 and Kubernetes files have walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
@@ -814,6 +837,39 @@ walks `walk.zig` alone with the reclose walk's weights: deleting a string's
 closing `"`, a `\\` line's second backslash or a block's `}` and typing it
 back; carets go to 8 identifiers in code and in the `\\` line. 600 walks of
 each from seed 1000 found nothing.
+
+**The C and JVM walks** are one more test, 120 walks (`OKIBI_CJVM_WALKS`). Each
+opens `walk.c`, `walk.cpp`, `walk.java`, `walk.kt` or `walk.groovy` first, picked
+by seed, alone or with `walk.cmake`, `walk.gradle`, `walk.gradle.kts`, `walk.ts`
+or `walk.py`; the main walk's events replay with the same seed. The C, C++,
+Java and Kotlin servers' modes are drawn from `ok`, `degraded`, `none` and
+`empty`: `ok` types like clangd and jdtls, with a `declaration` on each first
+occurrence, and `degraded` is each language's other shape: cpptools' tokens with
+no `declaration` at all, kls's extra `variable` over each `$name` template and
+`property.declaration` on a local `val`, jdtls's `property` on a field read bare.
+Groovy, CMake and the Gradle scripts get no server. CMake is static content and
+must show nothing; a Gradle script shows band 1's `this` and nothing else, and
+neither is asked about. The five code files are synthetic, written from the
+same constructs as the `test/fixtures/cjvm` sources. In the default run the code
+files showed identity tints on 637 steps, clay on 1,256, escape marks on 109, danger
+marks on 110, the `this` / `self` paint on 3,269, the `NULL` / `true` / `false`
+restore on 1,088 and the Kotlin `$name` restore on 808; the test fails if any is never
+shown, and on a keyword-grey restore in C other than `bool`. 600 walks from seed 1000 found one leftover in the oracle:
+a `.gradle` editor showing band 1's `this`, which the oracle had treated as a data
+file; 600 more from seed 5000 found nothing.
+
+**The cancelling-cpptools walks** are one more test, 80 walks (`OKIBI_CANCEL_WALKS`).
+Each opens `walk.c` or `walk.cpp`, alone or with `walk.cmake`, `walk.ts` or `walk.py`,
+and keeps one server for the walk: cpptools in 3 of 5, clangd's shape or none in the
+rest. The cpptools model is its provider's: one token request waits per file, a
+request while another waits rejects the waiting one as `Canceled`, a version's answer
+arrives 300 ms to 2.4 s after its first request, and later requests for it get that
+answer at once. The editor's own requests for each version (60 ms, 400 ms and 1.7 s
+after its first, those before the answer) cancel whatever waits. The test fails on
+any leftover and on any step whose plan holds band 2 under cpptools ([Cold
+servers](#cold-servers)): with cancellations read as `empty`, 121 steps held. In the
+default run cpptools cancelled 446 requests. A step is not quiet while a fetch is in
+flight, so band 2 is compared only after the asking-again has ended.
 
 **The prose walks** are one more test, 100 walks (`OKIBI_PROSE_WALKS`). Each
 opens a markdown-derived file first, picked by seed: `walk.prompt.md`,
