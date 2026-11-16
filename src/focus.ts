@@ -21,6 +21,7 @@ import { LexId, LexResult, blankOrHashLine, forgetLex, jsxBraces, lexFor, rememb
 import { bestAt, buildIntervalIndex } from './intervals';
 import { BLOCK_OPEN, MODULE_OPEN, isRegionLanguage, isViewLanguage, viewBlocks, viewRegions } from './html';
 import type { TemplateBlock } from './sfc';
+import { shellTables } from './shell';
 
 export type { LexId } from './lex';
 
@@ -1193,6 +1194,215 @@ export function scanLuaBlocks(text: string): BraceBlock[] {
 
 const LUA_BLOCK_WORDS = new Set(['function', 'for', 'while', 'do', 'if', 'then', 'elseif', 'else', 'repeat', 'until', 'end']);
 
+/**
+ * Shell scopes from the reserved words the shell lexer reads at command
+ * position: a function's `{ … }` or `( … )` body, brace groups and subshells,
+ * each `if` / `elif` / `else` branch, `for` / `select` / `while` / `until` /
+ * `repeat` bodies, zsh's `foreach … end`, a `case` and each of its arms.
+ * Offsets: docs/tooling.md#blocks.
+ */
+export function scanShellBlocks(text: string): BraceBlock[] {
+  const lx = lexFor(text, 'shellscript');
+  type Kind = 'brace' | 'paren' | 'if' | 'loop' | 'foreach' | 'case' | 'arm';
+  type Open = { kind: Kind; headerStart: number; openOffset: number };
+  const stack: Open[] = [];
+  const out: BraceBlock[] = [];
+  let fn = -1;
+  const top = (): Open | undefined => stack[stack.length - 1];
+  const emit = (o: Open, closeOffset: number): void => {
+    if (o.openOffset < 0) return;
+    out.push({
+      openLine: lx.lineOf(o.headerStart),
+      closeLine: lx.lineOf(Math.max(o.openOffset, closeOffset)),
+      depth: stack.length,
+      openOffset: o.openOffset,
+      closeOffset: Math.max(o.openOffset, closeOffset),
+      headerStart: o.headerStart,
+    });
+  };
+  /** The innermost open block of `kind`, closed with everything opened inside it. */
+  const close = (kind: Kind): Open | undefined => {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].kind !== kind) continue;
+      const o = stack[i];
+      stack.length = i;
+      return o;
+    }
+    return undefined;
+  };
+  const before = (at: number): number => lx.prevSignificant(at);
+  for (const m of shellTables(lx).marks) {
+    const t = top();
+    switch (m.kind) {
+      case 'fn':
+        fn = m.offset;
+        break;
+      case '{':
+      case '(':
+        stack.push({ kind: m.kind === '{' ? 'brace' : 'paren', headerStart: fn >= 0 ? fn : m.offset, openOffset: m.offset });
+        fn = -1;
+        break;
+      case '}':
+      case ')': {
+        const o = close(m.kind === '}' ? 'brace' : 'paren');
+        if (o) emit(o, m.offset);
+        break;
+      }
+      case 'if':
+        stack.push({ kind: 'if', headerStart: m.offset, openOffset: -1 });
+        fn = -1;
+        break;
+      case 'then':
+        if (t?.kind === 'if' && t.openOffset < 0) t.openOffset = m.end;
+        break;
+      case 'elif':
+      case 'else':
+        if (t?.kind === 'if') {
+          stack.pop();
+          emit(t, before(m.offset));
+          stack.push({ kind: 'if', headerStart: m.offset, openOffset: m.kind === 'else' ? m.end : -1 });
+        }
+        break;
+      case 'fi': {
+        const o = close('if');
+        if (o) emit(o, m.end - 1);
+        break;
+      }
+      case 'for':
+      case 'select':
+      case 'while':
+      case 'until':
+      case 'repeat':
+      case 'foreach':
+        stack.push({ kind: m.kind === 'foreach' ? 'foreach' : 'loop', headerStart: m.offset, openOffset: -1 });
+        fn = -1;
+        break;
+      case 'do':
+        if ((t?.kind === 'loop' || t?.kind === 'foreach') && t.openOffset < 0) t.openOffset = m.end;
+        break;
+      case 'done':
+      case 'end': {
+        const o = close(m.kind === 'done' ? 'loop' : 'foreach');
+        if (o) emit(o, m.end - 1);
+        break;
+      }
+      case 'case':
+        stack.push({ kind: 'case', headerStart: m.offset, openOffset: -1 });
+        fn = -1;
+        break;
+      case 'in':
+        if (t?.kind === 'case' && t.openOffset < 0) t.openOffset = m.end;
+        break;
+      case 'pattern':
+        if (t?.kind === 'arm') {
+          stack.pop();
+          emit(t, before(m.offset));
+        }
+        if (top()?.kind === 'case') stack.push({ kind: 'arm', headerStart: m.offset, openOffset: -1 });
+        break;
+      case 'arm':
+        if (t?.kind === 'arm' && t.openOffset < 0) t.openOffset = m.end;
+        break;
+      case 'armEnd':
+        if (t?.kind === 'arm') {
+          stack.pop();
+          emit(t, m.end - 1);
+        }
+        break;
+      case 'esac': {
+        if (t?.kind === 'arm') {
+          stack.pop();
+          emit(t, before(m.offset));
+        }
+        const o = close('case');
+        if (o) emit(o, m.end - 1);
+        break;
+      }
+    }
+  }
+  return withSlots(out.sort((a, b) => a.openOffset - b.openOffset));
+}
+
+/**
+ * fish scopes: `function`, `if`, `for`, `while`, `switch` and `begin`, each to
+ * its `end`; an `else` or `else if` branch and a `case` arm are siblings. A
+ * block's body starts where its header command ends. Offsets: docs/tooling.md#blocks.
+ */
+export function scanFishBlocks(text: string): BraceBlock[] {
+  const lx = lexFor(text, 'fish');
+  type Kind = 'block' | 'if' | 'switch' | 'case';
+  type Open = { kind: Kind; headerStart: number; openOffset: number };
+  const stack: Open[] = [];
+  const out: BraceBlock[] = [];
+  const emit = (o: Open, closeOffset: number): void => {
+    if (o.openOffset < 0) return;
+    out.push({
+      openLine: lx.lineOf(o.headerStart),
+      closeLine: lx.lineOf(Math.max(o.openOffset, closeOffset)),
+      depth: stack.length,
+      openOffset: o.openOffset,
+      closeOffset: Math.max(o.openOffset, closeOffset),
+      headerStart: o.headerStart,
+    });
+  };
+  const marks = shellTables(lx).marks;
+  for (let k = 0; k < marks.length; k++) {
+    const m = marks[k];
+    const t = stack[stack.length - 1];
+    switch (m.kind) {
+      case 'if': {
+        const p = marks[k - 1];
+        if (p?.kind === 'else' && /^[ \t]*$/.test(text.slice(p.end, m.offset))) break;
+        stack.push({ kind: 'if', headerStart: m.offset, openOffset: -1 });
+        break;
+      }
+      case 'function':
+      case 'for':
+      case 'while':
+      case 'begin':
+        stack.push({ kind: 'block', headerStart: m.offset, openOffset: -1 });
+        break;
+      case 'switch':
+        stack.push({ kind: 'switch', headerStart: m.offset, openOffset: -1 });
+        break;
+      case 'body':
+        if (t && t.openOffset < 0) t.openOffset = m.offset;
+        break;
+      case 'else':
+        if (t?.kind === 'if') {
+          stack.pop();
+          emit(t, lx.prevSignificant(m.offset));
+          stack.push({ kind: 'if', headerStart: m.offset, openOffset: -1 });
+        }
+        break;
+      case 'case':
+        if (t?.kind === 'case') {
+          stack.pop();
+          emit(t, lx.prevSignificant(m.offset));
+        }
+        if (stack[stack.length - 1]?.kind === 'switch') stack.push({ kind: 'case', headerStart: m.offset, openOffset: -1 });
+        break;
+      case 'end': {
+        if (t?.kind === 'case') {
+          stack.pop();
+          emit(t, lx.prevSignificant(m.offset));
+        }
+        const o = stack.pop();
+        if (o) emit(o, m.end - 1);
+        break;
+      }
+    }
+  }
+  return withSlots(out.sort((a, b) => a.openOffset - b.openOffset));
+}
+
+/** Shell and fish blocks whose header is control flow. */
+const SHELL_CONTROL = /^(?:if|elif|else|for|select|while|until|case|repeat|foreach|switch)(?=[\s;(]|$)/;
+/** `name() {`, `function name {`, `function name() {`, zsh's `() {`; fish's `function name …`. */
+const SHELL_FUNCTION = /^(?:function\s|[^\s(){}<>|&;=]+\s*\(\s*\)\s*$|\(\s*\)\s*$)/;
+const FISH_FUNCTION = /^function\b/;
+const SHELL_LANGUAGES = new Set(['shellscript', 'fish']);
+
 /** Last code char of an `until` condition: the end of its line once its brackets close. */
 function untilEnd(lx: LexResult, from: number): number {
   const text = lx.text;
@@ -1669,7 +1879,7 @@ const STATIC_CONTENT_LANGUAGES = new Set([
   'go.mod', 'go.sum', 'go.work', 'dockerbake', 'cmake', 'cmake-cache', 'dts', 'gradle-kotlin-dsl',
   'xml', 'xsl', 'dtd', 'rnc', 'xhtml', 'vue-html', 'svg',
   'css', 'scss', 'less', 'sass', 'stylus', 'postcss', 'tailwindcss',
-  'graphql', 'proto', 'csv', 'tsv', 'csv (pipe)', 'csv (semicolon)', 'csv (whitespace)', 'dynamic csv',
+  'graphql', 'proto', 'proto3', 'buf-config', 'sql', 'diff', 'git-rebase', 'csv', 'tsv', 'csv (pipe)', 'csv (semicolon)', 'csv (whitespace)', 'dynamic csv',
   'dockerfile', 'makefile', 'erb', 'helm', 'gotmpl', 'handlebars', 'razor', 'aspnetcorerazor',
 ]);
 
@@ -1763,6 +1973,12 @@ export function scanBlocks(text: string, languageId?: string): BraceBlock[] {
   }
   if (languageId === 'ruby') {
     return scanRubyBlocks(text);
+  }
+  if (languageId === 'shellscript') {
+    return scanShellBlocks(text);
+  }
+  if (languageId === 'fish') {
+    return scanFishBlocks(text);
   }
   if (languageId !== undefined && INDENT_SCOPED.has(languageId)) {
     const suites = scanIndentBlocks(text);
@@ -2301,7 +2517,8 @@ function wrappedHeaderOf(lx: LexResult, block: BraceBlock, languageId?: string):
 
 /** A real `{…}` block, as opposed to a synthetic arrow, lambda, closure or comprehension scope. */
 function isBraceBlock(text: string, block: BraceBlock, languageId?: string): boolean {
-  return text.charCodeAt(block.openOffset) === 123 && languageId !== 'python' && languageId !== 'lua' && languageId !== 'ruby';
+  return text.charCodeAt(block.openOffset) === 123 && languageId !== 'python' && languageId !== 'lua' && languageId !== 'ruby'
+    && !(languageId !== undefined && SHELL_LANGUAGES.has(languageId));
 }
 
 /** `text[start, end)` with comment and doc spans blanked (newlines kept). */
@@ -2461,6 +2678,12 @@ function functionHeaderText(header: string, languageId?: string): boolean {
   if (languageId === 'ruby') {
     return /^(def\b|do\b|\{|->)/.test(header);
   }
+  if (languageId === 'shellscript') {
+    return SHELL_FUNCTION.test(header);
+  }
+  if (languageId === 'fish') {
+    return FISH_FUNCTION.test(header);
+  }
   if (languageId === 'zig') {
     return ZIG_FN.test(header);
   }
@@ -2506,6 +2729,9 @@ function isControlFlowHeader(text: string, block: BraceBlock, languageId?: strin
   const header = headerOf(text, block, languageId).text;
   if (languageId === 'lua') {
     return LUA_CONTROL.test(header);
+  }
+  if (languageId !== undefined && SHELL_LANGUAGES.has(languageId)) {
+    return SHELL_CONTROL.test(header);
   }
   if (languageId === 'ruby') {
     return RUBY_CONTROL.test(header);
@@ -2573,6 +2799,7 @@ export function isFunctionHeader(text: string, block: BraceBlock, languageId?: s
  * has a header that names the function, but it is not the body.
  */
 function paramListCloses(text: string, block: BraceBlock, languageId?: string): boolean {
+  if (languageId !== undefined && SHELL_LANGUAGES.has(languageId)) return true;
   const open = paramListStart(text, block, languageId);
   if (text[open] !== '(') {
     return true;
@@ -2640,7 +2867,7 @@ export function functionScopeOf(text: string, block: BraceBlock, languageId?: st
   if (!isFunctionHeader(text, block, languageId) || isControlFlowHeader(text, block, languageId)) {
     return null;
   }
-  if (NOT_A_FUNCTION.test(headerOf(text, block, languageId).text)) {
+  if (!(languageId !== undefined && SHELL_LANGUAGES.has(languageId)) && NOT_A_FUNCTION.test(headerOf(text, block, languageId).text)) {
     return null;
   }
   if (languageId !== undefined && TYPED_ARROW_LANGUAGES.has(languageId)) {
@@ -2776,6 +3003,10 @@ function paramListStart(text: string, block: BraceBlock, languageId?: string): n
   const h = headerOf(text, block, languageId);
   if (languageId === 'ruby') {
     return rubyParamStart(text, h);
+  }
+  // A shell function has no parameter list; fish's `--argument-names` sit in its header.
+  if (languageId !== undefined && SHELL_LANGUAGES.has(languageId)) {
+    return h.start;
   }
   const bar = rustClosureBar(h.text, languageId);
   if (bar >= 0) {

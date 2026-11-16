@@ -1,0 +1,50 @@
+corpus,files,measure,reference,before,after
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,lines,,84741,84741
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,variable occurrences,shfmt 3.14.1 (test/gen-sh-ref.py),14303,14303
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,variables at the reference's offsets,shfmt 3.14.1 (test/gen-sh-ref.py),0,14150
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,variables the reference does not have,shfmt 3.14.1 (test/gen-sh-ref.py),,44
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,missed: keys of an associative subscript,shfmt 3.14.1 (test/gen-sh-ref.py),,131
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,missed: command words inside $(…) in arithmetic,shfmt 3.14.1 (test/gen-sh-ref.py),,21
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,missed: other,shfmt 3.14.1 (test/gen-sh-ref.py),,1
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,heredoc characters (non-blank),shfmt 3.14.1,55621,55621
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,heredoc characters read as code,shfmt 3.14.1,36071,0
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,single-quoted characters (non-blank),shfmt 3.14.1,1178994,1178994
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,single-quoted characters read as code,shfmt 3.14.1,28531,0
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,comment characters (non-blank),shfmt 3.14.1,202915,202915
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,comment characters read as code,shfmt 3.14.1,2830,0
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,compound commands,shfmt 3.14.1,3262,3262
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,compound commands with the reference's first and last line,shfmt 3.14.1,1076,3262
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,function bodies,shfmt 3.14.1,1051,1051
+"shell: git scripts, t/ and contrib/, Homebrew Library/Homebrew, oh-my-zsh: the 420 of 446 files shfmt parses",420,function bodies found,shfmt 3.14.1,1004,1051
+"shell: the same, under 120000 characters, no astral characters",419,tints right (no server),shfmt 3.14.1,1968,9634
+"shell: the same, under 120000 characters, no astral characters",419,tints wrong (no server),shfmt 3.14.1,449,17
+"shell: the same, under 120000 characters, no astral characters",419,"tints wrong in comments, strings and heredocs",shfmt 3.14.1,276,0
+"shell: the same, under 120000 characters, no astral characters",419,clay on a numeral the grammar paints,source.shell with the theme's injections,994,774
+"shell: the same, under 120000 characters, no astral characters",419,clay elsewhere,source.shell with the theme's injections,1537,0
+"shell: the same, under 120000 characters, no astral characters",419,self paint,,50,0
+fish 4.9.3 share/functions,275,lines,,11669,11669
+fish 4.9.3 share/functions,275,variable tokens,fish-lsp 1.1.5,6328,6328
+fish 4.9.3 share/functions,275,variables at the reference's offsets,fish-lsp 1.1.5,0,6221
+fish 4.9.3 share/functions,275,variables the reference does not type,fish-lsp 1.1.5,,17
+fish 4.9.3 share/functions,275,missed: inside single quotes,fish-lsp 1.1.5,,29
+fish 4.9.3 share/functions,275,missed: argparse option specs,fish-lsp 1.1.5,,62
+fish 4.9.3 share/functions,275,missed: dynamic or dashed names,fish-lsp 1.1.5,,16
+fish 4.9.3 share/functions,275,blocks,fish_indent --dump-parse-tree,94,1952
+fish 4.9.3 share/functions,275,"block nodes in the dump (function, if, else, for, while, switch, case, begin)",fish_indent --dump-parse-tree,1924,1924
+fish 4.9.3 share/functions,275,lines striped by a top-level click,,11580,1205
+fish 4.9.3 share/functions,275,tints right (no server),fish-lsp 1.1.5,981,4036
+fish 4.9.3 share/functions,275,tints wrong (no server),fish-lsp 1.1.5,431,6
+fish 4.9.3 share/functions,275,tints wrong in comments (no server),fish-lsp 1.1.5,132,0
+fish 4.9.3 share/functions,275,tints right (fish-lsp tokens),fish-lsp 1.1.5,3584,4036
+fish 4.9.3 share/functions,275,tints wrong (fish-lsp tokens),fish-lsp 1.1.5,0,6
+fish 4.9.3 share/functions,275,clay elsewhere than on a numeral,source.fish with the theme's injections,665,0
+fish 4.9.3 share/functions,275,clay in comments,,119,0
+fish 4.9.3 share/functions,275,self paint,,80,0
+synthetic walk.sql,1,self paint (Survey),,2,0
+synthetic walk.sql,1,tints after a click,,24,0
+synthetic walk.sql,1,clay after a click,,13,0
+synthetic walk.diff,1,self paint (Survey),,6,0
+synthetic walk.diff,1,clay after a click,,15,0
+synthetic walk.git-rebase-todo,1,self paint (Survey),,5,0
+synthetic walk.git-rebase-todo,1,clay after a click,,12,0
+synthetic walk.proto (proto3),1,clay after a click,,12,0

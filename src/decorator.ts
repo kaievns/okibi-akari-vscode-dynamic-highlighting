@@ -394,6 +394,7 @@ export class Decorator implements vscode.Disposable {
       vscode.workspace.onWillSaveTextDocument((e) => this.onWillSave(e.document)),
       vscode.workspace.onDidSaveTextDocument((doc) => this.onDidSave(doc)),
       vscode.window.onDidChangeActiveColorTheme(() => this.onThemeChanged()),
+      vscode.workspace.onDidChangeNotebookDocument((e) => this.onNotebookChanged(e)),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('okibiDynamic')) {
           this.config = readConfig();
@@ -600,6 +601,31 @@ export class Decorator implements vscode.Disposable {
       if (key.startsWith(prefix)) {
         this.classCache.delete(key);
       }
+    }
+  }
+
+  /** Drops the other cells' answers when a notebook's cells change (docs/tooling.md#notebooks). */
+  private onNotebookChanged(e: vscode.NotebookDocumentChangeEvent): void {
+    const edited = new Set(e.cellChanges.filter((c) => c.document !== undefined).map((c) => c.cell.document));
+    if (!this.config.enabled || (e.contentChanges.length === 0 && edited.size === 0)) {
+      return;
+    }
+    const active = vscode.window.activeTextEditor?.document;
+    let mine = false;
+    for (const cell of e.notebook.getCells()) {
+      const doc = cell.document;
+      if (doc === active) mine = true;
+      if (edited.has(doc)) continue;
+      this.classifier.invalidate(doc);
+      const prefix = this.docPrefix(doc);
+      for (const key of [...this.classCache.keys()]) {
+        if (key.startsWith(prefix)) this.classCache.delete(key);
+      }
+      if (this.riskCache?.key.startsWith(prefix)) this.riskCache = undefined;
+    }
+    if (mine && active && !edited.has(active)) {
+      this.scheduleClassify(active, DEBOUNCE_FOCUS_MS);
+      this.scheduleRender();
     }
   }
 

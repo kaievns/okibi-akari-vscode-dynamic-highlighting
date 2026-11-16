@@ -129,8 +129,15 @@ const TABLE = [
 
   // ── default / other families ──
   ['plaintext', "# not a comment; it's 'one' here\nx", [['string', "'s '"], ['string', "' here"]], ['not', 'a', 'comment', 'it', 'one', 'x']],
-  ['shellscript', 'echo a#b # real comment\nx=${#arr}', [['comment', '# real comment']], ['echo', 'a', 'b', 'x', '$', 'arr']],
-  ['shellscript', 'curl https://example.com # fetch', [['comment', '# fetch']], ['curl', 'https', 'example', 'com']],
+  // Shell and fish: the identifiers are variable names, never a command or a word (src/shell.ts).
+  ['shellscript', 'echo a#b # real comment\nx=${#arr}', [['comment', '# real comment']], ['x', 'arr']],
+  ['shellscript', 'curl https://example.com # fetch', [['comment', '# fetch']], []],
+  ['shellscript', "a='$b' $'c\\'$d' \"e $f ${g:-$h} $(i $j) `k $l` $((m + 1))\" n", [['string', "'$b'"], ['string', "$'c\\'$d'"], ['string', '"e '], ['string', ' '], ['string', ' '], ['string', ' '], ['string', ' '], ['string', '"']],
+    ['a', 'f', 'g', 'h', 'j', 'l', 'm'], ['1']],
+  ['shellscript', 'cat <<EOF >"$out"\nhi $x \\$y\nEOF\ncat <<-\'END\'\n\t$z\n\tEND\nw=1', [['string', '"'], ['string', '"'], ['string', 'hi '], ['string', ' \\$y\nEOF'], ['string', "'END'"], ['string', '\t$z\n\tEND']], ['out', 'x', 'w']],
+  ['shellscript', 'local -r n=3 m; sleep 5; retries=7; (( i < 9 )); echo ${a[2]} ${s:1:2}', [], ['n', 'm', 'retries', 'i', 'a', 's'], ['3', '5', '9']],
+  ['fish', "set -l x 'it\\'s $y' \"$z[1] $(w)\" (v $u) # $t\nfor i in 1 2; echo $i; end", [['string', "'it\\'s $y'"], ['string', '"'], ['string', ' '], ['string', '"'], ['comment', '# $t']],
+    ['x', 'z', 'u', 'i', 'i'], ['1', '1', '2']],
   ['ruby', 'x = a // b # c', [['string', '//'], ['comment', '# c']], ['x', 'a', 'b']],
   ['ruby', 'x = a / b # c', [['comment', '# c']], ['x', 'a', 'b']],
 ];

@@ -1,0 +1,18 @@
+pick 3b18e51 Add retries to this deploy {self}
+reword a9c2f0d Fix total in self.url 42
+edit 1f2e3d4 Split cleanup
+squash 5a6b7c8 fixup this
+fixup -C 9d8e7f6 Tidy
+exec npm test -- --grep self
+drop 0a1b2c3 Remove the 42 debug lines
+break
+label onto
+reset onto
+merge -C 6e5d4c3 feature # Merge branch 'feature'
+update-ref refs/heads/topic
+
+# Rebase 3b18e51..0a1b2c3 onto 2c3d4e5 (7 commands)
+#
+# Commands:
+# p, pick <commit> = use commit
+# d, drop <commit> = remove commit

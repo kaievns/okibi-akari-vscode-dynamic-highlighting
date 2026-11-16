@@ -191,6 +191,10 @@ every debug line is an edit of the channel's own document. Painting it fed
 itself: render, log, edit, render. In the stub that ran over 5,000 lines without
 yielding.
 
+A notebook's cells are documents of their own, painted as their language's
+files; which notebook change drops which cell's answers is in
+[tooling.md](tooling.md#notebooks).
+
 When the active editor is not a source document, or there is none (a webview,
 a preview, the settings UI), render withdraws bands 2 and 3 and the gutter from
 every visible editor at once. `refresh()` schedules that render; it used to wait
@@ -613,8 +617,8 @@ The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
 `walk.lua`, `walk.rb`, `walk.js`, `walk.html`, `walk.vue`, `walk.svelte`,
 `walk.astro`, `walk.tsx`, `walk.jsx`, `walk.zig`, `walk.c`, `walk.cpp`, `walk.java`,
-`walk.kt`, `walk.groovy`, the markdown-derived files and the Docker
-and Kubernetes files have walks of their own, below),
+`walk.kt`, `walk.groovy`, `walk.sh`, `walk.zsh`, `walk.fish`, the markdown-derived
+files and the Docker and Kubernetes files have walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
 walks (88 of the default 300) a data file goes in as the second document, and in
@@ -908,6 +912,23 @@ steps, and one is visible beside a code editor painted with a stripe or tints at
 `.Values.self`), `dockerfile` at seed 1 shrunk to 1 event and `dockerbake` at
 seed 1 shrunk to 2. The test takes 1.4 to 1.7 s.
 
+**The shell walks** are two more tests, 120 walks each (`OKIBI_SHELL_WALKS`). The
+first opens `walk.sh`, `walk.zsh` or `walk.fish`, alone or beside `walk.sh`,
+`walk.fish`, `walk.ts`, `walk.py`, `walk.md` or a tooling file (`walk.sql`,
+`walk.diff`, `walk.git-rebase-todo`, `walk.proto` as `proto3` and as `proto`,
+`walk.buf.yaml`), and replays the main walk's events with the same seed, a fifth
+of its typed keys drawn from quotes, `$`, `${`, `}`, `$(`, `)`, a heredoc opener,
+`fi`, `done`, `esac`, `end`, `#`, a backtick, `;;`, `local ` and `set -l `.
+`shellscript` draws `none` or `empty`, as bash-language-server sends no tokens;
+`fish` draws `ok`, `degraded`, `none` or `empty` in fish-lsp's shape (`variable`
+over every name, `degraded` the commands only); a tooling file gets no server. In
+the default run the shell files showed tints on 391 steps, clay on 750 and danger
+marks on 66, and a tooling file was the active editor on 752; the test fails if
+any count is 0. The second walks `walk.sh` or `walk.fish` alone with the reclose
+walk's weights: it deletes a heredoc terminator's last letter, a quote, the last
+letter of `fi`, `done`, `esac` or `end`, or a hole's `}` or `)`, and types it
+back. The two take 2.1 s and 1.0 s.
+
 ### The oracle
 
 Once the files are open, and after every step, the harness records what each
@@ -1027,8 +1048,9 @@ Each is a named test in `test/transitions.test.js` that fails without its fix.
   shapes (`class` modules, `variable` namespace globals) are covered by
   `test/lua.test.js` on a capture, not here.
 - Eleven data files are walked in the main walks, four Docker and Kubernetes
-  files in walks of their own, and `walk.css` (as `css` and `tailwindcss`),
-  `walk.xml` and `walk.hbs` beside `walk.html`. The other ids of `STATIC_CONTENT_LANGUAGES`
+  files in walks of their own, the tooling files (`sql`, `diff`, `git-rebase`,
+  `proto3`, `proto`, `buf-config`) beside the shell files, and `walk.css` (as
+  `css` and `tailwindcss`), `walk.xml` and `walk.hbs` beside `walk.html`. The other ids of `STATIC_CONTENT_LANGUAGES`
   (`json5`, `jsonl`, `java-properties`, `go.mod` and the rest) take the same
   `isNonFlowLanguage` path; `test/render.test.js` holds the config ones to no
   paint and no server request, but they are not walked.

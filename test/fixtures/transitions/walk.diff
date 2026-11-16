@@ -1,0 +1,18 @@
+diff --git a/src/main.rs b/src/main.rs
+index 3b18e51..a9c2f0d 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -10,7 +10,9 @@ fn main() {
+     let retries = 3;
+-    let total = fetch(self.url);
++    let total = fetch(this.url).await?;
++    if total > 42 {
++        println!("{total} items");
++    }
+     for i in 0..retries {
+         total += i;
+     }
+@@ -30,4 +32,4 @@ impl Server {
+-    fn start(&self) { self.run(1) }
++    fn start(&self) { self.run(2) }
+ }

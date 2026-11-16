@@ -368,6 +368,12 @@ const CONFIG_TEXTS = {
   xsl: '<?xml version="1.0"?>\n<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">\n  <xsl:template match="/">\n    <xsl:if test="self &gt; 42"><p>{this}</p></xsl:if>\n  </xsl:template>\n</xsl:stylesheet>\n',
   'html-template': '<% const self = this; %>\n<script>\n  function f(async) { const n = 42; return { self: async + n }; }\n</script>\n<p><%= self %></p>\n',
   dtd: '<!ELEMENT note (to, from, body)>\n<!ATTLIST note self CDATA #IMPLIED>\n<!ENTITY async "this">\n<!-- 42 notes { self } -->\n',
+  sql: "-- self and this 42\nWITH recent AS (\n  SELECT o.id, sum(o.total) AS spent FROM orders o WHERE o.n > 3 GROUP BY o.id\n)\nSELECT * FROM recent;\nCREATE FUNCTION f(cid int) RETURNS int AS $$\nDECLARE async int := 0;\nBEGIN\n  IF cid > 7 THEN RETURN async; END IF;\n  RETURN 42;\nEND;\n$$ LANGUAGE plpgsql;\nDELETE FROM orders;\n",
+  diff: '--- a/x.rs\n+++ b/x.rs\n@@ -1,3 +1,4 @@ fn main() {\n-    let total = fetch(self.url);\n+    let total = fetch(this.url).await?;\n+    if total > 42 {\n+        async_total += 1;\n+    }\n }\n',
+  'git-rebase': 'pick 3b18e51 Add retries to this deploy {self}\ndrop 0a1b2c3 Remove the 42 async lines\nexec npm test -- --grep self\n# Rebase 3b18e51..0a1b2c3 onto 2c3d4e5 (3 commands)\n',
+  proto3: 'syntax = "proto3";\n// self and this 42\nmessage Host {\n  string self = 1;\n  message Attempt {\n    int32 async = 2;\n  }\n}\nservice S { rpc Deploy(Host) returns (Host) { option (x) = { post: "/this" }; } }\n',
+  proto: 'syntax = "proto3";\n// self and this 42\nmessage Host {\n  string self = 1;\n  message Attempt {\n    int32 async = 2;\n  }\n}\n',
+  'buf-config': 'version: v2\nmodules:\n  - path: proto\n    name: buf.build/self/this\nlint:\n  use: [STANDARD]\nbreaking:\n  use: { async: 42 }\n',
   rnc: 'default namespace = "http://example.com/note"\nstart = element note {\n  attribute self { text },\n  element body { xsd:integer { minInclusive = "42" } }\n}\n',
 };
 
@@ -1047,4 +1053,15 @@ test('MDX paints the link-underline cancel on its prose links only, no wash, no 
     assert.equal(h.decorator.pool.banded().reduce((n, t) => n + snap.count(t), 0) + snap.count(h.decorator.gutterDecoration), 0, `${phase}: no bands`);
   }
   assert.deepEqual(stub.lspCalls.map(([cmd]) => cmd), [], 'mdx asks the language server nothing');
+});
+
+// Shell and fish have no receiver keyword: `self` and `this` are words, in a case glob, a heredoc or an argument.
+test('shell and fish paint no self marks', async () => {
+  const text = 'f() {\n  case "$1" in\n    *self*) echo this ;;\n  esac\n  cat <<EOF\nself=this\nEOF\n}\n';
+  for (const lang of ['shellscript', 'fish']) {
+    stub.clearLspResponses();
+    const h = await harness(text, lang, 2, 6);
+    for (const phase of PHASES) assert.equal(h.paint(phase).count(h.decorator.pool.self), 0, `${lang} ${phase}`);
+    h.decorator.dispose();
+  }
 });

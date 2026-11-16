@@ -9,6 +9,7 @@
 
 import { IntervalIndex, bestAt, buildIntervalIndex } from './intervals';
 import { viewRegions } from './html';
+import { lexFish, lexShell } from './shell';
 
 export type Region = 'code' | 'comment' | 'doc' | 'string';
 
@@ -32,7 +33,7 @@ export interface LexId {
   length: number;
 }
 
-type Family = 'js' | 'go' | 'python' | 'rust' | 'c' | 'java' | 'kotlin' | 'nested' | 'hash' | 'lua' | 'ruby' | 'zig' | 'default';
+type Family = 'js' | 'go' | 'python' | 'rust' | 'c' | 'java' | 'kotlin' | 'nested' | 'hash' | 'lua' | 'ruby' | 'zig' | 'sh' | 'fish' | 'default';
 
 export interface LangSyntax {
   readonly family: Family;
@@ -40,8 +41,6 @@ export interface LangSyntax {
   readonly key: string;
   readonly jsx: boolean;
   readonly cppRaw: boolean;
-  /** Shell: `#` starts a comment only at the start of a word. */
-  readonly shellHash: boolean;
   /** PHP inside a page's view: `#` comments, multi-line strings, heredocs, `$name` and `{$…}` holes. */
   readonly php: boolean;
   /** Groovy: `'` and `'''` strings without holes, GStrings with `$a.b` and `${…}` holes, slashy and dollar-slashy strings. */
@@ -52,7 +51,7 @@ const SYNTAX_BY_ID: Record<string, LangSyntax> = {};
 const def = (ids: string[], s: LangSyntax): void => {
   for (const id of ids) SYNTAX_BY_ID[id] = s;
 };
-const base = { jsx: false, cppRaw: false, shellHash: false, php: false, groovy: false };
+const base = { jsx: false, cppRaw: false, php: false, groovy: false };
 def(['typescript', 'typescript-declaration'], { ...base, family: 'js', key: 'ts' });
 def(['javascript', 'javascriptreact', 'typescriptreact'], { ...base, family: 'js', key: 'jsx', jsx: true });
 /** An HTML document's script view or a component's code view (src/html.ts): each region lexed as `javascript` on its own. */
@@ -71,7 +70,9 @@ def(['groovy'], { ...base, family: 'java', key: 'groovy', groovy: true });
 def(['kotlin'], { ...base, family: 'kotlin', key: 'kotlin' });
 def(['swift', 'scala', 'dart'], { ...base, family: 'nested', key: 'nested' });
 def(['perl', 'r', 'julia', 'elixir', 'coffeescript', 'powershell'], { ...base, family: 'hash', key: 'hash' });
-def(['shellscript'], { ...base, family: 'hash', key: 'sh', shellHash: true });
+/** Shell and fish have lexers of their own (src/shell.ts): variable names are the identifiers. */
+def(['shellscript'], { ...base, family: 'sh', key: 'sh' });
+def(['fish'], { ...base, family: 'fish', key: 'fish' });
 def(['lua'], { ...base, family: 'lua', key: 'lua' });
 def(['ruby'], { ...base, family: 'ruby', key: 'ruby' });
 def(['zig', 'zon'], { ...base, family: 'zig', key: 'zig' });
@@ -94,6 +95,9 @@ export function selfWords(s: LangSyntax): ReadonlySet<string> {
     case 'zig':
     case 'ruby':
       return SELF;
+    case 'sh':
+    case 'fish':
+      return NONE;
     case 'c':
       return s.key === 'c' ? NONE : s.key === 'objc' ? SELF : s.key === 'cpp' ? THIS : SELF_THIS;
     default:
@@ -590,16 +594,8 @@ class Lexer {
       case 'python':
       case 'ruby':
         return this.lineComment(i);
-      case 'hash': {
-        if (this.syn.shellHash) {
-          const p = t.charCodeAt(i - 1);
-          if (i > 0 && !(p === CH.sp || p === CH.tab || p === CH.lf || p === CH.cr || p === CH.semi
-              || p === 124 || p === 38 || p === CH.lparen || p === CH.rparen)) {
-            return -1;
-          }
-        }
+      case 'hash':
         return this.lineComment(i);
-      }
       case 'js': {
         if (idStartWidth(t, i + 1) === 0) return -1;
         const end = scanIdent(t, i + 1);
@@ -1378,7 +1374,7 @@ class Lexer {
         else r = this.plain(start, q, false, true);
         break;
       case 'hash':
-        r = c === CH.bq ? -1 : this.plain(start, q, true, !(this.syn.shellHash && c === CH.sq));
+        r = c === CH.bq ? -1 : this.plain(start, q, true, true);
         break;
       case 'lua':
         r = c === CH.bq ? -1 : this.luaShort(start, q);
@@ -2333,6 +2329,8 @@ function lineStartsOf(text: string): number[] {
 export function lex(text: string, languageId?: string): LexResult {
   const syntax = syntaxFor(languageId);
   if (syntax.key === 'view') return lexScripts(text, syntax);
+  if (syntax.family === 'sh') return lexShell(text, syntax);
+  if (syntax.family === 'fish') return lexFish(text, syntax);
   const lx = new Lexer(text, syntax);
   lx.run();
   const out = new Lexed(syntax, text, lineStartsOf(text), lx.spans, lx.holes, lx.idents, lx.numbers, lx.punct, lx.cpOff, lx.cpState, lx.longReads,
@@ -2340,6 +2338,13 @@ export function lex(text: string, languageId?: string): LexResult {
   if (lx.tags.length > 0) tagsOf.set(out, lx.tags);
   if (lx.jsxBraces.length > 0) bracesOf.set(out, new Set(lx.jsxBraces));
   return out;
+}
+
+/** A lex built outside the `Lexer` class (src/shell.ts): no incremental re-lex state, so `relex` answers null. */
+export function lexResultOf(
+  syntax: LangSyntax, text: string, spans: LexSpan[], holes: LexRange[], idents: LexId[], numbers: LexRange[], punct: number[],
+): LexResult {
+  return new Lexed(syntax, text, lineStartsOf(text), spans, holes, idents, numbers, punct);
 }
 
 const tagsOf = new WeakMap<LexResult, LexId[]>();

@@ -21,6 +21,7 @@ import { LexId, LexResult, lexFor, selfWords } from './lex';
 import { LuaFacts, luaFacts } from './lua';
 import { rubyEscapeRisk } from './ruby';
 import { scanBlocks } from './focus';
+import { ShellCommand, shellTables } from './shell';
 
 export interface LexicalRisk {
   async: OffsetRange[];
@@ -29,8 +30,8 @@ export interface LexicalRisk {
 }
 
 const ASYNC_WORDS = new Set(['await', 'async']);
-/** Families whose `async` and `await` are plain names: Lua and Ruby have no such keywords, and Zig 0.17's list has neither; nor has PHP. */
-const NO_ASYNC_FAMILIES = new Set(['lua', 'ruby', 'zig']);
+/** Families whose `async` and `await` are plain names: Lua and Ruby have no such keywords, Zig 0.17's list has neither, nor have PHP, shell and fish. */
+const NO_ASYNC_FAMILIES = new Set(['lua', 'ruby', 'zig', 'sh', 'fish']);
 
 type DangerRule = (lx: LexResult, id: LexId) => boolean;
 
@@ -168,10 +169,102 @@ type CastRule = (lx: LexResult, block: OffsetRange) => OffsetRange[];
 const cCasts: CastRule = cPointerCasts;
 const jvmCasts: CastRule = (lx, b) => [...javaCasts(lx, b), ...uncheckedSuppressions(lx, b)];
 const ktCasts: CastRule = (lx, b) => [...kotlinAssertions(lx, b), ...uncheckedSuppressions(lx, b)];
-/** Danger marks that are not one identifier: casts written with parentheses, Kotlin's `!!`, suppressed cast checks. */
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash', 'fish']);
+/** Commands that run their first operand as a command, and their options that take a value. */
+const WRAPPERS = new Map<string, Set<string>>([
+  ['sudo', new Set(['-u', '-g', '-C', '-D', '-h', '-p', '-r', '-t', '-T', '-U', '-R'])], ['doas', new Set(['-u', '-C'])],
+  ['env', new Set(['-u', '-C', '-P', '-S'])], ['command', new Set()], ['exec', new Set(['-a'])], ['nohup', new Set()],
+  ['time', new Set(['-f', '-o'])],
+]);
+
+/** The command a wrapper runs (`sudo -E bash -` runs `bash -`): its word, where it starts, its arguments. */
+function unwrap(c: ShellCommand): { name: string; at: number; args: string[]; argAt: number[] } {
+  let name = c.name;
+  let at = c.offset;
+  let args = c.args;
+  let argAt = c.argAt;
+  const wrapper = (n: string) => WRAPPERS.get(n.slice(n.lastIndexOf('/') + 1));
+  for (let opts = wrapper(name); opts; opts = wrapper(name)) {
+    if (name === 'command' && args.some((a) => a === '-v' || a === '-V')) break;
+    let k = 0;
+    while (k < args.length && args[k].startsWith('-') && args[k] !== '-') {
+      if (args[k] === '--') { k++; break; }
+      k += opts.has(args[k]) ? 2 : 1;
+    }
+    if (name === 'env') while (k < args.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(args[k])) k++;
+    if (k >= args.length || args[k] === '') break;
+    name = args[k];
+    at = argAt[k];
+    args = args.slice(k + 1);
+    argAt = argAt.slice(k + 1);
+  }
+  return { name, at, args, argAt };
+}
+
+/** A shell that reads its script from standard input: no operand before `-s`, and no `-c`. */
+function readsStdin(args: string[]): boolean {
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '-o' || a === '-O' || a === '+o' || a === '+O') { k++; continue; }
+    if (a === '-s' || a === '--') return true;
+    if (a === '' || !a.startsWith('-')) return false;
+    if (/^-[a-zA-Z]*c/.test(a)) return false;
+  }
+  return true;
+}
+
+/**
+ * A shell's script fetched as it runs: its first operand a process substitution
+ * (`bash <(curl …)`, fish `bash (curl … | psub)`), or its `-c` string a
+ * `$(curl …)` or `$(wget …)` hole.
+ */
+function runsFetched(text: string, args: string[], argAt: number[], fish: boolean): boolean {
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    const word = text.slice(argAt[k], argAt[k] + 256);
+    if (/^-[a-zA-Z]*c$/.test(a)) {
+      const next = k + 1 < args.length ? text.slice(argAt[k + 1], argAt[k + 1] + 64) : '';
+      return /^"?\$\(\s*(?:curl|wget)\b/.test(next) || (fish && /^\(\s*(?:curl|wget)\b/.test(next));
+    }
+    if (a === '-o' || a === '-O' || a === '+o' || a === '+O') { k++; continue; }
+    if (a.startsWith('-') && a !== '-') continue;
+    return a.startsWith('<(') || (fish && a === '' && /^\((?:[^()]|\([^()]*\))*\|\s*psub\b[^()]*\)/.test(word));
+  }
+  return false;
+}
+
+/**
+ * Code from somewhere else run as this script: `eval`, a pipe into a shell that
+ * reads its script from it (`curl … | sh`), a shell whose script is a process
+ * substitution or a fetched `-c` string, and `source` / `.` of standard input or
+ * a process substitution, through `sudo`, `doas`, `env`, `command`, `exec`,
+ * `nohup` or `time`. fish: the same, and `… | source`. Destructive commands
+ * (`rm -rf`, `sudo` itself) are not marked (docs/risk-marks.md#danger-words).
+ */
+const shellDanger: CastRule = (lx, block) => {
+  const out: OffsetRange[] = [];
+  const fish = lx.syntax.family === 'fish';
+  for (const c of shellTables(lx).commands) {
+    if (c.offset < block.start || c.offset >= block.end) continue;
+    const { name, at, args, argAt } = unwrap(c);
+    const base = name.slice(name.lastIndexOf('/') + 1);
+    const first = args[0] ?? '';
+    const sourced = (name === 'source' || name === '.')
+      && (fish ? c.piped && (first === '' || first === '-') : first === '/dev/stdin' || first.startsWith('<(') || (c.piped && first === '-'));
+    const shell = SHELLS.has(base) && ((c.piped && readsStdin(args)) || runsFetched(lx.text, args, argAt, fish));
+    if (name === 'eval' || sourced || shell) out.push({ start: at, end: at + name.length });
+  }
+  return out;
+};
+
+/**
+ * Danger marks that are not one identifier: casts written with parentheses,
+ * Kotlin's `!!`, suppressed cast checks, and a shell or fish command that runs
+ * code from somewhere else.
+ */
 const CAST_LANGUAGES = new Map<string, CastRule>([
   ['c', cCasts], ['cpp', cCasts], ['cuda-cpp', cCasts], ['objective-c', cCasts], ['objective-cpp', cCasts],
-  ['java', jvmCasts], ['kotlin', ktCasts],
+  ['java', jvmCasts], ['kotlin', ktCasts], ['shellscript', shellDanger], ['fish', shellDanger],
 ]);
 
 // ── shared scanning helpers ──────────────────────────────────────────────────
@@ -630,6 +723,10 @@ export function escapeRisk(
   }
   const lx = lexFor(text, languageId);
   const family = lx.syntax.family;
+  // No oracle yet for which shell writes escape their function (docs/risk-marks.md#what-never-marks).
+  if (family === 'sh' || family === 'fish') {
+    return [];
+  }
   const declSites: ReadonlySet<number> = c.declSites ?? EMPTY_SET;
   const staticNames: ReadonlySet<string> = c.staticNames ?? EMPTY_SET;
   const regions = c.excludeRanges && c.excludeRanges.length > 0 ? gaps(block, c.excludeRanges) : [block];

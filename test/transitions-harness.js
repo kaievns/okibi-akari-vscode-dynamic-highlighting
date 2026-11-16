@@ -17,6 +17,7 @@ const { RUBY_KEYWORDS } = require('../out/ruby');
 const { isZigReserved } = require('../out/zig');
 const { mayForceMove } = require('../out/tracking');
 const { jsNamespaceNames } = require('../out/imports');
+const { shellTables } = require('../out/shell');
 
 // ── Fake time ─────────────────────────────────────────────────────────────────
 
@@ -315,6 +316,8 @@ const KEYWORDS = new Set(('import from as export class private async await const
  */
 function tokensFor(text, languageId, degraded, strings) {
   if (languageId === 'ruby') return encode(text, rubyLspTokens(text));
+  if (languageId === 'fish') return encode(text, fishLspTokens(text, degraded));
+  if (languageId === 'shellscript') return encode(text, []);
   if (languageId === 'html') return encode(text, htmlServerTokens(text, degraded));
   if (sfc.COMPONENT_LANGUAGES.has(languageId)) return encode(text, componentServerTokens(text, languageId, degraded));
   if (languageId === 'zig') return encode(text, zigLspTokens(text, strings));
@@ -363,6 +366,18 @@ function tokensFor(text, languageId, degraded, strings) {
     toks.sort((a, b) => a.offset - b.offset);
   }
   return encode(text, toks);
+}
+
+/**
+ * fish-lsp's shape: `variable` over every variable name, a declaration and a use
+ * alike, and `function` over each command; `degraded` sends the commands only.
+ * bash-language-server sends no tokens at all.
+ */
+function fishLspTokens(text, degraded) {
+  const t = shellTables(lexFor(text, 'fish'));
+  const toks = t.commands.filter((c) => c.name).map((c) => ({ offset: c.offset, length: c.name.length, type: 'function', modifiers: [] }));
+  if (!degraded) for (const v of t.vars) toks.push({ offset: v.offset, length: v.length, type: 'variable', modifiers: [] });
+  return toks.sort((a, b) => a.offset - b.offset);
 }
 
 const CJVM_LANGUAGES = new Set(['c', 'cpp', 'java', 'kotlin']);
@@ -620,6 +635,15 @@ const FIXTURES = {
   razor: { lang: 'razor', file: 'walk.razor', sheet: true },
   cshtml: { lang: 'razor', file: 'walk.cshtml', sheet: true },
   aspnet: { lang: 'aspnetcorerazor', file: 'walk.razor', sheet: true },
+  sh: { lang: 'shellscript', file: 'walk.sh' },
+  zsh: { lang: 'shellscript', file: 'walk.zsh' },
+  fish: { lang: 'fish', file: 'walk.fish' },
+  sql: { lang: 'sql', file: 'walk.sql', tooling: true },
+  diff: { lang: 'diff', file: 'walk.diff', tooling: true },
+  rebase: { lang: 'git-rebase', file: 'walk.git-rebase-todo', tooling: true },
+  proto3: { lang: 'proto3', file: 'walk.proto', tooling: true },
+  proto: { lang: 'proto', file: 'walk.proto', tooling: true },
+  buf: { lang: 'buf-config', file: 'walk.buf.yaml', tooling: true },
 };
 for (const f of Object.values(FIXTURES)) f.text = fs.readFileSync(path.join(FIX, f.file), 'utf8');
 const DATA_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].data);
@@ -628,7 +652,9 @@ const CONTAINER_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].container
 const WEB_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].web);
 /** Stylesheets, GraphQL and Razor, walked beside a code file by their own generator, so the other walks' seeds stay as they were. */
 const SHEET_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].sheet);
-const DATA_LANGS = new Set([...DATA_KEYS, ...CONTAINER_KEYS, ...WEB_KEYS, ...SHEET_KEYS].map((k) => FIXTURES[k].lang));
+/** SQL, diffs, rebase todos, Protobuf and buf's config, walked beside the shell files by their own generator. */
+const TOOLING_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].tooling);
+const DATA_LANGS = new Set([...DATA_KEYS, ...CONTAINER_KEYS, ...WEB_KEYS, ...SHEET_KEYS, ...TOOLING_KEYS].map((k) => FIXTURES[k].lang));
 const PROSE_KEYS = Object.keys(FIXTURES).filter((k) => FIXTURES[k].prose && k !== 'md' && k !== 'mdx');
 const PROSE_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.prose).map((f) => f.lang));
 const MARKED_LANGS = new Set(Object.values(FIXTURES).filter((f) => f.marks).map((f) => f.lang));
@@ -1659,6 +1685,99 @@ function generateMdx(seed, steps) {
   return { cfg: { docs, split: rnd() < 0.35, provider }, events };
 }
 
+/** Typed into the shell files besides the usual keys: quotes, holes, a heredoc opener, block words and comments. */
+const SHELL_TYPED = ['"', "'", '$', '${', '}', '$(', ')', '<<EOF\n', 'fi', 'done', 'esac', 'end', '#', '`', ';;', 'local ', 'set -l '];
+
+/**
+ * A walk with walk.sh, walk.zsh or walk.fish first: the events of `generate(seed)`, a
+ * fifth of the typed keys from SHELL_TYPED, and beside it another shell file, walk.ts,
+ * walk.py, walk.md or one of the tooling files that must show nothing.
+ */
+function generateShell(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x736873);
+  for (const ev of events) if (ev.t === 'type' && rnd() < 0.2) ev.text = pickOf(SHELL_TYPED, rnd());
+  const first = pickOf(['sh', 'zsh', 'fish'], rnd());
+  const second = pickOf(['sh', 'fish', 'ts', 'py', 'md', ...TOOLING_KEYS], rnd());
+  const docs = second === first ? [first] : [first, second];
+  const provider = {};
+  for (const key of docs) {
+    const lang = FIXTURES[key].lang;
+    if (FIXTURES[key].tooling) provider[lang] = { mode: 'none', latency: 0 };
+    else if (lang === 'shellscript') provider[lang] = { mode: pickOf(['none', 'empty'], rnd()), latency: 0 };
+    else if (lang !== 'markdown') provider[lang] = { mode: pickOf(['ok', 'ok', 'degraded', 'none', 'empty'], rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
+// The shell reclose walks: walk.sh or walk.fish alone. Deleting a heredoc terminator's
+// last letter makes a string of the rest of the file; a quote, a block word's last
+// letter or a hole's closer unbalances everything below it.
+const unclosers = (key, rows) => {
+  const lines = FIXTURES[key].text.split('\n');
+  return rows.map(([needle, char, nth]) => {
+    const line = lines.findIndex((l) => (needle.endsWith('$') ? l === needle.slice(0, -1) : l.includes(needle)));
+    if (line < 0) throw new Error(`no line ${needle} in ${key}`);
+    let at = -1;
+    for (let i = 0; i <= (nth ?? 0); i++) at = lines[line].indexOf(char, at + 1);
+    return nth === undefined ? { line, char } : { line, char, at };
+  });
+};
+const targets = (key, rows) => {
+  const lines = FIXTURES[key].text.split('\n');
+  return rows.map(([needle, tok]) => {
+    const line = lines.findIndex((l) => l.includes(needle));
+    return { line, character: lines[line].indexOf(tok, lines[line].indexOf(needle)) };
+  });
+};
+const SHELL_RECLOSE = {
+  sh: {
+    unclose: unclosers('sh', [['EOT$', 'T'], ['echo "copied', '"'], ["printf '%s", "'", 1], ['    fi$', 'i'], ['      done$', 'e'], ['        esac$', 'c'],
+      ['timeout=${TIMEOUT', '}'], ['count=$(ls', ')']]),
+    targets: targets('sh', [['attempt=$((attempt', 'attempt'], ['local level', 'level'], ['host: ${hosts[0]}', 'hosts'], ['retries=3', 'retries'],
+      ['eval "$(ssh', 'eval'], ['case "$f"', 'f'], ['self-test this', 'this']]),
+    modes: ['none', 'empty'],
+  },
+  fish: {
+    unclose: unclosers('fish', [['                end$', 'd'], ['end$', 'd'], ['echo "copied', '"'], ["case '*self*'", "'", 1], ['set count (count', ')']]),
+    targets: targets('fish', [['set attempt (math', 'attempt'], ['set -l msg', 'msg'], ['for host in $hosts', 'host'], ['eval (ssh', 'eval'],
+      ["case '*self*'", 'self'], ['self and this', 'this']]),
+    modes: ['ok', 'ok', 'degraded', 'none'],
+  },
+};
+
+function generateShellReclose(seed, steps) {
+  const rnd = mulberry32(seed ^ 0x736863);
+  const key = seed % 2 ? 'sh' : 'fish';
+  const spec = SHELL_RECLOSE[key];
+  const lang = FIXTURES[key].lang;
+  const cfg = { docs: [key], provider: { [lang]: { mode: pickOf(spec.modes, rnd()), latency: pickOf([0, 90, 300], rnd()) } } };
+  const events = [{ t: 'caret', ...spec.targets[0], kind: 2, dt: 300 }];
+  let which = spec.unclose[0];
+  for (let i = 0; i < steps; i++) {
+    let x = rnd() * RECLOSE_TOTAL;
+    let t = RECLOSE_WEIGHTS[0][0];
+    for (const [k, wt] of RECLOSE_WEIGHTS) {
+      if ((x -= wt) < 0) {
+        t = k;
+        break;
+      }
+    }
+    const u = rnd();
+    const dt = pickOf(DT, rnd());
+    if (t === 'unclose') {
+      which = pickOf(spec.unclose, rnd());
+      events.push({ t, line: which.line, at: which.at, dt });
+    } else if (t === 'closer') events.push({ t: 'type', text: which.char, dt });
+    else if (t === 'caret') events.push({ t, ...pickOf(spec.targets, u), kind: pickOf([1, 2, 2, 3], rnd()), dt });
+    else if (t === 'provider') events.push({ t, lang, mode: pickOf([...spec.modes, 'empty'], u), latency: pickOf([0, 90, 300, 'never'], rnd()), dt });
+    else if (t === 'idle') events.push({ t, dt: pickOf([380, 2100, 3300, 25000], u) });
+    else if (t === 'type') events.push({ t, text: pickOf(['x', ' '], u), dt });
+    else events.push({ t, dt });
+  }
+  return { cfg, events };
+}
+
 // The Zig reclose walk: walk.zig alone. Nothing in Zig spans lines, so the closers
 // are a string's `"`, a `\\` line's second backslash and a block's `}`.
 const ZIG_LINES = FIXTURES.zig.text.split('\n');
@@ -1851,5 +1970,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateCjvm, generateCjvmCancel, generateProse, generateContainers, generateSheets, generatePhp, generateMdx, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, SHEET_KEYS, PROSE_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateShell, generateShellReclose, TOOLING_KEYS, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateCjvm, generateCjvmCancel, generateProse, generateContainers, generateSheets, generatePhp, generateMdx, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, SHEET_KEYS, PROSE_KEYS,
 };

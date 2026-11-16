@@ -1,0 +1,13 @@
+# buf: self and this {not a block} 42
+version: v2
+modules:
+  - path: proto
+    name: buf.build/example/deploy
+lint:
+  use: [STANDARD]
+  except: { FIELD_LOWER_SNAKE_CASE: true }
+breaking:
+  use:
+    - FILE
+deps:
+  - buf.build/googleapis/googleapis

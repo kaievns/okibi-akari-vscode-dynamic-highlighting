@@ -121,6 +121,7 @@ const events = {
   willSave: new EventEmitter(),
   didSave: new EventEmitter(),
   tabs: new EventEmitter(),
+  notebook: new EventEmitter(),
 };
 
 /** `window.tabGroups`: `all` is what a test sets; `closeTab` fires what VS Code would. */
@@ -192,7 +193,9 @@ const vscodeStub = {
     onDidCloseTextDocument: events.closeDocument.event,
     onWillSaveTextDocument: events.willSave.event,
     onDidSaveTextDocument: events.didSave.event,
+    onDidChangeNotebookDocument: events.notebook.event,
     textDocuments: [],
+    notebookDocuments: [],
   },
   commands: {
     registerCommand: (id, fn) => {

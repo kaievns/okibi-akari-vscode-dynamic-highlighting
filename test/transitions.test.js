@@ -96,6 +96,27 @@ test(`${LUA_WALKS} random walks over walk.lua leave no leftovers`, async (t) => 
 test(`${LUA_WALKS} walks that unclose and reclose a Lua long comment or an end leave no leftovers`, () =>
   walks(h.generateLuaReclose, LUA_WALKS, RECLOSE_STEPS, SEED0, 1 / 4));
 
+const SHELL_WALKS = Number(process.env.OKIBI_SHELL_WALKS ?? 120);
+
+test(`${SHELL_WALKS} random walks over walk.sh, walk.zsh and walk.fish beside the tooling files leave no leftovers`, async (t) => {
+  const shown = { tint: 0, clay: 0, riskDanger: 0, tooling: 0 };
+  const tooling = new Set(h.TOOLING_KEYS);
+  await walks(h.generateShell, SHELL_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
+    const sh = r.got.editors.find((e) => /\.(sh|zsh|fish)$/.test(e.uri));
+    const roles = new Set(Object.keys(sh?.out ?? {}).map((k) => k.split(' ')[0]));
+    if ([...roles].some((x) => /^(id|idg)\d$/.test(x))) shown.tint++;
+    if (roles.has('numberEngaged')) shown.clay++;
+    if (roles.has('riskDanger')) shown.riskDanger++;
+    if (tooling.has(w.activeEditor()?.document.fileName.split('.').pop())) shown.tooling++;
+  });
+  const seen = Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ');
+  if (DEFAULT_RUN && SHELL_WALKS === 120) for (const [k, n] of Object.entries(shown)) assert.ok(n > 0, `${k}: ${seen}`);
+  t.diagnostic(`the shell files painted, in steps: ${seen}`);
+});
+
+test(`${SHELL_WALKS} walks that unclose and reclose a heredoc, a quote, a block word or a hole in walk.sh and walk.fish leave no leftovers`, () =>
+  walks(h.generateShellReclose, SHELL_WALKS, RECLOSE_STEPS, SEED0, 1 / 4));
+
 const JS_WALKS = Number(process.env.OKIBI_JS_WALKS ?? 120);
 
 test(`${JS_WALKS} random walks over walk.js leave no leftovers`, async (t) => {

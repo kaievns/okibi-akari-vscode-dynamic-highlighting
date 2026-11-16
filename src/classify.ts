@@ -33,6 +33,7 @@ import { IntervalIndex, bestAt, buildIntervalIndex } from './intervals';
 import { rustInlineArgs } from './placeholders';
 import { LUA_KEYWORDS, LUA_STD, luaCallee, luaFacts } from './lua';
 import { rubyFacts, rubyTokens } from './ruby';
+import { shellFacts, shellTokens } from './shell';
 import { isZigReserved, isZigTypeName, zigFacts } from './zig';
 import { cDirectiveRanges, cTypedefRanges, cppTemplateParams, javaLambdaParams, javaPatterns, kotlinCtorParams, kotlinCtorProperty, kotlinLocal, kotlinTokens, memberTest, signatureParameter, groovyClosureParams } from './cjvm';
 
@@ -469,6 +470,8 @@ export function buildFileIndex(
   const shorthandRegions = languageId === 'svelte' || languageId === 'astro';
   // ruby-lsp types reads only; declarations and writes come from the bindings (docs/ruby.md).
   if (lx.syntax.family === 'ruby') tokens = rubyTokens(lx, tokens);
+  // Shell and fish: the bindings' variables, whatever the server sent (docs/tooling.md#bindings).
+  if (lx.syntax.family === 'sh' || lx.syntax.family === 'fish') tokens = shellTokens<DecodedToken>(lx);
   const signatureFamily = lx.syntax.family === 'c' || lx.syntax.family === 'java' || lx.syntax.family === 'kotlin';
   // cpptools sends no `declaration` modifier: the declaration sites are the lexical ones (docs/c-jvm.md).
   if (lx.syntax.family === 'c' && tokens.length > 0 && !tokens.some((t) => t.modifiers.includes('declaration'))) {
@@ -1337,6 +1340,7 @@ export function outermostFnOf(fnRanges: OffsetRange[], offset: number): OffsetRa
 }
 
 function isSelfName(name: string, family?: string, syntax?: LangSyntax): boolean {
+  if (family === 'sh' || family === 'fish') return false;
   if (syntax && (family === 'c' || family === 'java' || family === 'kotlin')) return selfWords(syntax).has(name);
   if (family === 'js') return name === 'this';
   if (family === 'zig') return name === 'self';
@@ -1836,7 +1840,9 @@ export function declScopesFor(
     return hit.scopes;
   }
   const lx = lexFor(text, languageId);
-  const scopes = lx.syntax.family === 'python' ? fnOnlyScopes(fnRanges) : blockScopes(lx, blocks, fnRanges, languageId);
+  // bash's and zsh's locals are the function's, wherever in it they are declared.
+  const fnOnly = lx.syntax.family === 'python' || lx.syntax.family === 'sh' || lx.syntax.family === 'fish';
+  const scopes = fnOnly ? fnOnlyScopes(fnRanges) : blockScopes(lx, blocks, fnRanges, languageId);
   declScopesMemo.set(blocks, { text, languageId, fnRanges, fnCount: fnRanges.length, scopes });
   return scopes;
 }
@@ -2078,6 +2084,9 @@ function heuristicCandidate(lx: LexResult, id: LexId, nonData: Set<string>): boo
   if (lx.syntax.family === 'ruby') {
     return id.name !== '_' && rubyFacts(lx).binding.has(id.offset);
   }
+  if (lx.syntax.family === 'sh' || lx.syntax.family === 'fish') {
+    return shellFacts(lx).data.has(id.offset);
+  }
   if (lx.syntax.family === 'lua') {
     if (LUA_KEYWORDS.has(id.name) || id.name === '_' || isSelfName(id.name) || nonData.has(id.name)) {
       return false;
@@ -2213,6 +2222,11 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
   const text = lx.text;
   const family = lx.syntax.family;
   const ids = lx.idents;
+  if (family === 'sh' || family === 'fish') {
+    const base = shellBase(lx, blocks);
+    perLang.set(languageId ?? '', base);
+    return base;
+  }
 
   // Python resolves imports per occurrence (src/imports.ts), so a parameter that
   // shares an import's name is still data.
@@ -2413,6 +2427,39 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
   const base = { occurrences, firstFileOffset, declOffsets, declSites, candidateAt };
   perLang.set(languageId ?? '', base);
   return base;
+}
+
+/** Shell and fish: every data variable is a candidate, its binding sites the declarations (src/shell.ts). */
+function shellBase(lx: LexResult, blocks: BraceBlock[] | undefined): HeuristicBase {
+  const f = shellFacts(lx, blocks);
+  const occurrences = new Map<string, OffsetRange[]>();
+  const firstFileOffset = new Map<string, number>();
+  const declOffsets = new Map<string, number[]>();
+  const candidateAt = new Set<number>();
+  for (const id of lx.idents) {
+    if (!f.data.has(id.offset)) continue;
+    candidateAt.add(id.offset);
+    const range: OffsetRange = { start: id.offset, end: id.offset + id.length };
+    const list = occurrences.get(id.name);
+    if (list) {
+      list.push(range);
+    } else {
+      occurrences.set(id.name, [range]);
+      firstFileOffset.set(id.name, id.offset);
+    }
+    if (f.declSites.has(id.offset)) {
+      const d = declOffsets.get(id.name);
+      if (d) d.push(id.offset);
+      else declOffsets.set(id.name, [id.offset]);
+    }
+  }
+  // A global a function writes without `local` is declared at the top level, whichever line writes it: offset -1.
+  for (const name of f.globalWrites) {
+    const d = declOffsets.get(name);
+    if (!d) declOffsets.set(name, [-1]);
+    else if (!d.includes(-1)) d.unshift(-1);
+  }
+  return { occurrences, firstFileOffset, declOffsets, declSites: new Set(f.declSites), candidateAt };
 }
 
 /** Code char at `i`, or '' outside code. */

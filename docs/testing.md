@@ -188,6 +188,32 @@ Two checks the audit showed could never fail went too: a `::` after a name,
 which Zig has no token for, and a `const` / `var` before a container field,
 where the word before a field is none or `comptime`.
 
+### Shell, fish and the tooling ids
+
+The shell and fish lexers, block scans, bindings, danger rule, the notebook
+handler and the ids `sql`, `diff`, `git-rebase`, `proto3` and `buf-config`
+were audited by hand: 29 source mutants, one per rule, each compiling. Each ran
+against `shell.test.js`, `render.test.js`, `lexer.test.js`, `rust.test.js` and
+the two shell walks at their default counts; the unmutated tree passes them
+all. All 29 are killed. The first run, over 30 mutants, one of them on the
+expansion-delimiter restore that the change then dropped, killed 25, and 2 did
+not compile. 3 survived: escape marks left on in shell, a block scope for a
+shell `local`, and fish's `set -g` in a function. Each is killed by a case added
+for it: an answer on the semantic path; a `local` in a brace group read from a
+sibling block beside a global of its name; and a `set -g c 5` in a function, of a
+name the file writes nowhere else, which the mutant declares as the function's.
+Per mutant, with its replacement, in
+[mutation-audit-tooling.csv](mutation-audit-tooling.csv).
+
+```
+Final (29 mutants), by the tests that kill each
+test/shell.test.js             ███████████████████████ 23, 18 of them alone
+test/render.test.js            ██████ 6, 1 alone
+test/lexer.test.js             █████ 5
+test/rust.test.js              █████ 5
+the walks (transitions)        █████ 5
+```
+
 ### PHP, MDX and the static ids
 
 The PHP region reader, the PHP lexer rules, the PHP view's wiring, the MDX code

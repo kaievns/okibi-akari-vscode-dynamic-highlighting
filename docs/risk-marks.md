@@ -93,6 +93,7 @@ caller's object.
 - **A Zig write through a local pointer.** `mutable.* = 9` writes through a
   pointer declared in the block, so the root is local and nothing marks, as
   for a C `*p = …` with a local `p` ([zig.md](zig.md#escape-marks)).
+- **Any shell or fish write**, on either path ([tooling.md](tooling.md#band-3)).
 
 ### Initializers
 
@@ -222,6 +223,9 @@ is unchanged.
 | `javascript`, `javascriptreact` | none | no casts, no `any` type |
 | `lua` | none | no casts; no async marks either, since Lua has no `async` / `await` keyword |
 | `ruby` | none | no casts; Sorbet's `T.cast`, `T.unsafe` and `T.untyped` are method calls. No async marks: Ruby has no async syntax, so `async: true` and the Async gem's `Async do` are names |
+| `shellscript` | the command word `eval`; a shell after `\|` that reads its script from the pipe (`curl … \| sh`, `\| bash -s`); a shell whose first operand is a process substitution (`bash <(curl …)`) or whose `-c` string is a `$(curl …)` or `$(wget …)` hole; `source` or `.` of `/dev/stdin` or a process substitution; each behind `sudo`, `doas`, `env`, `command`, `exec`, `nohup` or `time` (`\| sudo -E bash -`) | `rm -rf`, `sudo` itself, `command -v sh`, `eval` as an argument or in a string, `\| sh script.sh`, `\| bash -c "…"`, `bash x.sh <(…)`. No async marks ([tooling.md](tooling.md#band-3)) |
+| `fish` | `eval`; `… \| source`; the shell forms above, `(… \| psub)` as the process substitution | `source file.fish`, `sudo sh script.sh`. No async marks |
+| `sql`, `diff`, `git-rebase`, `proto3`, `proto` | none: static content | `DELETE` or `UPDATE` without `WHERE`, `DROP`, `TRUNCATE`: destructive, not trust erosion; a rebase `drop` ([tooling.md](tooling.md#static-content)) |
 | `zig` | `@ptrCast`, `@alignCast`, `@constCast`, `@volatileCast`, `@addrSpaceCast`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr` | `@intCast`, `@truncate`, `@bitCast`, `undefined`. No async marks: Zig 0.17 has no `async` / `await` keyword, and `.async(` / `.await(` are `std.Io` methods ([zig.md](zig.md#danger-marks)) |
 | anything else | none | |
 

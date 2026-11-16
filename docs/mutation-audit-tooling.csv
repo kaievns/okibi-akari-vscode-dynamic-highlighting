@@ -1,0 +1,30 @@
+id,file,mutant,original,replacement,killed by
+1,src/lex.ts,shell receiver words,    case 'sh':\n    case 'fish':\n      return NONE;\n,    case 'sh':\n    case 'fish':\n      return SELF_THIS;\n,render.test.js
+2,src/focus.ts,sql not static,"'buf-config', 'sql', 'diff'","'buf-config', 'diff'",render.test.js rust.test.js transitions.test.js
+3,src/focus.ts,diff not static,"'sql', 'diff', 'git-rebase'","'sql', 'git-rebase'",render.test.js rust.test.js transitions.test.js
+4,src/focus.ts,git-rebase not static,"'diff', 'git-rebase', 'csv'","'diff', 'csv'",render.test.js rust.test.js transitions.test.js
+5,src/focus.ts,proto3 not static,"'proto', 'proto3', 'buf-config'","'proto', 'buf-config'",render.test.js rust.test.js transitions.test.js
+6,src/focus.ts,buf-config not static,"'proto3', 'buf-config', 'sql'","'proto3', 'sql'",render.test.js rust.test.js transitions.test.js
+7,src/shell.ts,quoted heredoc delimiter expands,        if (!h.quoted) {\n          let m = j;,        if (true) {\n          let m = j;,lexer.test.js shell.test.js
+8,src/shell.ts,local not a local,"const SH_LOCAL = new Set(['local', 'declare',","const SH_LOCAL = new Set(['declare',",shell.test.js
+9,src/classify.ts,no top-level decl for global writes,  for (const name of f.globalWrites) {,  for (const name of [] as string[]) {,shell.test.js
+10,src/risk.ts,pipe into a script operand marked,    if (a === '' || !a.startsWith('-')) return false;,    if (a === '') return false;,shell.test.js
+11,src/shell.ts,plain assignment value numeral,"        if (!st.atCmd) this.numeral(value, k);","        this.numeral(value, k);",lexer.test.js shell.test.js
+12,src/shell.ts,fish plain set always declares,    } else if (!names.has(v.name)) {,    } else if (true) {,shell.test.js
+13,src/decorator.ts,notebook structure ignored,(e.contentChanges.length === 0 && edited.size === 0),(edited.size === 0),shell.test.js
+14,src/shell.ts,zsh brace close ignored,if (literal === '}' && this.zsh && this.braces,if (literal === '}' && !this.zsh && this.braces,shell.test.js
+15,src/classify.ts,self excluded in shell,  if (family === 'sh' || family === 'fish') return false;\n,,shell.test.js
+16,src/risk.ts,async in shell,"'zig', 'sh', 'fish']",'zig'],shell.test.js
+17,src/risk.ts,escape marks in shell,  if (family === 'sh' || family === 'fish') {\n    return [];\n  }\n,,shell.test.js
+18,src/shell.ts,env prefix is a write,      for (const v of st.assigns) v.env = true;\n,,shell.test.js
+19,src/shell.ts,unwritten names are data,|| !written.has(v.name)) continue;,) continue;,shell.test.js
+20,src/shell.ts,fish -g in function declares,    if (fish && (v.scope === 'g' || (v.scope === '' && !inFn(v.offset)))) global.add(v.name);,    if (fish && (v.scope === '' && !inFn(v.offset))) global.add(v.name);,shell.test.js
+21,src/shell.ts,case esac without ;; ignored,        if (cases[cases.length - 1] === 'arm' || cases[cases.length - 1] === 'pattern') {,        if (cases[cases.length - 1] === 'pattern') {,shell.test.js
+22,src/shell.ts,for-do as a name,      if (literal === 'do' && st.operands > 0) {,      if (false) {,shell.test.js
+23,src/shell.ts,heredoc strip tabs ignored,        if (h.strip) while (t.charCodeAt(ls) === 9) ls++;,,lexer.test.js shell.test.js
+24,src/shell.ts,arithmetic numbers off,"        if (nums) this.numbers.push({ start: j, end: e });",,lexer.test.js shell.test.js
+25,src/risk.ts,eval not danger,    if (c.name === 'eval' || sourced,    if (sourced,shell.test.js
+26,src/shell.ts,fish index digits not numbers,"        this.numbers.push({ start: k, end: e });\n        k = e;\n        continue;\n      }\n      k++;\n    }\n    return k;\n  }\n}",        k = e;\n        continue;\n      }\n      k++;\n    }\n    return k;\n  }\n},lexer.test.js shell.test.js
+27,src/focus.ts,function header switch-to-dir as control,(?=[\s;(]|$)/;,\b/;,shell.test.js
+28,src/classify.ts,fnOnlyScopes off for shell,lx.syntax.family === 'python' || lx.syntax.family === 'sh' || lx.syntax.family === 'fish';,lx.syntax.family === 'python';,shell.test.js
+29,src/classify.ts,shellTokens ignored on semantic path,tokens = shellTokens<DecodedToken>(lx);,tokens = shellTokens<DecodedToken>(lx).length >= 0 ? tokens : tokens;,shell.test.js
