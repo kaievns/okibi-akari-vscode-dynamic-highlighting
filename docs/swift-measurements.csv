@@ -1,0 +1,154 @@
+corpus,files,measure,reference,before,after
+Alamofire (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1536,2
+Alamofire (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1888,82
+Alamofire (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,3964,8
+Alamofire (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,80
+CodeEdit (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,112,0
+CodeEdit (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,398,60
+CodeEdit (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,127,0
+CodeEdit (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,46,60
+Ice (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,394,4
+Ice (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,399,26
+Ice (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,229,3
+Ice (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,4,22
+Inferno (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,44,0
+Inferno (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,304,152
+Inferno (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,44,0
+Inferno (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,304,152
+Maccy (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,416,0
+Maccy (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,723,105
+Maccy (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,32,0
+Maccy (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,105
+MonitorControl (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,39,5
+MonitorControl (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,383,0
+MonitorControl (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,5
+SwiftLint (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,430,0
+SwiftLint (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,708,79
+SwiftLint (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1434,0
+SwiftLint (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,79
+Whisky (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,342,0
+Whisky (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1157,168
+Whisky (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,11,0
+Whisky (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,175
+synthetic constructs.swift,,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,17,0
+synthetic constructs.swift,,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,48,0
+synthetic constructs.swift,,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,33,0
+synthetic constructs.swift,,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,2,0
+swift-argument-parser (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1395,12
+swift-argument-parser (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1259,142
+swift-argument-parser (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,2925,12
+swift-argument-parser (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,100,142
+swift-collections (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,799,0
+swift-collections (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1339,56
+swift-collections (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,2266,0
+swift-collections (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,55,56
+swift-format (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,67,0
+swift-format (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,137,0
+swift-format (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1188,0
+swift-nio (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1012,14
+swift-nio (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1569,281
+swift-nio (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1990,14
+swift-nio (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,218,282
+vapor (Swift files),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,17,0
+vapor (Swift files),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,71,6
+vapor (Swift files),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,389,0
+vapor (Swift files),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,6
+Swift: 98 public files (16 repositories) and 2 synthetic,100,blocks sampled (up to 40 per file),SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1842,1842
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,10039,1162
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"tints on a data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,8949,7684
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,6581,32
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,729,1164
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"tints on a data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,24632,7690
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,15015,37
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"data tokens of the reference in the block left untinted, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,7055,6821
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"data tokens of the reference in the block left untinted, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,5213,6801
+Swift: 98 public files (16 repositories) and 2 synthetic,100,blocks whose tints change when sourcekit-lsp answers,SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1506,44
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"escape marks, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,552,219
+Alamofire (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1536,2
+Alamofire (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1888,82
+Alamofire (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,3964,8
+Alamofire (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,80
+MonitorControl (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,39,5
+MonitorControl (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,383,0
+MonitorControl (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,5
+Whisky (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,7,0
+Whisky (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,20,0
+Whisky (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,6,0
+synthetic constructs.swift (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,17,0
+synthetic constructs.swift (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,48,0
+synthetic constructs.swift (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,33,0
+synthetic constructs.swift (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,2,0
+swift-argument-parser (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1371,12
+swift-argument-parser (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1128,0
+swift-argument-parser (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,2870,12
+swift-collections (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,797,0
+swift-collections (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1287,12
+swift-collections (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,2264,0
+swift-collections (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,3,12
+swift-format (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,41,0
+swift-format (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,70,0
+swift-format (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,236,0
+swift-nio (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,955,14
+swift-nio (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1253,4
+swift-nio (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1960,14
+swift-nio (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,0,5
+vapor (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,8,0
+vapor (files where sourcekit-lsp types at least 60%),,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,40,0
+vapor (files where sourcekit-lsp types at least 60%),,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,385,0
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,blocks sampled (up to 40 per file),SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1023,1023
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"tints on no data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,5773,103
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"tints on a data token of the reference, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,6538,5389
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"tints outside the focused function, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,4732,28
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"tints on no data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,5,102
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"tints on a data token of the reference, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,19524,5393
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"tints outside the focused function, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,12101,34
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"data tokens of the reference in the block left untinted, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,4942,4771
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"data tokens of the reference in the block left untinted, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,3509,4754
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,blocks whose tints change when sourcekit-lsp answers,SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,910,28
+"the same, the 51 files where sourcekit-lsp types at least 60% of the reference reads",51,"escape marks, sourcekit-lsp tokens",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,412,161
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,files,clangd 22.1.8 tokens,27,27
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,blocks sampled (up to 40 per file),clangd 22.1.8 tokens,635,635
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,"tints on no data token of the reference, no server",clangd 22.1.8 tokens,1656,433
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,"tints on a data token of the reference, no server",clangd 22.1.8 tokens,6156,6077
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,"data tokens of the reference in the block left untinted, no server",clangd 22.1.8 tokens,2769,2574
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,blocks whose no-server tints differ from clangd-served ones,clangd 22.1.8 tokens,391,321
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,"tints, sourcekit-lsp's wire answer",clangd 22.1.8 tokens,7812,6811
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,"tints on no data token of the reference, sourcekit-lsp's wire answer",clangd 22.1.8 tokens,1656,100
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,blocks whose tints under sourcekit-lsp's wire answer differ from clangd-served ones,clangd 22.1.8 tokens,391,25
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, the 27 files clangd typed",27,"danger marks, every block",clangd 22.1.8 tokens,169,73
+Swift: 98 public files (16 repositories) and 2 synthetic,100,danger marks,"SwiftSyntax 602 force unwraps, try!, as!, unowned(unsafe), nonisolated(unsafe) and @unchecked",114,62
+Swift: 98 public files (16 repositories) and 2 synthetic,100,danger marks on a reference risk,"SwiftSyntax 602 force unwraps, try!, as!, unowned(unsafe), nonisolated(unsafe) and @unchecked",11,62
+Swift: 98 public files (16 repositories) and 2 synthetic,100,reference risks unmarked,"SwiftSyntax 602 force unwraps, try!, as!, unowned(unsafe), nonisolated(unsafe) and @unchecked",51,0
+Swift: 98 public files (16 repositories) and 2 synthetic,100,"non-blank characters in the wrong region, of 622,511",SwiftSyntax 602 token kinds,5967,3
+Swift: the same 98 public files,98,operators restored,"TextMate, okibi",0,1002
+Swift: the same 98 public files,98,operators restored off the grammar colour,"TextMate, okibi",0,0
+Swift: the same 98 public files,98,subscript brackets restored,"TextMate, okibi",0,328
+Swift: the same 98 public files,98,attribute names restored,"TextMate, okibi",0,670
+Swift: the same 98 public files,98,attribute names restored off the grammar colour,"TextMate, okibi",0,7
+Swift: the same 98 public files,98,"sourcekit-lsp operator tokens restored, of 649",sourcekit-lsp 6.4,0,649
+Swift: the same 98 public files,98,"sourcekit-lsp subscript-bracket tokens restored, of 190",sourcekit-lsp 6.4,0,190
+Swift: the same 98 public files,98,"sourcekit-lsp tokens over an attribute name restored, of 69",sourcekit-lsp 6.4,0,69
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, 40 files",40,"clangd macro tokens over a C or Objective-C constant or qualifier restored, of 739",clangd 22.1.8 tokens,103,739
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, 40 files",40,"constants restored (NULL, nil, Nil, YES, NO, TRUE, FALSE, true, false)","TextMate, okibi",125,888
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, 40 files",40,"keyword-grey restores (bool, __weak, __strong, __block, __unsafe_unretained, __autoreleasing, __nullable, __nonnull, __null_unspecified)","TextMate, okibi",5,112
+"Objective-C: AFNetworking, SDWebImage, FMDB and MetalPetal, 40 files",40,restores off the grammar colour,"TextMate, okibi",0,0
+swift-format TokenStreamCreator.swift,1,"ms per keystroke, no server: median (range) of 6 runs, each the median of 15 keys","Apple M3 Pro, Node 26.13.0",11.1 (11 to 15.5),14.2 (13.4 to 15.8)
+swift-format TokenStreamCreator.swift,1,"ms first classify in Focus, no server: median (range) of 6 runs","Apple M3 Pro, Node 26.13.0",27.5 (26.3 to 46.1),32.6 (31.7 to 33.8)
+swift-nio ByteBufferTest.swift,1,"ms per keystroke, no server: median (range) of 6 runs, each the median of 15 keys","Apple M3 Pro, Node 26.13.0",10.4 (9.8 to 11.5),16.4 (15.6 to 18.6)
+swift-nio ByteBufferTest.swift,1,"ms first classify in Focus, no server: median (range) of 6 runs","Apple M3 Pro, Node 26.13.0",23.2 (22.3 to 24.8),39.4 (37.3 to 40.4)
+swift-argument-parser Option.swift,1,"ms per keystroke, no server: median (range) of 6 runs, each the median of 15 keys","Apple M3 Pro, Node 26.13.0",2.0 (1.8 to 3.5),3.7 (3.4 to 3.8)
+swift-argument-parser Option.swift,1,"ms first classify in Focus, no server: median (range) of 6 runs","Apple M3 Pro, Node 26.13.0",8.6 (8.1 to 9.1),14.6 (12.1 to 16)
+Swift: the same 98 public files,98,"right tints, no server (closure scope from the call it trails)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,7548,7657
+Swift: the same 98 public files,98,"reference names in the focused block left untinted, no server",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,6756,6672
+Swift: the same 98 public files,98,"tints on no data token of the reference, no server (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1162,1193
+Swift: the 49 public files sourcekit-lsp types at least 60% of,49,"right tints, no server (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,5253,5316
+Swift: the 49 public files sourcekit-lsp types at least 60% of,49,"reference names in the focused block left untinted, no server (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,4706,4646
+Swift: the 49 public files sourcekit-lsp types at least 60% of,49,"tints on no data token of the reference, no server (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,103,103
+Swift: the same 98 public files,98,"tints on no data token of the reference, sourcekit-lsp tokens (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,1164,1190
+Swift: the same 98 public files,98,"tints outside the focused function, no server (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,32,32
+Swift: the same 98 public files,98,"tints outside the focused function, sourcekit-lsp tokens (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,37,37
+Swift: the same 98 public files,98,blocks whose tints change when sourcekit-lsp answers (closure scope),SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,43,41
+Swift: the same 98 public files,98,"escape marks, sourcekit-lsp tokens (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,217,215
+Swift: the 49 public files sourcekit-lsp types at least 60% of,49,"tints outside the focused function, no server (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,28,28
+Swift: the 49 public files sourcekit-lsp types at least 60% of,49,blocks whose tints change when sourcekit-lsp answers (closure scope),SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,27,27
+Swift: the 49 public files sourcekit-lsp types at least 60% of,49,"escape marks, sourcekit-lsp tokens (closure scope)",SwiftSyntax 602 declarations and sourcekit-lsp 6.4 reads,159,157

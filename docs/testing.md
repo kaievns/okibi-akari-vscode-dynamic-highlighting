@@ -188,6 +188,44 @@ Two checks the audit showed could never fail went too: a `::` after a name,
 which Zig has no token for, and a `const` / `var` before a container field,
 where the word before a field is none or `comptime`.
 
+### Swift, Objective-C and Metal
+
+The rules this change added (`swiftRestores`, `swiftTokens`, the Objective-C
+constant and qualifier restores, the sourcekit-lsp legend repair and the Swift
+danger rule's type positions) were audited by hand: one mutant per rule on the
+compiled `out/*.js`, each run against `swift.test.js` and then the Swift walks.
+The first run, over 20 mutants, killed 17. 3 survived: `return[a]` read as a
+subscript, a read the server types `property` kept, and `-> T!` marked. The
+last was a bug, fixed in the same change: the type before the `!` was read back
+over `>`, `[` and `,`, so `-> URL!`, `[Int!]` and the second member of `(URL!,
+Int!)` were marked as force unwraps; the danger counts over the SwiftSyntax
+reference held at 62 of 62 with no extra mark either way. A case added for each
+kills it, and a 21st mutant on the tuple and array positions is killed too. Per
+mutant in [mutation-audit-swift.csv](mutation-audit-swift.csv).
+
+```
+Final (21 mutants), by the tests that kill each
+test/swift.test.js             █████████████████████ 21
+```
+
+The review fixes (the static-call restore, a bracketed implicitly unwrapped type,
+`@selector(performSelector:)`, Objective-C facts in a header opened as `cpp`, the
+linear `let` scan, and the lone `@` the Swift walks found in `isTypeHeader`) got 9
+more, the same way; the first run killed 6. The whole header as an Objective-C
+region survived, since no test held C++ outside the interface; a `- (char *)b`
+continuation in a header's inline function now does. The `let` scan without its
+per-statement memo survived as equivalent on the closure table, whose `=` stands
+before its first row; the mutant is now the pre-fix scan, which copied the span at
+every `{`, and the linearity test fails it. A subscript or a call before `!` read as
+a type position survives as equivalent: the position test after it already rejects
+a value.
+
+```
+Review fixes (9 mutants), by the tests that kill each
+test/swift.test.js             ████████ 8
+equivalent                     █ 1
+```
+
 ### Shell, fish and the tooling ids
 
 The shell and fish lexers, block scans, bindings, danger rule, the notebook

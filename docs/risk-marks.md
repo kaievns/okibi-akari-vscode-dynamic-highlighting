@@ -67,7 +67,7 @@ caller's object.
 - **A named argument.** `isArgLabel` (classify.ts): the next char is `=`, the
   previous code char is `(` or `,` (newlines and comments skipped), and the
   innermost open bracket is a `(` after a callee that is not a `def` name.
-  Applies to Python, Kotlin, Swift / Scala / Dart, Rust macros, `#`-comment and
+  Applies to Python, Kotlin, Swift, Scala, Dart, Rust macros, `#`-comment and
   unknown languages. In
   JavaScript, C, Java and Go `f(x = 1)` is an assignment and marks.
 - **A name that is not a data occurrence at that offset**, i.e. no tintable
@@ -212,9 +212,12 @@ is unchanged.
 | `typescript`, `typescriptreact` | `as` casts; `any` in type position | `import { a as b }`, `import * as ns`, `export { a as b }`, `export * as ns`, `as const`, `.as` / `.any` members, `any(…)` calls, `{ any: … }` keys, bindings named `any` or `as` |
 | `rust` | `as` casts | `use … as`, `extern crate … as`, `<T as Trait>::` |
 | `kotlin` | `as` casts, `as?` included; `x!!`; `@Suppress("UNCHECKED_CAST")` | `import … as`, `!=` |
-| `swift`, `dart` | `as` casts, `as?` and `as!` included | `import … as` |
-| `c`, `objective-c` | a cast to a pointer type, `(T *)x`, `(const T *)x` | value casts, `(int)d`, `(void)x` ([c-jvm.md](c-jvm.md#danger-marks)) |
-| `cpp`, `cuda-cpp`, `objective-cpp` | `reinterpret_cast<…>`, `const_cast<…>`; a C cast to a pointer or reference type | `static_cast`, `dynamic_cast`, `std::bit_cast`, value casts |
+| `swift` | a force unwrap `x!`, `try!`, `as!`, `unowned(unsafe)`, `nonisolated(unsafe)`, `@unchecked` | `as?`, `as`, `try?`, `!=`, prefix `!`, an implicitly unwrapped type `T!`, `[T]!`, `(() -> Void)!`, `Unsafe*` names ([swift.md](swift.md#danger-marks)) |
+| `dart` | `as` casts | `import … as` |
+| `c` | a cast to a pointer type, `(T *)x`, `(const T *)x` | value casts, `(int)d`, `(void)x` ([c-jvm.md](c-jvm.md#danger-marks)) |
+| `objective-c` | C's, and `__bridge`, `__bridge_transfer` and `__bridge_retained` casts and `performSelector:` | a method signature's types, an `@property (…)` list, `@selector(performSelector:)` and a method declared `performSelector:` ([c-jvm.md](c-jvm.md#objective-c)) |
+| `cpp`, `cuda-cpp`, `metal` | `reinterpret_cast<…>`, `const_cast<…>`; a C cast to a pointer or reference type; in an Objective-C header, `objective-c`'s inside an interface | `static_cast`, `dynamic_cast`, `std::bit_cast`, value casts; in an Objective-C header, a signature's types ([c-jvm.md](c-jvm.md#objective-c)) |
+| `objective-cpp` | `cpp`'s and `objective-c`'s | the same |
 | `java` | a reference cast, `(List<String>) raw`; `@SuppressWarnings("unchecked")` and `"rawtypes"` | primitive casts, `(int) d` |
 | `groovy` | none | |
 | `python` | none | `import … as`, `with … as`, `except … as`, `case … as`, `any()` |

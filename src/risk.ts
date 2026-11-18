@@ -20,6 +20,7 @@ import { OffsetRange, Classification, isArgLabel, pyScopeAt, pySuiteTable } from
 import { LexId, LexResult, lexFor, selfWords } from './lex';
 import { LuaFacts, luaFacts } from './lua';
 import { rubyEscapeRisk } from './ruby';
+import { inObjcRegion, isObjc } from './cjvm';
 import { scanBlocks } from './focus';
 import { ShellCommand, shellTables } from './shell';
 
@@ -165,6 +166,138 @@ function nextCodeIndex(lx: LexResult, i: number): number {
   return -1;
 }
 
+/**
+ * Swift's checks switched off: `x!` (a force unwrap), `try!`, `as!`, `unowned(unsafe)`,
+ * `nonisolated(unsafe)` and `@unchecked`. An implicitly unwrapped type (`var v: T!`),
+ * `as?`, `try?` and `!=` are not marked (docs/swift.md#danger-marks).
+ */
+function swiftDanger(lx: LexResult, block: OffsetRange): OffsetRange[] {
+  const out: OffsetRange[] = [];
+  const t = lx.text;
+  for (let i = t.indexOf('!', block.start); i >= 0 && i < block.end; i = t.indexOf('!', i + 1)) {
+    if (!lx.isCode(i) || t[i + 1] === '=') continue;
+    const before = t[i - 1];
+    if (before === undefined || !/[\p{ID_Continue})\]?`>"]/u.test(before)) continue;
+    const word = identEndingAt(lx, i);
+    if (word === 'try' || word === 'as') {
+      out.push({ start: i - word.length, end: i + 1 });
+      continue;
+    }
+    if (swiftTypePosition(lx, i)) continue;
+    out.push({ start: i, end: i + 1 });
+  }
+  for (const id of lx.identsIn(block.start, block.end)) {
+    if ((id.name === 'unowned' || id.name === 'nonisolated') && /^\(\s*unsafe\s*\)/.test(t.slice(id.offset + id.length, id.offset + id.length + 12))) {
+      out.push({ start: id.offset, end: t.indexOf(')', id.offset) + 1 });
+    } else if (id.name === 'unchecked' && t[id.offset - 1] === '@') {
+      out.push({ start: id.offset - 1, end: id.offset + id.length });
+    }
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/** The `[` or `(` the bracket at `close` closes, on its line or the 4 above, else -1. */
+function bracketOpen(t: string, close: number): number {
+  let depth = 0;
+  let lines = 0;
+  for (let i = close; i >= 0; i--) {
+    const c = t[i];
+    if (c === ']' || c === ')') depth++;
+    else if (c === '[' || c === '(') {
+      if (--depth === 0) return i;
+    } else if (c === '\n' && ++lines > 4) return -1;
+  }
+  return -1;
+}
+
+/** The identifier that ends at `end`, else ''. */
+function identEndingAt(lx: LexResult, end: number): string {
+  const t = lx.text;
+  let s = end;
+  while (s > 0 && WORD_CHAR.test(t[s - 1])) s--;
+  return t.slice(s, end);
+}
+
+/**
+ * `T!` in a type: `var v: T!`, `-> T!`, `(T!, U)`, `[T!]`, `[K: V!]`, `Array<T>!`, `as T!`,
+ * and a bracketed type: `[UIButton]!`, `[K: V]!`, `(() -> Void)!`, `-> [T]!`.
+ */
+function swiftTypePosition(lx: LexResult, bang: number): boolean {
+  const t = lx.text;
+  let j = bang - 1;
+  if (t[j] === ']' || t[j] === ')') {
+    const open = bracketOpen(t, j);
+    // `dict[k]!`, `f()!`: a subscript or a call reads a value.
+    if (open < 0 || /[\p{ID_Continue})\]?!>`]/u.test(t[open - 1] ?? '') || !/^\s*[A-Z([]/.test(t.slice(open + 1, j))) return false;
+    j = open - 1;
+  } else {
+    let depth = 0;
+    for (; j >= 0; j--) {
+      const c = t[j];
+      if (c === '>') depth++;
+      else if (c === '<' && depth > 0) depth--;
+      else if (!(depth > 0 ? /[\p{ID_Continue}.,\s[\]:?!]/u : /[\p{ID_Continue}.]/u).test(c)) break;
+    }
+    const head = t.slice(j + 1, bang);
+    // A type's last component is capitalised (`Foundation.URL!`); `NSImage.gearshape!` reads a value.
+    if (!/^[A-Z]/.test(head) || !/^[A-Z]/.test(head.replace(/<[^]*$/, '').split('.').pop() ?? '')) return false;
+  }
+  let k = j;
+  while (k >= 0 && (t[k] === ' ' || t[k] === '\t')) k--;
+  const c = t[k];
+  if (c === ':') return t[k - 1] !== ':' && !/\s\?\s/.test(t.slice(lx.lineStarts[lx.lineOf(k)], k));
+  if (c === '>') return t[k - 1] === '-';
+  if (c === '(' || c === '[' || c === ',') return true;
+  return /\b(?:as|is)$/.test(t.slice(Math.max(0, k - 2), k + 1));
+}
+
+/**
+ * Objective-C: `__bridge`, `__bridge_transfer` and `__bridge_retained` casts hand an object
+ * across the ARC boundary unchecked; `performSelector:` sends a selector the compiler cannot
+ * check. A method's signature types (`- (NSString *)name:(id)x`) and `@property (…)` are not
+ * casts, and a `@selector(performSelector:)` or a method declared `performSelector:` sends nothing.
+ */
+function objcDanger(lx: LexResult, block: OffsetRange): OffsetRange[] {
+  const t = lx.text;
+  const out = cPointerCasts(lx, block).filter((r) => !objcSignatureAt(lx, r.start) && !/^\(\s*__bridge/.test(t.slice(r.start, r.end)));
+  for (const id of lx.identsIn(block.start, block.end)) {
+    if (/^__bridge(?:_transfer|_retained)?$/.test(id.name)) {
+      const open = lx.enclosingOpen(id.offset);
+      const close = open >= 0 && t[open] === '(' ? t.indexOf(')', id.offset) : -1;
+      if (close > 0) out.push({ start: open, end: close + 1 });
+    } else if (/^performSelector(?:OnMainThread|InBackground)?$/.test(id.name) && t[id.offset + id.length] === ':' && !selectorLiteralAt(lx, id.offset)
+      && !objcSignatureAt(lx, id.offset)) {
+      out.push({ start: id.offset, end: id.offset + id.length + 1 });
+    }
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/** Inside a `@selector(…)`, which names a selector and sends nothing. */
+function selectorLiteralAt(lx: LexResult, offset: number): boolean {
+  const open = lx.enclosingOpen(offset);
+  return open >= 0 && lx.text[open] === '(' && /@selector\s*$/.test(lx.text.slice(Math.max(0, open - 16), open));
+}
+
+/** Inside an Objective-C method's signature (`- (T)a:(T)x b:(T)y` up to its `{` or `;`) or an `@property (…)` list. */
+function objcSignatureAt(lx: LexResult, offset: number): boolean {
+  if (!inObjcRegion(lx, offset)) return false;
+  const t = lx.text;
+  const ls = lx.lineStarts[lx.lineOf(offset)];
+  const lead = t.slice(ls, offset);
+  if (/^\s*@property\s*$/.test(lead)) return true;
+  // The method's first line starts with `-` or `+` and a `(`; a wrapped signature continues
+  // on lines that hold no `;` and no `{` before this one.
+  for (let line = lx.lineOf(offset), k = 0; line >= 0 && k < 8; line--, k++) {
+    const s = lx.lineStarts[line];
+    const e = line === lx.lineOf(offset) ? offset + 1 : lx.lineStarts[line + 1] ?? t.length;
+    const txt = t.slice(s, e);
+    if (line !== lx.lineOf(offset) && /[;{}]/.test(txt)) return false;
+    if (/^\s*[-+]\s*\(/.test(txt)) return lx.enclosingOpen(s) < 0 || t[lx.enclosingOpen(s)] !== '(';
+  }
+  return false;
+}
+
 type CastRule = (lx: LexResult, block: OffsetRange) => OffsetRange[];
 const cCasts: CastRule = cPointerCasts;
 const jvmCasts: CastRule = (lx, b) => [...javaCasts(lx, b), ...uncheckedSuppressions(lx, b)];
@@ -263,7 +396,7 @@ const shellDanger: CastRule = (lx, block) => {
  * code from somewhere else.
  */
 const CAST_LANGUAGES = new Map<string, CastRule>([
-  ['c', cCasts], ['cpp', cCasts], ['cuda-cpp', cCasts], ['objective-c', cCasts], ['objective-cpp', cCasts],
+  ['c', cCasts], ['cpp', (lx, b) => (isObjc(lx) ? objcDanger(lx, b) : cPointerCasts(lx, b))], ['cuda-cpp', cCasts], ['metal', cCasts], ['objective-c', objcDanger], ['objective-cpp', objcDanger], ['swift', swiftDanger],
   ['java', jvmCasts], ['kotlin', ktCasts], ['shellscript', shellDanger], ['fish', shellDanger],
 ]);
 
@@ -435,11 +568,11 @@ const DANGER_RULES = new Map<string, DangerRule>([
   ['rust', onlyAs(rustCast)],
   ['kotlin', onlyAs(importAwareCast)],
   ['dart', onlyAs(importAwareCast)],
-  ['swift', onlyAs(importAwareCast)],
   ['zig', (_lx, id) => ZIG_DANGER.has(id.name)],
   ['cpp', cppCast],
   ['cuda-cpp', cppCast],
   ['objective-cpp', cppCast],
+  ['metal', cppCast],
 ]);
 
 // ── escaping writes ──────────────────────────────────────────────────────────
@@ -616,9 +749,9 @@ function headerIsInitializer(lx: LexResult, ids: LexId[]): boolean {
     return /^[A-Z]/.test(name) && plain[callee - 1]?.name === 'function';
   }
   if (name === 'init') {
-    return family === 'kotlin' || family === 'nested';
+    return family === 'kotlin' || family === 'nested' || family === 'swift';
   }
-  if (family === 'java' || family === 'c' || family === 'default' || family === 'nested') {
+  if (family === 'java' || family === 'c' || family === 'default' || family === 'nested' || family === 'swift') {
     const before = plain.slice(0, callee).map((id) => id.name).filter((w) => !CTOR_MODIFIERS.has(w));
     return /^[A-Z]/.test(name) && (before.length === 0 || (before.length === 1 && before[0] === name));
   }

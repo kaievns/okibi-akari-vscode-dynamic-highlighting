@@ -1,0 +1,31 @@
+module,rule,first run,final
+swift,restores: `->` is not an operator,test/swift.test.js,test/swift.test.js
+swift,restores: postfix `!` and `?` are not restored,test/swift.test.js,test/swift.test.js
+swift,restores: prefix `&x` is an inout argument,test/swift.test.js,test/swift.test.js
+swift,restores: `-1` is a literal,test/swift.test.js,test/swift.test.js
+swift,restores: `~Copyable` is a suppressed protocol,test/swift.test.js,test/swift.test.js
+swift,restores: the `@available` wildcard,test/swift.test.js,test/swift.test.js
+swift,restores: `#if` lines,test/swift.test.js,test/swift.test.js
+swift,restores: generic clauses hold types,test/swift.test.js,test/swift.test.js
+swift,restores: a variadic `Int...`,test/swift.test.js,test/swift.test.js
+swift,restores: `return [a]` is no subscript,survived,test/swift.test.js
+swift,restores: `{ … }[0]` is a subscript,test/swift.test.js,test/swift.test.js
+swift,restores: the name after `@`,test/swift.test.js,test/swift.test.js
+swift,swiftTokens: a binding the server typed otherwise is dropped,survived,test/swift.test.js
+cjvm,Objective-C constants,test/swift.test.js,test/swift.test.js
+cjvm,Objective-C qualifiers,test/swift.test.js,test/swift.test.js
+cjvm,C keeps its names: nil and YES are names in C,test/swift.test.js,test/swift.test.js
+decorator,the Swift restores are Swift's alone,test/swift.test.js,test/swift.test.js
+classify-lsp,sourcekit-lsp legend: a `parameter` with defaultLibrary,test/swift.test.js,test/swift.test.js
+risk,Swift danger: `-> T!` is a type,survived,test/swift.test.js
+risk,"Swift danger: `(T!, U)` and `[T!]` are types",not in the first run,test/swift.test.js
+risk,Swift danger: `try!` and `as!`,test/swift.test.js,test/swift.test.js
+swift,static-call restore: no named call restored,test/swift.test.js,test/swift.test.js
+swift,static-call restore: operators restored as calls too,test/swift.test.js,test/swift.test.js
+risk,danger: a type that ends in `]` or `)` before `!` (`[UIButton]!`) marked,test/swift.test.js,test/swift.test.js
+risk,danger: a subscript or a call before `!` read as a type position,survived: equivalent (the position test after it rejects a value),survived: equivalent
+risk,danger: `performSelector:` inside `@selector(…)` marked,test/swift.test.js,test/swift.test.js
+cjvm,header: no Objective-C regions in a `cpp` header,test/swift.test.js,test/swift.test.js
+cjvm,header: the whole header an Objective-C region,survived,test/swift.test.js
+swift,facts: a `let` header scanned whole for its depth-0 `=` at every `{`,survived: the memo dropped is equivalent on the table,test/swift.test.js (linear): the pre-fix scan
+cjvm,isTypeHeader: a lone `@` read as a word,test/swift.test.js,test/swift.test.js

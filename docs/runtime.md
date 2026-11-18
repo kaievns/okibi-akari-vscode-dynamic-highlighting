@@ -472,7 +472,7 @@ What a keystroke pays, at 50k lines:
 
 | When | Work |
 |---|---|
-| synchronously, every keystroke | the text (`getText()`), a re-lex around the change, the block scan, the band-1 scans that walk the file (Rust, Python, Lua, Ruby, JavaScript and Zig placeholders, JavaScript and TypeScript JSDoc brackets, `self`), the render |
+| synchronously, every keystroke | the text (`getText()`), a re-lex around the change, the block scan, the band-1 scans that walk the file (Rust, Python, Lua, Ruby, JavaScript and Zig placeholders, JavaScript and TypeScript JSDoc brackets, `self`, Swift's operators, subscripts and attributes), the render |
 | once typing pauses for `editDebounceMs` | the server's answer (decoded only when it is for the current text), a function scope for every block, `buildFileIndex` and the scope's classification; without a server the heuristic's file-wide base; the import and shadow restores |
 
 The changes, by effect:
@@ -497,7 +497,13 @@ of all 16 inputs, for band 1's new `constantRestore` type alone: each dumped
 snapshot gains it, empty, since no input is C-family, and each session one more
 `setDecorations` call, its first clear. Every other dumped line holds, and the
 `structure`, `semantic` and `heuristic` hashes with them (`PERF_GOLDEN_DUMP`,
-HEAD 588ed19 against the change).
+HEAD 588ed19 against the change). The Swift change re-records the same 48 hashes
+for its four band-1 types (`operatorRestore`, `bracketRestore`, `attributeRestore`,
+`callRestore`) the same way: 1,506 dumped snapshots hold once the four empty rows are
+left out, and each session makes 4 more `setDecorations` calls, the dumps' other 48
+lines (HEAD 93f001c against the change; `callRestore` came with the review fixes and
+moved only its own row and call; the bracket restore's rename from `floorRestore`
+changed none of the 1,554 lines but the name).
 
 ### Typing
 
@@ -617,7 +623,7 @@ The world is two to five of the fixtures in `test/fixtures/transitions/`
 (`walk.ts`, `walk.py`, `walk.rs`, `walk.go`, `walk.md` and eleven data files;
 `walk.lua`, `walk.rb`, `walk.js`, `walk.html`, `walk.vue`, `walk.svelte`,
 `walk.astro`, `walk.tsx`, `walk.jsx`, `walk.zig`, `walk.c`, `walk.cpp`, `walk.java`,
-`walk.kt`, `walk.groovy`, `walk.sh`, `walk.zsh`, `walk.fish`, the markdown-derived
+`walk.kt`, `walk.groovy`, `walk.swift`, `walk.m`, `walk.h`, `walk.metal`, `walk.sh`, `walk.zsh`, `walk.fish`, the markdown-derived
 files and the Docker and Kubernetes files have walks of their own, below),
 one or two editor groups with tabs, an Output panel, one language server per code
 language, the colour theme and the `okibiDynamic` settings. In a quarter of the
@@ -861,6 +867,31 @@ restore on 1,088 and the Kotlin `$name` restore on 808; the test fails if any is
 shown, and on a keyword-grey restore in C other than `bool`. 600 walks from seed 1000 found one leftover in the oracle:
 a `.gradle` editor showing band 1's `this`, which the oracle had treated as a data
 file; 600 more from seed 5000 found nothing.
+
+**The Swift, Objective-C and Metal walks** are one more test, 120 walks
+(`OKIBI_SWIFT_WALKS`). Each opens `walk.swift`, `walk.m` (as `objective-c` and as
+`objective-cpp`), `walk.h` (an Objective-C header, as `cpp`) or `walk.metal` first,
+picked by seed, alone or with `walk.strings`, `walk.pbxproj`, `walk.xcconfig`,
+`walk.plist` (as `plist` and as `xml`), `walk.ts` or `walk.py`; the main walk's
+events replay with the same seed. Swift's server modes are `ok`, `degraded`,
+`none` and `empty`, `ok` being sourcekit-lsp's shape: no declaration token,
+`variable` over every read, `property` over members and `method.static.defaultLibrary`
+over operators and over a call on a type (`Type.name(`), and `degraded` the first
+half of the file only. Objective-C's and Objective-C++'s are `sourcekit-objc`
+(clangd's legend over sourcekit-lsp's indices, as sourcekit-lsp sends it), `ok`,
+`none` and `empty`; the header's `ok`, `degraded`, `none` and `empty`; Metal and the
+Apple formats get no server. The Apple formats are static content and must show
+nothing, and the four Swift band-1 types must show in Swift editors alone. In the
+default run the code files showed identity tints on 652 steps (Swift 114,
+Objective-C 108, Objective-C++ 105, the header 144, Metal 181), clay on 855, escape
+marks on 34, danger marks on 248, the `self` / `this` paint on 1,655, the operator,
+subscript and attribute restores on 470 each, the static-call restore on 167 and
+the Objective-C constant restore on 652; the test fails if any is never shown. 600
+walks from seed 1 found a header state that threw in the classifier: a half-typed
+`@end` left a lone `@` before a C function, and the C-family type-header test read
+`@` as the start of a word (`isTypeHeader`, `src/cjvm.ts`, since HEAD). The walked
+editor kept its last tints, the fresh one had none. With the fix 600 walks each from
+seeds 1, 1000 and 5000 found nothing.
 
 **The cancelling-cpptools walks** are one more test, 80 walks (`OKIBI_CANCEL_WALKS`).
 Each opens `walk.c` or `walk.cpp`, alone or with `walk.cmake`, `walk.ts` or `walk.py`,

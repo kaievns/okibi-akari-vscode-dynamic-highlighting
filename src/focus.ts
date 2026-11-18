@@ -22,6 +22,7 @@ import { bestAt, buildIntervalIndex } from './intervals';
 import { BLOCK_OPEN, MODULE_OPEN, isRegionLanguage, isViewLanguage, viewBlocks, viewRegions } from './html';
 import type { TemplateBlock } from './sfc';
 import { shellTables } from './shell';
+import { swiftFacts } from './swift';
 
 export type { LexId } from './lex';
 
@@ -1868,7 +1869,8 @@ const PROSE_LANGUAGES = new Set([
  * (docs/html.md#data-identities-and-marks).
  * Templates (`erb`, `helm`, `gotmpl`, `handlebars`) are too: their tags have no lexer
  * family yet (docs/ruby.md#erb-templates, docs/containers.md#go-template-variables,
- * docs/html.md#ids).
+ * docs/html.md#ids). So are the Apple build and data formats and swift-vscode's
+ * `swift-gyb` and `tutorial` ids (docs/swift.md#static-content).
  * Each id must be one VS Code or the format's own extension registers, so a made-up
  * id cannot silently disable the layer for a real code file.
  * `test/fixtures/static-languages.json` names the extension (null: none installed).
@@ -1881,6 +1883,7 @@ const STATIC_CONTENT_LANGUAGES = new Set([
   'css', 'scss', 'less', 'sass', 'stylus', 'postcss', 'tailwindcss',
   'graphql', 'proto', 'proto3', 'buf-config', 'sql', 'diff', 'git-rebase', 'csv', 'tsv', 'csv (pipe)', 'csv (semicolon)', 'csv (whitespace)', 'dynamic csv',
   'dockerfile', 'makefile', 'erb', 'helm', 'gotmpl', 'handlebars', 'razor', 'aspnetcorerazor',
+  'strings', 'project.pbxproj', 'pbxproj', 'xcconfig', 'plist', 'swift-gyb', 'tutorial',
 ]);
 
 export const staticContentLanguages = (): string[] => [...STATIC_CONTENT_LANGUAGES];
@@ -2455,6 +2458,7 @@ const FUNCTION_KEYWORDS: Record<string, Set<string>> = {
   rust: new Set(['fn']),
   kotlin: new Set(['fun']),
   nested: new Set(['func', 'def']),
+  swift: new Set(['func', 'init', 'subscript']),
   python: new Set(['def']),
   zig: new Set(['fn']),
   default: new Set(['function', 'func', 'fn', 'def']),
@@ -2512,7 +2516,8 @@ function wrappedHeaderOf(lx: LexResult, block: BraceBlock, languageId?: string):
     return line;
   }
   const wide = codeSlice(lx, start, block.openOffset);
-  return functionHeaderText(wide, languageId) || CONTROL_HEADER.test(wide) ? { start, text: wide } : line;
+  const swiftFn = languageId === 'swift' && swiftFacts(lx).functionBodies.has(block.openOffset);
+  return swiftFn || functionHeaderText(wide, languageId) || CONTROL_HEADER.test(wide) ? { start, text: wide } : line;
 }
 
 /** A real `{…}` block, as opposed to a synthetic arrow, lambda, closure or comprehension scope. */
@@ -2690,6 +2695,10 @@ function functionHeaderText(header: string, languageId?: string): boolean {
   if (/^\s*(async\s+)?(def|lambda)\b/.test(header)) {
     return true;
   }
+  // An Objective-C method: `- (T)name:(T)a with:(T)b {`, `+ (instancetype)shared {`.
+  if ((languageId === 'objective-c' || languageId === 'objective-cpp') && OBJC_METHOD.test(header)) {
+    return true;
+  }
   if (/^\s*class\b/.test(header) || (languageId === 'kotlin' && KOTLIN_TYPE_DECLARATION.test(header))) {
     return false;
   }
@@ -2718,11 +2727,12 @@ function functionHeaderText(header: string, languageId?: string): boolean {
   return /\b(func|function)\b|=>\s*$|\)\s*(:[^)]*)?\s*$/.test(header);
 }
 
+const OBJC_METHOD = /^\s*[-+]\s*\(/;
 /** `public class B(private val w: Int) {`, `data class`, `enum class`: a Kotlin type, though its header ends in `)`. */
 const KOTLIN_TYPE_DECLARATION = /^\s*(?:@[\w.]+(?:\([^()]*\))?\s+)*(?:(?:public|private|protected|internal|open|abstract|sealed|data|enum|annotation|inner|value|inline|expect|actual|final|external)\s+)*(?:class|interface|object)\b/;
 /** Java `) throws E {`; C++ `) const noexcept override {`, `) -> T {`, `) mutable {`, `) & {`. */
 const QUALIFIED_SIGNATURE = /\)\s*(?:throws\s+[\w$.<>?,\s]+|(?:(?:const|volatile|noexcept(?:\s*\([^()]*\))?|override|final|mutable|constexpr|consteval|&&?)\s*)+(?:->\s*[^{};=]+)?|->\s*[^{};=]+)\s*$/;
-const QUALIFIED_SIGNATURE_LANGUAGES = new Set(['java', 'c', 'cpp', 'cuda-cpp', 'objective-c', 'objective-cpp']);
+const QUALIFIED_SIGNATURE_LANGUAGES = new Set(['java', 'c', 'cpp', 'cuda-cpp', 'metal', 'objective-c', 'objective-cpp']);
 
 /** Does this block's header read as control flow (rather than a function signature)? */
 function isControlFlowHeader(text: string, block: BraceBlock, languageId?: string): boolean {
@@ -2738,6 +2748,9 @@ function isControlFlowHeader(text: string, block: BraceBlock, languageId?: strin
   }
   if (languageId === 'zig') {
     return !ZIG_FN.test(header) && !ZIG_CONTAINER.test(header) && ZIG_CONTROL.test(header);
+  }
+  if (languageId === 'swift' && swiftFacts(lexFor(text, languageId)).functionBodies.has(block.openOffset)) {
+    return false;
   }
   // A Python `def`/`class`/`lambda` is a DECLARATION even though its header also
   // contains words this regex would otherwise match (`for` inside a default, say),
@@ -2788,6 +2801,10 @@ export function isFunctionHeader(text: string, block: BraceBlock, languageId?: s
   if (block.headerStart === block.openOffset && !isBraceBlock(text, block, languageId)) {
     return /^\s*lambda\b/.test(text.slice(block.openOffset, block.openOffset + 12))
       || text[block.openOffset] === '|';
+  }
+  // Swift: func, init, deinit, subscript, accessors, computed getters and closures, from the facts (docs/swift.md#blocks).
+  if (languageId === 'swift') {
+    return swiftFacts(lexFor(text, languageId)).functionBodies.has(block.openOffset);
   }
   return functionHeaderText(headerOf(text, block, languageId).text, languageId)
     && paramListCloses(text, block, languageId);
@@ -3012,6 +3029,21 @@ function paramListStart(text: string, block: BraceBlock, languageId?: string): n
   if (bar >= 0) {
     return h.start + bar;
   }
+  if (languageId === 'swift') {
+    // func, init and subscript open their parameters after the keyword; a getter or an accessor
+    // has none; a closure's sit inside its braces and the scope keeps the call it trails
+    // (`xs.map { v in`), not a binding before it (`let names = xs.map {`).
+    const lx = lexFor(text, languageId);
+    const kw = keywordParamOpen(lx, h.start, block.openOffset);
+    if (kw >= 0) return kw;
+    const f = swiftFacts(lx);
+    if (f.inlineParams.has(block.openOffset)) return block.openOffset;
+    return f.closures.has(block.openOffset) ? swiftCallChainStart(lx, h.start, block.openOffset) : h.start;
+  }
+  // An Objective-C method's parameters follow each selector part: the scope is the whole signature.
+  if ((languageId === 'objective-c' || languageId === 'objective-cpp') && OBJC_METHOD.test(h.text)) {
+    return h.start;
+  }
   const lx = lexFor(text, languageId);
   const afterKeyword = keywordParamOpen(lx, h.start, block.openOffset);
   if (afterKeyword >= 0) {
@@ -3043,6 +3075,42 @@ function paramListStart(text: string, block: BraceBlock, languageId?: string): n
     i--;
   }
   return Math.max(h.start, i + 1);
+}
+
+/**
+ * Where the call a Swift trailing closure follows starts: `xs` in `let names = xs.map {`,
+ * `VStack` in `VStack(spacing: 8) {`; the brace when none does (`let f = {`); the header's
+ * start when the brace opens its line, as a wrapped signature's does.
+ */
+function swiftCallChainStart(lx: LexResult, from: number, open: number): number {
+  const t = lx.text;
+  let start = open;
+  let i = open - 1;
+  while (i >= from && (t[i] === ' ' || t[i] === '\t')) i--;
+  if (i < from || t[i] === '\n') return from;
+  while (i >= from) {
+    const c = t[i];
+    if ((c === ')' || c === ']') && lx.isCode(i)) {
+      let depth = 0;
+      let j = i;
+      for (; j >= from; j--) {
+        if (!lx.isCode(j)) continue;
+        const x = t[j];
+        if (x === ')' || x === ']') depth++;
+        else if ((x === '(' || x === '[') && --depth === 0) break;
+      }
+      if (j < from) break;
+      start = j;
+      i = j - 1;
+    } else if (/[\p{ID_Continue}$`]/u.test(c)) {
+      while (i >= from && /[\p{ID_Continue}$`]/u.test(t[i])) i--;
+      start = i + 1;
+    } else if (c === '.' || c === '?' || c === '!') {
+      start = i;
+      i--;
+    } else break;
+  }
+  return start;
 }
 
 /**

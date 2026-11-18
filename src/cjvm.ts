@@ -118,7 +118,8 @@ export function isTypeHeader(header: string, family: string): boolean {
     if (c === '(' || c === '[' || c === '<') depth++;
     else if (c === ')' || c === ']' || (c === '>' && h[i - 1] !== '-')) depth = Math.max(0, depth - 1);
     else if (/[@\w$]/.test(c) && !/[\w$]/.test(h[i - 1] ?? '')) {
-      const m = /^@?[\w$]+/.exec(h.slice(i, i + 40))!;
+      const m = /^@?[\w$]+/.exec(h.slice(i, i + 40));
+      if (!m) continue;
       words.push({ word: m[0], at: i, depth });
       i += m[0].length - 1;
     } else if (c === '=' && depth === 0) words.push({ word: '=', at: i, depth });
@@ -469,12 +470,17 @@ export function signatureParameter(lx: LexResult, offset: number, inFunction: (o
 }
 
 const C_CONSTANTS = new Set(['NULL', 'true', 'false']);
+const C_KEYWORD_MACROS = new Set(['bool']);
+/** Objective-C's constants and ARC and nullability qualifiers are macros to clangd too. */
+const OBJC_CONSTANTS = new Set([...C_CONSTANTS, 'nil', 'Nil', 'YES', 'NO', 'TRUE', 'FALSE']);
+const OBJC_KEYWORD_MACROS = new Set([...C_KEYWORD_MACROS, '__weak', '__strong', '__block', '__unsafe_unretained', '__autoreleasing',
+  '__nullable', '__nonnull', '__null_unspecified']);
 
 /**
- * C-family `NULL`, `true` and `false`, and `bool`: cpptools and clangd send `macro` over
- * each, a bold call, where the grammar paints a constant and a keyword. The name a
- * `#define` or `#undef` defines and a `defined(…)` operand keep the grammar's call
- * (docs/c-jvm.md#band-1-restores).
+ * C-family `NULL`, `true` and `false`, and `bool`, and Objective-C's `nil`, `YES`, `NO`,
+ * `__weak`, `__block` and the like: cpptools and clangd send `macro` over each, a bold call,
+ * where the grammar paints a constant and a keyword. The name a `#define` or `#undef`
+ * defines and a `defined(…)` operand keep the grammar's call (docs/c-jvm.md#band-1-restores).
  */
 const macroRestoreMemo = new WeakMap<LexResult, { constants: Range[]; keywords: Range[] }>();
 
@@ -485,10 +491,13 @@ export function cMacroRestores(lx: LexResult): { constants: Range[]; keywords: R
   const keywords: Range[] = [];
   const t = lx.text;
   const ids = lx.idents;
+  const objc = isObjc(lx);
+  const constantNames = objc ? OBJC_CONSTANTS : C_CONSTANTS;
+  const keywordNames = objc ? OBJC_KEYWORD_MACROS : C_KEYWORD_MACROS;
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
-    const constant = C_CONSTANTS.has(id.name);
-    if (!constant && id.name !== 'bool') continue;
+    const constant = constantNames.has(id.name);
+    if (!constant && !keywordNames.has(id.name)) continue;
     if (/^[ \t]*#[ \t]*(?:define|undef)[ \t]+$/.test(t.slice(lx.lineStarts[lx.lineOf(id.offset)], id.offset))) continue;
     const prev = ids[i - 1];
     if (prev?.name === 'defined' && /^\s*\(\s*$/.test(t.slice(prev.offset + prev.length, id.offset))) continue;
@@ -507,4 +516,134 @@ export function kotlinTemplateSpans(lx: LexResult): Range[] {
   if (lx.syntax.family !== 'kotlin') return [];
   const t = lx.text;
   return lx.holes.filter((h) => t[h.start - 1] === '$' && t[h.start] !== '{').map((h) => ({ start: h.start - 1, end: h.end }));
+}
+
+export interface ObjcFacts {
+  /** Parameter names of the method signatures: `- (T)a:(T)x b:(T)y`. */
+  params: LexId[];
+  /** Selector parts, in signatures and in message sends (`[o a:x b:y]`, `[o copy]`): never data. */
+  selectorParts: Set<number>;
+}
+
+const objcRegionMemo = new WeakMap<LexResult, Range[] | null>();
+
+/**
+ * An Objective-C header, which opens as `cpp`: its `@interface`, `@protocol` and
+ * `@implementation` … `@end` regions, else null (docs/c-jvm.md#objective-c).
+ */
+export function objcHeaderRegions(lx: LexResult): Range[] | null {
+  if (lx.syntax.key !== 'cpp') return null;
+  const hit = objcRegionMemo.get(lx);
+  if (hit !== undefined) return hit;
+  const t = lx.text;
+  const out: Range[] = [];
+  let open = -1;
+  for (const id of lx.idents) {
+    if (t[id.offset - 1] !== '@') continue;
+    if (open < 0) {
+      const forward = id.name === 'protocol' && /^\s+[A-Za-z_][\w\s,]*;/.test(t.slice(id.offset + id.length, id.offset + id.length + 200));
+      if ((id.name === 'interface' || id.name === 'implementation' || id.name === 'protocol') && !forward) open = id.offset - 1;
+    } else if (id.name === 'end') {
+      out.push({ start: open, end: id.offset + id.length });
+      open = -1;
+    }
+  }
+  if (open >= 0) out.push({ start: open, end: t.length });
+  const regions = out.length > 0 ? out : null;
+  objcRegionMemo.set(lx, regions);
+  return regions;
+}
+
+/** Objective-C or Objective-C++, or an Objective-C header: the Objective-C facts hold. */
+export function isObjc(lx: LexResult): boolean {
+  return lx.syntax.key === 'objc' || lx.syntax.key === 'objcpp' || objcHeaderRegions(lx) !== null;
+}
+
+/** In a header, `offset` is inside one of its Objective-C regions; elsewhere always. */
+export function inObjcRegion(lx: LexResult, offset: number): boolean {
+  const regions = objcHeaderRegions(lx);
+  return regions === null || regions.some((r) => r.start <= offset && offset < r.end);
+}
+
+const objcMemo = new WeakMap<LexResult, ObjcFacts>();
+
+/** Objective-C method signatures and message sends (docs/c-jvm.md#objective-c). */
+export function objcFacts(lx: LexResult): ObjcFacts {
+  const hit = objcMemo.get(lx);
+  if (hit) return hit;
+  const t = lx.text;
+  const params: LexId[] = [];
+  const selectorParts = new Set<number>();
+  const ids = lx.idents;
+  for (let line = 0; line < lx.lineStarts.length; line++) {
+    const s = lx.lineStarts[line];
+    const m = /^[ \t]*[-+][ \t]*\(/.exec(t.slice(s, s + 64));
+    if (!m || !lx.isCode(s + m[0].length - 1) || !inObjcRegion(lx, s)) continue;
+    const open = lx.enclosingOpen(s + m[0].length - 1);
+    if (open >= 0 && t[open] !== '{') continue;
+    // The signature runs to its `{` or `;` at depth 0.
+    let end = s + m[0].length - 1;
+    let depth = 0;
+    for (; end < t.length; end++) {
+      if (!lx.isCode(end)) continue;
+      const c = t[end];
+      if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') depth--;
+      else if ((c === '{' || c === ';') && depth === 0) break;
+    }
+    for (let k = objcLowerId(ids, s); k < ids.length && ids[k].offset < end; k++) {
+      const id = ids[k];
+      if (lx.enclosingOpen(id.offset) !== open) continue;
+      const n = objcNextCode(t, id.offset + id.length);
+      const p = lx.prevSignificant(id.offset);
+      if (t[n] === ':') selectorParts.add(id.offset);
+      else if (p >= 0 && t[p] === ')' && t[n] !== '(' && !isSelectorAfterReturnType(lx, p, s)) params.push(id);
+      else selectorParts.add(id.offset);
+    }
+  }
+  // Message sends: `name:` directly inside `[`, and a unary selector after the receiver (`[o copy]`).
+  for (const id of ids) {
+    const open = lx.enclosingOpen(id.offset);
+    if (open < 0 || t[open] !== '[') continue;
+    const n = objcNextCode(t, id.offset + id.length);
+    if (t[n] === ':' && t[n + 1] !== ':') {
+      const p = lx.prevSignificant(id.offset);
+      if (p >= 0 && p > open && !/[?:]/.test(t[p])) selectorParts.add(id.offset);
+      continue;
+    }
+    if (t[n] === ']') {
+      const p = lx.prevSignificant(id.offset);
+      if (p > open && /[\w$)\]]/.test(t[p]) && /\s/.test(t[id.offset - 1] ?? '')) selectorParts.add(id.offset);
+    }
+  }
+  const facts = { params, selectorParts };
+  objcMemo.set(lx, facts);
+  return facts;
+}
+
+/** `- (T)name`: the `)` at `close` ends the return type, so the name after it is the selector. */
+function isSelectorAfterReturnType(lx: LexResult, close: number, lineStart: number): boolean {
+  let depth = 0;
+  for (let i = close; i >= lineStart; i--) {
+    const c = lx.text[i];
+    if (c === ')') depth++;
+    else if (c === '(' && --depth === 0) return /^[ \t]*[-+][ \t]*$/.test(lx.text.slice(lineStart, i));
+  }
+  return false;
+}
+
+function objcLowerId(ids: LexId[], offset: number): number {
+  let lo = 0;
+  let hi = ids.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ids[mid].offset < offset) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function objcNextCode(t: string, i: number): number {
+  while (i < t.length && (t[i] === ' ' || t[i] === '\t' || t[i] === '\n' || t[i] === '\r')) i++;
+  return i;
 }

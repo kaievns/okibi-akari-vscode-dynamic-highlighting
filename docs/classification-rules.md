@@ -559,7 +559,7 @@ found:
 |---|---|
 | `let` / `const` / `var` / `val` + name (`let mut x`; Go `var x int`) | `var` only in C and Java, where `const` qualifies a type; `def` and `var` in Groovy; in Kotlin only inside a block that is not a type body, since a top-level or member `val` is a property |
 | targets of `:=` (`a, b := f()`, Python's walrus) | all |
-| `for x in`, `for k, v in` | Python, Rust, Swift |
+| `for x in`, `for k, v in` | Python, Rust |
 | statement-start `name =`, `a, b =`, `name: T =`; `with … as x`, `except … as e` | Python (and `#`-comment languages, without annotations) |
 | `Type name =` / `Type name;` / `Type[] name` | C, C++, Java, C#, and the default syntax |
 | the rest of a declarator list (`int a, b = 0;`, `int a = 1, b = 2;`, `int a[3], b = 1;`), `*` / `&` declarators (`int *p = &n;`), generic types (`List<String> xs =`); the type must start the statement | C, C++, Java, C#, and the default syntax |
@@ -571,13 +571,14 @@ found:
 | the names of a capture `\|x\|`, `\|*x\|`, `\|x, i\|` after an `if`, `while` or `for` header, `=>`, `catch`, `else` or `errdefer` | Zig (`zigFacts`, [zig.md](zig.md#data-identities)) |
 | a destructuring pattern after the keyword: `const { a, b: c } = o`, `const [a, b] = o`, `let (a, b) = o`, `val (a, b) = p`, `let P { x, y } = p`, `if let Some(v) = o`, `while let …` | all with those keywords |
 | a match-arm pattern on its line: `Some(v) =>`, `Ok(x) \| Err(x) =>`, `n if n > 3 =>` | Rust |
-| `catch (err)`, `catch (e: Exception)`, `catch (IOException e)` | first name in JS / TS, Kotlin, Swift / Scala / Dart; else the last |
+| `catch (err)`, `catch (e: Exception)`, `catch (IOException e)` | first name in JS / TS, Kotlin, Scala / Dart; else the last |
 | none in a `#` directive line and its `\` continuations, a `typedef`, a C++ `template <…>` list, or a struct, union, enum, class, interface, record or object body (`memberTest`) | C, C++, Objective-C, Java, Kotlin, Groovy ([c-jvm.md](c-jvm.md#data-identities)) |
 | lambda parameters `w ->`, `(a, b) ->`, `(String s) ->`; pattern bindings `instanceof T x`, `case T x ->`, `Point(int x, var y)` | Java, Groovy |
 | a primary-constructor parameter without `val` / `var` (`class A(x: Int) {`), unless a member `val` / `var` shares its name | Kotlin |
 | closure parameters `{ a, b -> }`, `{ String s, int n = 1 -> }` | Groovy |
 | a bare arrow parameter (`args =>`), and the names of a destructured parameter (`({ a, b = 1 }, [c, d]) =>`) | JS / TS |
-| lambda parameters: `{ a, b -> }`, `{ (k, v) -> }`; `{ a, b in }`, `{ [weak self] a in }` | Kotlin; Swift / Scala / Dart |
+| lambda parameters: `{ a, b -> }`, `{ (k, v) -> }`; `{ a, b in }`, `{ [weak self] a in }` | Kotlin; Scala / Dart |
+| every declaration and binding from a lexical scope resolver: `let` / `var`, `guard let`, `if let x` shorthand, `case let` patterns, `for … in`, parameters by internal name, closure parameters and capture lists, `$0`, `newValue`, `oldValue`, `catch {`'s `error`; never a stored property or an argument label | Swift (`swiftFacts`, [swift.md](swift.md#data-identities)) |
 | the leading names of each line of `var ( … )` / `const ( … )` | Go |
 | bracketed, starred and nested targets: `(a, b) = o`, `a, *rest = o`, `for i, (k, v) in …` | Python |
 | `$name =` at statement start; `as $v`, `as $k => $v` | the default syntax (PHP) |

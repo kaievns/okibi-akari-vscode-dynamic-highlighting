@@ -44,10 +44,11 @@ const DANGER = [
   ['rust', 'fn g() { use std::fmt::Write as _; let z = q as i64 > y; }', ['as@45']],
   ['rust', 'fn g() {use std::fmt::Write as _;}', []],
   ['rust', 'fn g() { let a = 1;use std::fmt::Write as _; }', []],
-  // Kotlin, Swift, Dart: casts, not import aliases.
+  // Kotlin and Dart: casts, not import aliases. Swift: only the forced cast (docs/swift.md#danger-marks).
   ['kotlin', 'import foo.Bar as Baz\nval s = x as String\nval t = y as? Int', ['as@32', 'as@52']],
   ['kotlin', 'val r = x.as(y)', []],
-  ['swift', 'let a = b as! Int', ['as@10']],
+  ['swift', 'let a = b as! Int', ['as!@10']],
+  ['swift', 'let a = b as? Int\nlet c = d as Int\nlet s = String(decoding: x, as: UTF8.self)', []],
   ['dart', "import 'package:x/x.dart' as x;\nfinal y = z as int;", ['as@44']],
   // Go: `any` is the checked `interface{}` alias, and `[T any]` means unconstrained.
   ['go', 'func f(v any) any { return v }\nfunc g[T any](x T) {}', []],

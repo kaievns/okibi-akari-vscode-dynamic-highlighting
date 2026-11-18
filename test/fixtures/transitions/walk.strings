@@ -1,0 +1,6 @@
+/* Greeting shown at launch. */
+"welcome_title" = "Welcome, %@!";
+"items_count" = "%d items";
+
+// A line comment.
+"quit" = "Quit";

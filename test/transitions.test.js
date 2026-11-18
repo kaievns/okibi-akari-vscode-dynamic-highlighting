@@ -334,6 +334,43 @@ test(`${CJVM_WALKS} random walks over walk.c, walk.cpp, walk.java, walk.kt and w
   t.diagnostic(`C, C++, Java, Kotlin and Groovy painted, in steps: ${seen}`);
 });
 
+const SWIFT_WALKS = Number(process.env.OKIBI_SWIFT_WALKS ?? 120);
+
+test(`${SWIFT_WALKS} random walks over walk.swift, walk.m as Objective-C and Objective-C++, walk.h as cpp and walk.metal, with strings, pbxproj, xcconfig and plist files, leave no leftovers`, async (t) => {
+  const shown = {
+    tint: 0, clay: 0, riskEscape: 0, riskDanger: 0, self: 0, swiftTint: 0, objcTint: 0, objcppTint: 0, objchTint: 0, metalTint: 0,
+    operatorRestore: 0, bracketRestore: 0, attributeRestore: 0, callRestore: 0, objcConstant: 0,
+  };
+  await walks(h.generateSwift, SWIFT_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r) => {
+    for (const e of r.got.editors) {
+      const roles = new Set(Object.keys(e.out ?? {}).map((k) => k.split(' ')[0]));
+      if (/\.(strings|pbxproj|xcconfig|plist|plist-xml)$/.test(e.uri)) {
+        assert.equal(roles.size, 0, `step ${i}: ${e.uri} is static content and paints nothing: ${[...roles].join(' ')}`);
+        continue;
+      }
+      if (!/\.(swift|objc|objcpp|objch|metal)$/.test(e.uri)) continue;
+      const tinted = [...roles].some((x) => /^(id|idg)\d$/.test(x));
+      if (tinted) shown.tint++;
+      if (tinted && e.uri.endsWith('.swift')) shown.swiftTint++;
+      if (tinted && e.uri.endsWith('.objc')) shown.objcTint++;
+      if (tinted && e.uri.endsWith('.objcpp')) shown.objcppTint++;
+      if (tinted && e.uri.endsWith('.objch')) shown.objchTint++;
+      if (tinted && e.uri.endsWith('.metal')) shown.metalTint++;
+      if (roles.has('numberEngaged')) shown.clay++;
+      for (const k of ['riskEscape', 'riskDanger', 'self']) if (roles.has(k)) shown[k]++;
+      for (const k of ['operatorRestore', 'bracketRestore', 'attributeRestore', 'callRestore']) {
+        if (!roles.has(k)) continue;
+        assert.ok(e.uri.endsWith('.swift'), `step ${i}: ${k} is Swift's alone: ${e.uri}`);
+        shown[k]++;
+      }
+      if (e.uri.endsWith('.objc') && roles.has('constantRestore')) shown.objcConstant++;
+    }
+  });
+  const seen = Object.entries(shown).map(([k, n]) => `${k} ${n}`).join(', ');
+  if (DEFAULT_RUN && SWIFT_WALKS === 120) for (const [k, n] of Object.entries(shown)) assert.ok(n > 0, `${k}: ${seen}`);
+  t.diagnostic(`Swift, Objective-C, Objective-C++, a header and Metal painted, in steps: ${seen}`);
+});
+
 const CANCEL_WALKS = Number(process.env.OKIBI_CANCEL_WALKS ?? 80);
 
 test(`${CANCEL_WALKS} random walks over walk.c and walk.cpp, cpptools cancelling the companion's requests, clangd or no server, leave no leftovers`, async (t) => {

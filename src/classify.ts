@@ -33,9 +33,10 @@ import { IntervalIndex, bestAt, buildIntervalIndex } from './intervals';
 import { rustInlineArgs } from './placeholders';
 import { LUA_KEYWORDS, LUA_STD, luaCallee, luaFacts } from './lua';
 import { rubyFacts, rubyTokens } from './ruby';
+import { SWIFT_KEYWORDS, swiftFacts, swiftTokens } from './swift';
 import { shellFacts, shellTokens } from './shell';
 import { isZigReserved, isZigTypeName, zigFacts } from './zig';
-import { cDirectiveRanges, cTypedefRanges, cppTemplateParams, javaLambdaParams, javaPatterns, kotlinCtorParams, kotlinCtorProperty, kotlinLocal, kotlinTokens, memberTest, signatureParameter, groovyClosureParams } from './cjvm';
+import { cDirectiveRanges, cTypedefRanges, cppTemplateParams, javaLambdaParams, javaPatterns, kotlinCtorParams, kotlinCtorProperty, kotlinLocal, kotlinTokens, memberTest, signatureParameter, groovyClosureParams, isObjc, objcFacts } from './cjvm';
 
 export type Cls = 'block' | 'fn' | 'out' | 'self';
 export type ClassSource = 'lsp' | 'heuristic' | 'mixed';
@@ -470,6 +471,8 @@ export function buildFileIndex(
   const shorthandRegions = languageId === 'svelte' || languageId === 'astro';
   // ruby-lsp types reads only; declarations and writes come from the bindings (docs/ruby.md).
   if (lx.syntax.family === 'ruby') tokens = rubyTokens(lx, tokens);
+  // sourcekit-lsp sends no declaration tokens and types parameters `variable` (docs/swift.md).
+  if (lx.syntax.family === 'swift') tokens = swiftTokens(lx, tokens);
   // Shell and fish: the bindings' variables, whatever the server sent (docs/tooling.md#bindings).
   if (lx.syntax.family === 'sh' || lx.syntax.family === 'fish') tokens = shellTokens<DecodedToken>(lx);
   const signatureFamily = lx.syntax.family === 'c' || lx.syntax.family === 'java' || lx.syntax.family === 'kotlin';
@@ -1026,6 +1029,9 @@ const CPP_KEYWORDS = new Set([...C_KEYWORDS,
   'template', 'this', 'throw', 'try', 'typeid', 'typename', 'using', 'virtual', 'wchar_t', 'xor', 'xor_eq',
   'override',
 ]);
+/** Metal's address spaces and function qualifiers qualify a type, as `const` does. */
+const METAL_KEYWORDS = new Set([...CPP_KEYWORDS, 'device', 'constant', 'thread', 'threadgroup', 'threadgroup_imageblock', 'ray_data', 'object_data',
+  'kernel', 'vertex', 'fragment', 'visible', 'stitchable', 'half', 'uint', 'ushort', 'uchar']);
 const JAVA_KEYWORDS = new Set([
   'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'const', 'continue',
   'default', 'do', 'double', 'else', 'enum', 'extends', 'final', 'finally', 'float', 'for', 'goto', 'if',
@@ -1043,9 +1049,10 @@ const KOTLIN_KEYWORDS = new Set([
 const GROOVY_KEYWORDS = new Set([...JAVA_KEYWORDS, 'def', 'in', 'as', 'trait', 'threadsafe']);
 function familyKeywords(lx: LexResult): Set<string> | undefined {
   switch (lx.syntax.family) {
-    case 'c': return isCppSyntax(lx.syntax) ? CPP_KEYWORDS : C_KEYWORDS;
+    case 'c': return lx.syntax.key === 'metal' ? METAL_KEYWORDS : isCppSyntax(lx.syntax) ? CPP_KEYWORDS : C_KEYWORDS;
     case 'java': return lx.syntax.groovy ? GROOVY_KEYWORDS : JAVA_KEYWORDS;
     case 'kotlin': return KOTLIN_KEYWORDS;
+    case 'swift': return SWIFT_KEYWORDS;
     default: return undefined;
   }
 }
@@ -1389,7 +1396,7 @@ function isMemberPosition(text: string, offset: number): boolean {
 }
 
 /** Families where `name=` inside a call's parentheses is a named-argument label. Elsewhere it is an assignment. */
-const LABEL_FAMILIES = new Set(['python', 'kotlin', 'nested', 'rust', 'hash', 'default']);
+const LABEL_FAMILIES = new Set(['python', 'kotlin', 'swift', 'nested', 'rust', 'hash', 'default']);
 
 /** Words that put a `(` in statement or operator position rather than after a callee. */
 const NON_CALLEE_WORDS = new Set([
@@ -2084,6 +2091,9 @@ function heuristicCandidate(lx: LexResult, id: LexId, nonData: Set<string>): boo
   if (lx.syntax.family === 'ruby') {
     return id.name !== '_' && rubyFacts(lx).binding.has(id.offset);
   }
+  if (lx.syntax.family === 'swift') {
+    return swiftFacts(lx).binding.has(id.offset);
+  }
   if (lx.syntax.family === 'sh' || lx.syntax.family === 'fish') {
     return shellFacts(lx).data.has(id.offset);
   }
@@ -2100,6 +2110,9 @@ function heuristicCandidate(lx: LexResult, id: LexId, nonData: Set<string>): boo
     return false;
   }
   if (id.name === '_' || isSelfName(id.name, lx.syntax.family, lx.syntax) || nonData.has(id.name)) {
+    return false;
+  }
+  if (isObjc(lx) && objcFacts(lx).selectorParts.has(id.offset)) {
     return false;
   }
   if (lx.syntax.family === 'python' && id.name === 'cls') {
@@ -2374,6 +2387,13 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
       if (lua.declSites.has(id.offset) || lua.globalSites.has(id.offset)) declare(id);
     }
   }
+  if (family === 'swift') {
+    const sw = swiftFacts(lx);
+    for (const id of ids) if (sw.declSites.has(id.offset)) declare(id);
+    const base = { occurrences, firstFileOffset, declOffsets, declSites, candidateAt };
+    perLang.set(languageId ?? '', base);
+    return base;
+  }
   if (family === 'ruby') {
     const ruby = rubyFacts(lx, blocks);
     for (const id of ids) if (ruby.declSites.has(id.offset) || ruby.globalSites.has(id.offset)) declare(id);
@@ -2391,6 +2411,9 @@ function heuristicBaseFor(lx: LexResult, languageId: string | undefined, blocks:
   if (lx.syntax.key === 'view') patternDeclarations(lx, declare);
   if (zig) {
     for (const id of zig.captures) declare(id);
+  }
+  if (isObjc(lx)) {
+    for (const id of objcFacts(lx).params) declare(id);
   }
   if (family === 'c' || family === 'java' || family === 'default') {
     for (let i = 1; i < ids.length; i++) {
@@ -2537,7 +2560,7 @@ function patternBindings(lx: LexResult, start: number, end: number, rust: boolea
  * Declaration shapes that bind more than one name, or whose name is not right
  * after a keyword: destructuring after `let` / `const` / `var` / `val`, Rust
  * `if let` / `while let` and match-arm patterns, `catch` parameters, Kotlin
- * `{ a, b -> }` and Swift `{ a, b in }` lambda parameters, Go `var ( … )`
+ * `{ a, b -> }` and the `nested` family's `{ a, b in }` lambda parameters, Go `var ( … )`
  * groups, C-family declarator lists and `*` / `&` / generic-typed declarators,
  * Python bracketed and starred targets, and PHP `$name =` statements.
  */
@@ -2573,7 +2596,7 @@ function declareShapes(lx: LexResult, keywords: Set<string>, declare: (id: LexId
     // C++ `auto` declarations the declarator rule skips, `auto` being a keyword: structured
     // bindings (`auto [a, b] = p`, `const auto& [k, v] : m`) and a reference or pointer to
     // `auto`, a range-for's included (`for (const auto& x : xs)`, `auto* p = q;`).
-    if (id.name === 'auto' && (lx.syntax.key === 'cpp' || lx.syntax.key === 'objcpp')) {
+    if (id.name === 'auto' && isCppSyntax(lx.syntax)) {
       let open = nextSignificant(lx, id.offset + id.length);
       while (open >= 0 && (text[open] === '&' || text[open] === '*')) open = nextSignificant(lx, open + 1);
       if (open >= 0 && text[open] === '[' && lx.isCode(open)) {
@@ -2653,7 +2676,7 @@ function declareRustArms(lx: LexResult, declare: (id: LexId) => void): void {
   }
 }
 
-/** Kotlin `{ a, b -> … }` / `{ (k, v) -> … }` and Swift `{ a, b in … }` / `{ [weak self] a in … }` parameters. */
+/** Kotlin `{ a, b -> … }` / `{ (k, v) -> … }` and the `nested` family's `{ a, b in … }` / `{ [weak self] a in … }` parameters; Swift's are its facts' (src/swift.ts). */
 function declareLambdaParams(lx: LexResult, arrow: '->' | 'in', declare: (id: LexId) => void): void {
   const text = lx.text;
   for (const open of lx.punct) {

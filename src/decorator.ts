@@ -46,6 +46,7 @@ import {
 } from './focus';
 import { LexId, LexResult, forgetLex, lexFor, relex, rememberLex, selfWords, syntaxFor } from './lex';
 import { cMacroRestores, kotlinTemplateSpans } from './cjvm';
+import { swiftRestores } from './swift';
 import { PhaseMachine, Phase, PHASE_KANJI, DwellConfig, DEFAULT_DWELL, isTypingEdit } from './phases';
 import { TOKENS, pick, gutterStripeUri, buildDecorationPool, DecorationPool, decorationType, rangeBehaviorOf } from './tokens';
 import { mayForceMove, rangesMovedBy } from './tracking';
@@ -120,6 +121,7 @@ interface Band1Inputs {
   readonly ok: boolean;
   readonly strings: boolean;
   readonly typed: string;
+  readonly calls: string;
 }
 
 /** The `import * as` restore (docs/import-restore.md#javascript-and-typescript). A JSX tag is not a use: the theme paints tags. */
@@ -237,6 +239,11 @@ export class Decorator implements vscode.Disposable {
   private constantCache = new WeakMap<
     vscode.TextDocument,
     { version: number; ranges: vscode.Range[] }
+  >();
+  // Swift operator, subscript-bracket and attribute ranges per document version, for the same reason.
+  private swiftRestoreCache = new WeakMap<
+    vscode.TextDocument,
+    { version: number; operators: vscode.Range[]; brackets: vscode.Range[]; attributes: vscode.Range[]; calls: vscode.Range[]; callsKey: string }
   >();
   // Comment-restore ranges (Go doc links, brackets in Rust comments) per document version, for the same reason.
   private commentRestoreCache = new WeakMap<
@@ -1183,6 +1190,7 @@ export class Decorator implements vscode.Disposable {
       ok: this.classifier.semanticOk(doc),
       strings: this.classifier.typesStrings(doc),
       typed: this.classifier.typedNamespacesOf(doc),
+      calls: this.classifier.swiftStaticCallsOf(doc)?.key ?? '',
     };
   }
 
@@ -1190,7 +1198,8 @@ export class Decorator implements vscode.Disposable {
   private band1Current(doc: vscode.TextDocument): boolean {
     const seen = this.band1Seen.get(doc);
     const now = this.band1Inputs(doc);
-    return seen !== undefined && seen.paths === now.paths && seen.ok === now.ok && seen.strings === now.strings && seen.typed === now.typed;
+    return seen !== undefined && seen.paths === now.paths && seen.ok === now.ok && seen.strings === now.strings && seen.typed === now.typed
+      && seen.calls === now.calls;
   }
 
   /**
@@ -1208,6 +1217,7 @@ export class Decorator implements vscode.Disposable {
     this.renderMarkdownMarks(editor, doc);
     this.renderSelf(editor, doc);
     this.renderConstantRestore(editor, doc);
+    this.renderSwiftRestore(editor, doc);
     this.renderPlaceholders(editor, doc);
     this.renderCommentRestore(editor, doc);
     this.renderStringRestore(editor, doc);
@@ -1377,6 +1387,46 @@ export class Decorator implements vscode.Disposable {
     }
     this.dbg(`  band1 constants: ${ranges.length} ranges (phase-independent)`);
     this.applyType(editor, this.pool.constantRestore, ranges);
+  }
+
+  /**
+   * Paint Swift operators operator grey, subscript brackets at normal weight and an
+   * attribute's `@` and name violet, file-wide and phase-independent: sourcekit-lsp types a
+   * user operator `method.static` and a bracket `method.defaultLibrary` or `method`, all bold,
+   * and an attribute's name as a type or a macro, and no theme key tells them from a call or a
+   * type. The paint is the grammar's, so with no server it
+   * changes nothing (docs/swift.md#band-1-restores). Cached per document version. A named
+   * static call the server's answer for this version types as an operator paints a bold call.
+   */
+  private renderSwiftRestore(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    if (band1LangOf(doc) !== 'swift') {
+      this.applyType(editor, this.pool.operatorRestore, []);
+      this.applyType(editor, this.pool.bracketRestore, []);
+      this.applyType(editor, this.pool.attributeRestore, []);
+      this.applyType(editor, this.pool.callRestore, []);
+      return;
+    }
+    let cached = this.swiftRestoreCache.get(doc);
+    if (!cached || cached.version !== doc.version) {
+      const r = swiftRestores(this.textStateFor(doc).lex);
+      const toRanges = (xs: OffsetRange[]): vscode.Range[] => xs.map((x) => this.toRange(doc, x));
+      cached = { version: doc.version, operators: toRanges(r.operators), brackets: toRanges(r.brackets), attributes: toRanges(r.attributes), calls: [], callsKey: '' };
+      this.swiftRestoreCache.set(doc, cached);
+    }
+    this.dbg(`  band1 swift: ${cached.operators.length} operators, ${cached.brackets.length} brackets, ${cached.attributes.length} attributes (phase-independent)`);
+    this.applyType(editor, this.pool.operatorRestore, cached.operators);
+    this.applyType(editor, this.pool.bracketRestore, cached.brackets);
+    this.applyType(editor, this.pool.attributeRestore, cached.attributes);
+    const calls = this.classifier.swiftStaticCallsOf(doc);
+    if (!calls || calls.version !== doc.version) {
+      this.applyType(editor, this.pool.callRestore, []);
+      return;
+    }
+    if (cached.callsKey !== calls.key) {
+      cached.calls = calls.ranges.map((x) => this.toRange(doc, x));
+      cached.callsKey = calls.key;
+    }
+    this.applyType(editor, this.pool.callRestore, cached.calls);
   }
 
   /**

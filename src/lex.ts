@@ -33,7 +33,7 @@ export interface LexId {
   length: number;
 }
 
-type Family = 'js' | 'go' | 'python' | 'rust' | 'c' | 'java' | 'kotlin' | 'nested' | 'hash' | 'lua' | 'ruby' | 'zig' | 'sh' | 'fish' | 'default';
+type Family = 'js' | 'go' | 'python' | 'rust' | 'c' | 'java' | 'kotlin' | 'swift' | 'nested' | 'hash' | 'lua' | 'ruby' | 'zig' | 'sh' | 'fish' | 'default';
 
 export interface LangSyntax {
   readonly family: Family;
@@ -64,11 +64,14 @@ def(['rust'], { ...base, family: 'rust', key: 'rust' });
 def(['c'], { ...base, family: 'c', key: 'c' });
 def(['objective-c'], { ...base, family: 'c', key: 'objc' });
 def(['cpp', 'cuda-cpp'], { ...base, family: 'c', key: 'cpp', cppRaw: true });
+/** The Metal Shading Language: C++14 with address spaces and `[[…]]` attributes. */
+def(['metal'], { ...base, family: 'c', key: 'metal', cppRaw: true });
 def(['objective-cpp'], { ...base, family: 'c', key: 'objcpp', cppRaw: true });
 def(['java'], { ...base, family: 'java', key: 'java' });
 def(['groovy'], { ...base, family: 'java', key: 'groovy', groovy: true });
 def(['kotlin'], { ...base, family: 'kotlin', key: 'kotlin' });
-def(['swift', 'scala', 'dart'], { ...base, family: 'nested', key: 'nested' });
+def(['swift'], { ...base, family: 'swift', key: 'swift' });
+def(['scala', 'dart'], { ...base, family: 'nested', key: 'nested' });
 def(['perl', 'r', 'julia', 'elixir', 'coffeescript', 'powershell'], { ...base, family: 'hash', key: 'hash' });
 /** Shell and fish have lexers of their own (src/shell.ts): variable names are the identifiers. */
 def(['shellscript'], { ...base, family: 'sh', key: 'sh' });
@@ -79,7 +82,7 @@ def(['zig', 'zon'], { ...base, family: 'zig', key: 'zig' });
 const DEFAULT_SYNTAX: LangSyntax = { ...base, family: 'default', key: 'default' };
 
 /** C++ and Objective-C++: templates, `this`, the C++ keywords. */
-export const isCppSyntax = (s: LangSyntax): boolean => s.key === 'cpp' || s.key === 'objcpp';
+export const isCppSyntax = (s: LangSyntax): boolean => s.key === 'cpp' || s.key === 'objcpp' || s.key === 'metal';
 
 const SELF_THIS = new Set(['self', 'this']);
 const THIS = new Set(['this']);
@@ -92,6 +95,8 @@ export function selfWords(s: LangSyntax): ReadonlySet<string> {
     case 'java':
     case 'kotlin':
       return THIS;
+    case 'swift':
+      return SELF;
     case 'zig':
     case 'ruby':
       return SELF;
@@ -99,7 +104,7 @@ export function selfWords(s: LangSyntax): ReadonlySet<string> {
     case 'fish':
       return NONE;
     case 'c':
-      return s.key === 'c' ? NONE : s.key === 'objc' ? SELF : s.key === 'cpp' ? THIS : SELF_THIS;
+      return s.key === 'c' ? NONE : s.key === 'objc' ? SELF : s.key === 'cpp' || s.key === 'metal' ? THIS : SELF_THIS;
     default:
       return SELF_THIS;
   }
@@ -195,7 +200,12 @@ const JS_EXPR_KEYWORDS = new Set([
   'case', 'default', 'do', 'else', 'yield', 'await',
 ]);
 
-const enum Stop { Eof, Hole, HoleLine, JsxExpr, FHole, FHoleLine }
+const enum Stop { Eof, Hole, HoleLine, JsxExpr, FHole, FHoleLine, ParenHole, ParenHoleLine }
+
+/** Swift words after which a `/` opens a regex literal rather than dividing. */
+const SWIFT_EXPR_KEYWORDS = new Set([
+  'return', 'case', 'in', 'try', 'await', 'if', 'guard', 'while', 'where', 'else', 'throw', 'switch', 'repeat', 'is', 'as', 'yield', 'let', 'var',
+]);
 
 /** Ruby words after which `/`, `%`, `?`, `<<` and `:` start a literal. */
 const RUBY_EXPR_KEYWORDS = new Set([
@@ -283,7 +293,7 @@ class Lexer {
     this.n = t.length;
     this.fam = syn.family;
     this.slashComments = this.fam !== 'python' && this.fam !== 'hash' && this.fam !== 'lua' && this.fam !== 'ruby';
-    this.nests = this.fam === 'rust' || this.fam === 'kotlin' || this.fam === 'nested';
+    this.nests = this.fam === 'rust' || this.fam === 'kotlin' || this.fam === 'nested' || this.fam === 'swift';
     this.locals = this.fam === 'ruby' ? new Set() : undefined;
   }
 
@@ -312,9 +322,10 @@ class Lexer {
     const t = this.t;
     const n = this.n;
     const fam = this.fam;
-    const lineBound = stop === Stop.HoleLine || stop === Stop.FHoleLine;
+    const lineBound = stop === Stop.HoleLine || stop === Stop.FHoleLine || stop === Stop.ParenHoleLine;
     const fhole = stop === Stop.FHole || stop === Stop.FHoleLine;
-    const braceStop = stop !== Stop.Eof;
+    const parenStop = stop === Stop.ParenHole || stop === Stop.ParenHoleLine;
+    const braceStop = stop !== Stop.Eof && !parenStop;
     while (i < n) {
       const c = t.charCodeAt(i);
       if (c === CH.lf) {
@@ -432,6 +443,7 @@ class Lexer {
           break;
         case CH.rparen:
         case CH.rbrack:
+          if (parenStop && bdepth === 0) return i;
           bdepth--;
           this.punct.push(i);
           this.exprStart = false;
@@ -469,6 +481,13 @@ class Lexer {
           if (this.syn.groovy && this.exprStart) {
             i = this.groovySlashy(i, i + 1, false);
             continue;
+          }
+          if (fam === 'swift' && this.exprStart) {
+            const r = this.swiftRegex(i, i, 0);
+            if (r >= 0) {
+              i = r;
+              continue;
+            }
           }
           this.exprStart = true;
           this.stmtStart = false;
@@ -605,6 +624,8 @@ class Lexer {
       }
       case 'c':
         return this.atLineStart(i) ? this.directive(i) : -1;
+      case 'swift':
+        return this.swiftHash(i);
       default:
         return this.syn.php && t.charCodeAt(i + 1) !== CH.lbrack ? this.lineComment(i) : -1;
     }
@@ -1368,6 +1389,10 @@ class Lexer {
         else if (c === CH.dq && this.triple(q)) r = this.tripleString(start, q, true);
         else r = this.plain(start, q, false, true);
         break;
+      case 'swift':
+        r = c === CH.bq ? this.backtickIdent(q) : c === CH.dq ? this.swiftString(start, q, 0) : -1;
+        if (c === CH.bq && r >= 0) return r;
+        break;
       case 'kotlin':
         if (c === CH.bq) r = this.backtickIdent(q);
         else if (c === CH.dq) r = this.kotlinString(start, q);
@@ -1857,7 +1882,135 @@ class Lexer {
     return n;
   }
 
-  /** Kotlin `` `name with spaces` `` is an identifier. */
+  /**
+   * Swift `#` at `i`: `#"…"#` and `#"""…"""#` raw strings (any number of `#`), a `#/…/#`
+   * regex literal, or a `#if`, `#available`, `#selector`, `#Preview` word, one identifier
+   * with its `#`. Else -1.
+   */
+  private swiftHash(i: number): number {
+    const t = this.t;
+    let h = i;
+    while (t.charCodeAt(h) === CH.hash) h++;
+    const pounds = h - i;
+    if (t.charCodeAt(h) === CH.dq) return this.swiftString(i, h, pounds);
+    if (t.charCodeAt(h) === CH.slash) return this.swiftRegex(i, h, pounds);
+    if (pounds === 1 && idStartWidth(t, h) > 0) {
+      const end = scanIdent(t, h);
+      this.idents.push({ name: t.slice(i, end), offset: i, length: end - i });
+      this.exprStart = true;
+      this.stmtStart = false;
+      return end;
+    }
+    return -1;
+  }
+
+  /**
+   * A Swift string from `start` (its first `#`, or the quote) with `pounds` `#`s before
+   * the quote at `q`: `"…"` to the line end, `"""…"""` multi-line. With `pounds` > 0 an
+   * escape and an interpolation need the same `#`s after the backslash (`\#(x)`), and the
+   * literal closes at a quote followed by them. An interpolation `\(…)` is a hole that ends
+   * at its unmatched `)`.
+   */
+  private swiftString(start: number, q: number, pounds: number): number {
+    const t = this.t;
+    const n = this.n;
+    const multi = this.triple(q);
+    const closer = (multi ? '"""' : '"') + '#'.repeat(pounds);
+    let seg = start;
+    let j = q + (multi ? 3 : 1);
+    while (j < n) {
+      const c = t.charCodeAt(j);
+      if (c === CH.bslash) {
+        let k = j + 1;
+        let p = 0;
+        while (p < pounds && t.charCodeAt(k) === CH.hash) {
+          k++;
+          p++;
+        }
+        if (p < pounds) {
+          j++;
+          continue;
+        }
+        if (t.charCodeAt(k) === CH.lparen && this.nest < MAX_NEST) {
+          this.span(seg, k + 1, 'string');
+          const end = this.hole(k + 1, multi ? Stop.ParenHole : Stop.ParenHoleLine);
+          if (end >= n) return n;
+          if (t.charCodeAt(end) !== CH.rparen) {
+            seg = end;
+            j = end;
+            if (!multi) break;
+            continue;
+          }
+          seg = end;
+          j = end + 1;
+          continue;
+        }
+        j = k + (this.newlineAt(k) || 1);
+        continue;
+      }
+      if (c === CH.dq && t.startsWith(closer, j)) {
+        j += closer.length;
+        this.span(seg, j, 'string');
+        return j;
+      }
+      if (!multi && this.newlineAt(j) > 0) break;
+      j++;
+    }
+    const end = Math.min(j, n);
+    this.span(seg, end, 'string');
+    return end;
+  }
+
+  /**
+   * A Swift regex literal at `slash`, from `start` (its first `#`), or -1. `#/…/#` may span
+   * lines when the `/` ends its line; a bare `/…/` holds no line break, does not open with a
+   * blank or close after one, and holds no `)` it does not open (SE-0354), so `a / b / c`
+   * and `f(x / 2, y / 3)` divide.
+   */
+  private swiftRegex(start: number, slash: number, pounds: number): number {
+    const t = this.t;
+    const n = this.n;
+    const closer = '/' + '#'.repeat(pounds);
+    const first = t.charCodeAt(slash + 1);
+    const extended = pounds > 0 && this.newlineAt(slash + 1) > 0;
+    if (pounds === 0 && (first === CH.sp || first === CH.tab || first === CH.slash || first === CH.star || first === CH.eq || Number.isNaN(first) || this.newlineAt(slash + 1) > 0)) return -1;
+    let depth = 0;
+    let inClass = false;
+    let j = slash + 1;
+    while (j < n) {
+      const c = t.charCodeAt(j);
+      if (c === CH.bslash) {
+        j += 2;
+        continue;
+      }
+      if (!extended && this.newlineAt(j) > 0) return -1;
+      if (inClass) {
+        if (c === CH.rbrack) inClass = false;
+        j++;
+        continue;
+      }
+      if (c === CH.lbrack) inClass = true;
+      else if (c === CH.lparen) depth++;
+      else if (c === CH.rparen && --depth < 0 && pounds === 0) return -1;
+      else if (c === CH.slash && t.startsWith(closer, j)) {
+        if (pounds === 0) {
+          const before = t.charCodeAt(j - 1);
+          if (before === CH.sp || before === CH.tab) return -1;
+        }
+        const end = j + closer.length;
+        this.span(start, end, 'string');
+        this.exprStart = false;
+        this.stmtStart = false;
+        return end;
+      }
+      j++;
+    }
+    if (pounds === 0) return -1;
+    this.span(start, n, 'string');
+    return n;
+  }
+
+  /** Kotlin and Swift `` `name with spaces` `` is an identifier. */
   private backtickIdent(q: number): number {
     const t = this.t;
     const close = t.indexOf('`', q + 1);
@@ -1884,7 +2037,8 @@ class Lexer {
     }
     const name = t.slice(i, end);
     this.idents.push({ name, offset: i, length: end - i });
-    this.exprStart = (this.fam === 'js' || this.syn.groovy) && JS_EXPR_KEYWORDS.has(name) && t.charCodeAt(i - 1) !== CH.dot;
+    this.exprStart = this.fam === 'swift' ? SWIFT_EXPR_KEYWORDS.has(name) && t.charCodeAt(i - 1) !== CH.dot
+      : (this.fam === 'js' || this.syn.groovy) && JS_EXPR_KEYWORDS.has(name) && t.charCodeAt(i - 1) !== CH.dot;
     this.stmtStart = false;
     return end;
   }

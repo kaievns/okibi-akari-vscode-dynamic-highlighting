@@ -167,7 +167,7 @@ function rolesOf(d) {
   d.pool.id.forEach((t, i) => m.set(t, `id${i}`));
   d.pool.idg.forEach((t, i) => m.set(t, `idg${i}`));
   for (const k of ['self', 'riskAsync', 'riskDanger', 'riskEscape', 'numberEngaged', 'placeholder',
-    'commentRestore', 'stringRestore', 'constantRestore', 'importRestore', 'shadowRestore', 'mdHighlight', 'mdLinkPlain']) {
+    'commentRestore', 'stringRestore', 'constantRestore', 'operatorRestore', 'bracketRestore', 'attributeRestore', 'callRestore', 'importRestore', 'shadowRestore', 'mdHighlight', 'mdLinkPlain']) {
     m.set(d.pool[k], k);
   }
   return m;
@@ -302,8 +302,8 @@ function nonFlowAsked(docs) {
 
 const LEGEND = {
   tokenTypes: ['variable', 'parameter', 'property', 'function', 'class', 'struct', 'namespace',
-    'keyword', 'selfKeyword', 'selfTypeKeyword', 'const', 'string', 'type', 'typeParameter'],
-  tokenModifiers: ['declaration', 'readonly', 'defaultLibrary'],
+    'keyword', 'selfKeyword', 'selfTypeKeyword', 'const', 'string', 'type', 'typeParameter', 'method'],
+  tokenModifiers: ['declaration', 'readonly', 'defaultLibrary', 'static'],
 };
 const KEYWORDS = new Set(('import from as export class private async await const let var for if return function new ' +
   'def in range len True False None pub struct impl fn use mut self Self crate super Ok package func type ' +
@@ -322,6 +322,7 @@ function tokensFor(text, languageId, degraded, strings) {
   if (sfc.COMPONENT_LANGUAGES.has(languageId)) return encode(text, componentServerTokens(text, languageId, degraded));
   if (languageId === 'zig') return encode(text, zigLspTokens(text, strings));
   if (CJVM_LANGUAGES.has(languageId)) return encode(text, cjvmServerTokens(text, languageId, degraded));
+  if (languageId === 'swift') return encode(text, sourcekitTokens(text, degraded));
   const toks = [];
   const declared = new Set();
   const js = languageId === 'javascript' || languageId === 'javascriptreact';
@@ -425,6 +426,40 @@ function cjvmServerTokens(text, languageId, degraded) {
     toks.push({ offset: id.offset, length: id.length, type, modifiers: mods });
   }
   return toks;
+}
+
+const SWIFT_WORDS = new Set(('import public private fileprivate internal open struct class enum actor protocol extension ' +
+  'func init deinit subscript var let static final override mutating async throws await try return if guard else for in ' +
+  'while repeat switch case default break continue fallthrough throw do catch defer where as is self Self super nil true ' +
+  'false some any inout get set willSet didSet nonisolated unowned weak lazy unsafe').split(' '));
+
+/**
+ * sourcekit-lsp 6.4's shape: no token at a declaration, `variable` over every read
+ * (parameters too), `property` over members, `method` over calls, and
+ * `method.static.defaultLibrary` over operators and a call on a type (`Type.name(`);
+ * `degraded` types only the first half of the file, as an answer for a file that does
+ * not type-check.
+ */
+function sourcekitTokens(text, degraded) {
+  const lx = lexFor(text, 'swift');
+  const toks = [];
+  const declared = new Set();
+  for (const id of lx.idents) {
+    if (SWIFT_WORDS.has(id.name) || id.name.startsWith('#')) continue;
+    if (degraded && id.offset > text.length / 2) break;
+    const next = text[id.offset + id.length];
+    const onType = next === '(' && text[id.offset - 1] === '.' && /[A-Z]\w*$/.test(text.slice(Math.max(0, id.offset - 40), id.offset - 1));
+    const type = onType ? 'method' : next === '(' ? 'function' : text[id.offset - 1] === '.' ? 'property' : /^[A-Z]/.test(id.name) ? 'struct' : 'variable';
+    if (type === 'variable' && !declared.has(id.name) && !id.name.startsWith('$')) {
+      declared.add(id.name);
+      continue;
+    }
+    toks.push({ offset: id.offset, length: id.length, type, modifiers: onType ? ['static', 'defaultLibrary'] : [] });
+  }
+  for (const m of text.matchAll(/(?<=\s)(?:==|\+=|<|\.\.<|\+|-=)(?=\s)/g)) {
+    if (lx.isCode(m.index)) toks.push({ offset: m.index, length: m[0].length, type: 'method', modifiers: ['static', 'defaultLibrary'] });
+  }
+  return toks.sort((a, b) => a.offset - b.offset);
 }
 
 /**
@@ -560,8 +595,43 @@ function symbolsFor(text, languageId) {
   return top;
 }
 
+/** clangd's legend, which sourcekit-lsp registers for C-family documents. */
+const CLANGD_LEGEND = {
+  tokenTypes: ['variable', 'variable', 'parameter', 'function', 'method', 'function', 'property', 'variable', 'class', 'interface', 'enum',
+    'enumMember', 'type', 'type', 'unknown', 'namespace', 'typeParameter', 'concept', 'type', 'macro', 'modifier', 'operator', 'bracket', 'label', 'comment'],
+  tokenModifiers: ['declaration', 'definition', 'deprecated', 'deduced', 'readonly', 'static', 'abstract', 'virtual', 'dependentName', 'defaultLibrary',
+    'usedAsMutableReference', 'usedAsMutablePointer', 'constructorOrDestructor', 'userDefined', 'functionScope', 'classScope', 'fileScope', 'globalScope'],
+};
+/** sourcekit-lsp's legend indices, which its C-family data carry under clangd's legend. */
+const SK_TYPES = ['namespace', 'type', 'class', 'enum', 'interface', 'struct', 'typeParameter', 'parameter', 'variable', 'property', 'enumMember',
+  'event', 'function', 'method', 'macro'];
+
+/** An Objective-C answer as sourcekit-lsp sends it: clangd's legend, its own indices. */
+function sourcekitObjcAnswer(text) {
+  const toks = cjvmServerTokens(text, 'c', false).map((t) => ({ ...t, type: t.type === 'class' ? 'class' : t.type === 'function' ? 'method' : t.type }));
+  for (const t of toks) if (t.type === 'class') t.modifiers = [...t.modifiers, 'defaultLibrary'];
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  const data = [];
+  let pl = 0, pc = 0, l = 0;
+  for (const t of toks) {
+    while (l + 1 < starts.length && starts[l + 1] <= t.offset) l++;
+    const c = t.offset - starts[l];
+    const mods = (t.modifiers.includes('declaration') ? 1 : 0) | (t.modifiers.includes('defaultLibrary') ? 1 << 9 : 0) | (1 << 20);
+    data.push(l - pl, l === pl ? c - pc : c, t.length, SK_TYPES.indexOf(t.type), mods);
+    pl = l;
+    pc = c;
+  }
+  return { data };
+}
+
 function answerFor(cmd, text, languageId, mode, symbols) {
   if (mode === 'none') return undefined;
+  if (mode === 'sourcekit-objc') {
+    if (cmd === 'vscode.provideDocumentSemanticTokensLegend') return CLANGD_LEGEND;
+    if (cmd === 'vscode.provideDocumentSemanticTokens') return sourcekitObjcAnswer(text);
+    return [];
+  }
   if (cmd === 'vscode.provideDocumentSemanticTokensLegend') return LEGEND;
   if (cmd === 'vscode.provideDocumentSemanticTokens') {
     return mode === 'empty' ? undefined : tokensFor(text, languageId, mode === 'degraded', mode === 'strings');
@@ -615,6 +685,16 @@ const FIXTURES = {
   java: { lang: 'java', file: 'walk.java' },
   kt: { lang: 'kotlin', file: 'walk.kt' },
   cmake: { lang: 'cmake', file: 'walk.cmake', cjvmStatic: true },
+  swift: { lang: 'swift', file: 'walk.swift' },
+  objc: { lang: 'objective-c', file: 'walk.m' },
+  objcpp: { lang: 'objective-cpp', file: 'walk.m' },
+  objch: { lang: 'cpp', file: 'walk.h' },
+  metal: { lang: 'metal', file: 'walk.metal', noServer: true },
+  strings: { lang: 'strings', file: 'walk.strings', cjvmStatic: true },
+  pbxproj: { lang: 'project.pbxproj', file: 'walk.pbxproj', cjvmStatic: true },
+  xcconfig: { lang: 'xcconfig', file: 'walk.xcconfig', cjvmStatic: true },
+  plist: { lang: 'plist', file: 'walk.plist', cjvmStatic: true },
+  'plist-xml': { lang: 'xml', file: 'walk.plist', cjvmStatic: true },
   'gradle.kts': { lang: 'kotlin', file: 'walk.gradle.kts', cjvmStatic: true },
   'gradle-kotlin-dsl': { lang: 'gradle-kotlin-dsl', file: 'walk.gradle.kts', cjvmStatic: true },
   groovy: { lang: 'groovy', file: 'walk.groovy', noServer: true },
@@ -994,6 +1074,7 @@ class World {
         if (wc.pathKeywords.has(doc)) fc.pathKeywords.set(doc, wc.pathKeywords.get(doc));
         if (wc.stringLiterals.has(doc)) fc.stringLiterals.add(doc);
         if (wc.typedNamespaces.has(doc)) fc.typedNamespaces.set(doc, wc.typedNamespaces.get(doc));
+        if (wc.staticCalls.has(doc)) fc.staticCalls.set(doc, wc.staticCalls.get(doc));
         if (wc.coldAttempts.has(doc)) fc.coldAttempts.set(doc, wc.coldAttempts.get(doc));
       }
       fc.providerless = new Set(wc.providerless);
@@ -1571,6 +1652,28 @@ function generateCjvm(seed, steps) {
 }
 
 /**
+ * A walk with a Swift, Objective-C, Objective-C++, Objective-C header (cpp) or Metal file
+ * first, its server sourcekit-lsp-shaped (Swift: no declaration tokens; Objective-C and
+ * Objective-C++: clangd's legend over sourcekit-lsp's indices), degraded, silent or none;
+ * then the same file, an Apple static format, TypeScript or Python.
+ */
+const SWIFT_KEYS = ['swift', 'objc', 'objcpp', 'objch', 'metal'];
+function generateSwift(seed, steps) {
+  const { events } = generate(seed, steps);
+  const rnd = mulberry32(seed ^ 0x73776674);
+  const first = SWIFT_KEYS[seed % SWIFT_KEYS.length];
+  const second = pickOf([first, first, 'strings', 'pbxproj', 'xcconfig', 'plist', 'plist-xml', 'ts', 'py'], rnd());
+  const docs = second === first ? [first] : [first, second];
+  const provider = {};
+  for (const key of docs) {
+    if (FIXTURES[key].cjvmStatic || FIXTURES[key].noServer) continue;
+    const modes = key === 'objc' || key === 'objcpp' ? ['sourcekit-objc', 'sourcekit-objc', 'ok', 'none', 'empty'] : ['ok', 'ok', 'degraded', 'none', 'empty'];
+    provider[FIXTURES[key].lang] = { mode: pickOf(modes, rnd()), latency: pickOf([0, 0, 90, 300], rnd()) };
+  }
+  return { cfg: { docs, split: rnd() < 0.35, provider }, events };
+}
+
+/**
  * A walk with a C or C++ file first, its server cpptools-shaped and cancelling (one
  * request waits per file; the editor's own requests for each new version cancel the
  * companion's, up to 3 times before the answer arrives), or clangd-shaped, or none, for
@@ -1970,5 +2073,5 @@ async function shrink(cfg, events, failStep) {
 const show = (cfg, events) => `cfg: ${JSON.stringify(cfg)}\n` + events.map((e) => `  ${JSON.stringify(e)}`).join('\n');
 
 module.exports = {
-  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateShell, generateShellReclose, TOOLING_KEYS, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateCjvm, generateCjvmCancel, generateProse, generateContainers, generateSheets, generatePhp, generateMdx, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, SHEET_KEYS, PROSE_KEYS,
+  enterFakeTime, exitFakeTime, generate, generateReclose, generateLua, generateShell, generateShellReclose, TOOLING_KEYS, generateJs, generateHtml, generateComponents, COMPONENT_KEYS, generateLuaReclose, generateRuby, generateRubyReclose, generateZig, generateZigReclose, generateCjvm, generateCjvmCancel, generateSwift, generateProse, generateContainers, generateSheets, generatePhp, generateMdx, runWalk, shrink, show, acceptEdit, FIXTURES, DATA_KEYS, CONTAINER_KEYS, WEB_KEYS, SHEET_KEYS, PROSE_KEYS,
 };

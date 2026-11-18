@@ -1,8 +1,10 @@
-# C, C++, Java, Kotlin and Groovy
+# C, C++, Objective-C, Metal, Java, Kotlin and Groovy
 
-`c`, `cpp`, `cuda-cpp`, `objective-c`, `objective-cpp`, `java`, `kotlin` and
-`groovy` are code languages: brace blocks, data identities, escape and danger
-marks, and the band-1 restores ([Band-1 restores](#band-1-restores)). CMake, Gradle build scripts in either
+`c`, `cpp`, `cuda-cpp`, `objective-c`, `objective-cpp`, `metal`, `java`, `kotlin`
+and `groovy` are code languages: brace blocks, data identities, escape and danger
+marks, and the band-1 restores ([Band-1 restores](#band-1-restores)). Objective-C's
+methods, selectors and servers: [Objective-C](#objective-c). Swift:
+[swift.md](swift.md). CMake, Gradle build scripts in either
 DSL, makefiles, devicetree and ZMK keymaps and Maven `pom.xml` are static
 content ([Static content](#static-content)). `src/cjvm.ts` holds the facts the
 classifier reads, `src/lex.ts` the lexer keys, `src/focus.ts` the function
@@ -56,6 +58,7 @@ cpptools answered nothing, or a few tokens, for 3 C files (`stdio.h`, zlib's
 | `objc` | `objective-c` | `self` is the receiver |
 | `cpp` | `cpp`, `cuda-cpp` | `R"d(…)d"` raw strings, C++ keywords, templates, `this` |
 | `objcpp` | `objective-cpp` | as `cpp`, and `self` too |
+| `metal` | `metal` | as `cpp`; the address spaces and function qualifiers (`device`, `constant`, `thread`, `threadgroup`, `kernel`, `vertex`, `fragment`, `visible`, `stitchable`) and `half`, `uint`, `ushort`, `uchar` are keywords |
 | `java` | `java` | |
 | `groovy` | `groovy` | Groovy strings, below |
 | `kotlin` | `kotlin` | |
@@ -165,8 +168,10 @@ memory or drops a qualifier marks, a cast that converts a value does not.
 
 | Language | Marks | Does not mark |
 |---|---|---|
-| `c`, `objective-c` | `(T *)x`, `(const T *)x`: a C cast to a pointer type | `(int)d`, `(void)x`, `(size_t)n`: value casts |
-| `cpp`, `cuda-cpp`, `objective-cpp` | `reinterpret_cast<…>`, `const_cast<…>`, C casts to a pointer or reference type | `static_cast`, `dynamic_cast`, `std::bit_cast`, value casts |
+| `c` | `(T *)x`, `(const T *)x`: a C cast to a pointer type | `(int)d`, `(void)x`, `(size_t)n`: value casts |
+| `objective-c` | C's pointer casts; `(__bridge T)x`, `(__bridge_transfer T *)x`, `(__bridge_retained T)x`, which hand an object across the ARC boundary unchecked; `performSelector:` and its `OnMainThread:` and `InBackground:` forms, a selector the compiler cannot check | a method signature's types, `- (NSString *)name:(id)x`, and an `@property (…)` list; `@selector(performSelector:)` and a method declared `- (void)performSelector:(SEL)s`, which send nothing |
+| `cpp`, `cuda-cpp`, `metal` | `reinterpret_cast<…>`, `const_cast<…>`, C casts to a pointer or reference type; in an Objective-C header, `objective-c`'s inside an interface | `static_cast`, `dynamic_cast`, `std::bit_cast`, value casts; in an Objective-C header, a signature's types |
+| `objective-cpp` | `cpp`'s and `objective-c`'s | the same |
 | `java` | `(Ref) x`: a reference cast, checked at run time like Kotlin's `as`; `@SuppressWarnings("unchecked")`, `"rawtypes"` | `(int) d`: primitive casts |
 | `kotlin` | `as`, `as?`; `x!!`; `@Suppress("UNCHECKED_CAST")` | `import … as` |
 | `groovy` | none | |
@@ -184,7 +189,12 @@ zlib is cast-heavy: `(z_const char *)` 47 times, `(struct inflate_state FAR *)`
 ## Band-1 restores
 
 - `this` / `self`: per [Receivers](#receivers).
-- `NULL`, `true`, `false` and `bool`, in every C-family id: cpptools and clangd send
+- `NULL`, `true`, `false` and `bool`, in every C-family id, and in `objective-c` and
+  `objective-cpp` also `nil`, `Nil`, `YES`, `NO`, `TRUE`, `FALSE` (builtin red) and
+  the ARC and nullability qualifiers `__weak`, `__strong`, `__block`,
+  `__unsafe_unretained`, `__autoreleasing`, `__nullable`, `__nonnull` and
+  `__null_unspecified` (keyword grey), which the Objective-C grammar paints as
+  constants and `storage.modifier.arc.objc`: cpptools and clangd send
   `macro` over each use, with no modifier that tells them from `MAX(a, b)`, and the
   theme paints `macro` a bold call. 88 of cpptools' 5,367 macro tokens in the
   theme's public C and C++ corpus are these four (theme README § C and C++, The
@@ -195,6 +205,14 @@ zlib is cast-heavy: `(z_const char *)` 47 times, `(struct inflate_state FAR *)`
   `#define` or `#undef` defines and a `defined(…)` operand keep the grammar's bold
   call. Other object-like macros (`BUF_LEN`, `EXIT_SUCCESS`) keep the server's bold
   call: no lexical rule tells a constant macro from a function-like one used bare.
+  Over 40 files of AFNetworking, SDWebImage, FMDB and MetalPetal, clangd 22.1.8
+  sends 739 `macro` tokens over these names; 103 were restored before, 739 now, and
+  none of the 1,000 restored names is painted otherwise by the grammar
+  ([swift-measurements.csv](swift-measurements.csv)). `NS_ENUM`, `NS_OPTIONS`,
+  `NS_DESIGNATED_INITIALIZER`, `NS_UNAVAILABLE` and `API_AVAILABLE` are a bold
+  call in the grammar and under clangd alike, so nothing is restored;
+  `NS_ASSUME_NONNULL_BEGIN` and `_END` are the page colour in the grammar and a bold
+  call under clangd, which is the theme's to settle.
 - Kotlin `$name` templates: kls sends `variable` over `$name`, 227 tokens in the
   theme's corpus, which the theme paints the page colour; the grammar paints the
   whole `$name` member steel. `kotlinTemplateSpans` reads the lexer's `$name` holes
@@ -205,6 +223,74 @@ zlib is cast-heavy: `(z_const char *)` 47 times, `(struct inflate_state FAR *)`
   types string literals: the cpptools, clangd, jdtls and kls legends carry no
   `string` token over a literal, so TextMate's placeholder scopes stand.
 - Imports and shadows: none. Java and Kotlin imports are grammar-typed.
+
+## Objective-C
+
+`.m` opens as `objective-c`, `.mm` as `objective-cpp`, and a `.h` as `cpp`
+(step 7 of the theme), so a header shared with Objective-C is read with the C++
+rules outside its `@interface`, `@protocol` and `@implementation` … `@end` regions
+and with the Objective-C facts inside them (`objcHeaderRegions` in `src/cjvm.ts`): a
+signature's types are no casts, and selector parts, `@property` names and macros
+are not data. A region a half-typed file leaves open runs to the end. Over 426
+public headers (23 of the Command Line Tools SDK's, and AFNetworking's,
+SDWebImage's, FMDB's and MetalPetal's), the danger marks on method and `@property`
+lines went 2,301 in 214 files → 0; a cast in an inline function outside the
+regions still marks.
+
+| Construct | Before | Now |
+|---|---|---|
+| `- (instancetype)initWithName:(NSString *)name count:(NSInteger)count {` | not a function: its parameters tinted across the file | a function scope from the `-` or `+` (`OBJC_METHOD` in `src/focus.ts`); the whole signature is its parameter list |
+| a method's parameters, `name` and `count` above | read as globals | declared: a name after a type's `)` in a signature (`objcFacts` in `src/cjvm.ts`) |
+| selector parts: `initWithName:` in a signature, `insertObject:` and `atIndex:` in `[o insertObject:x atIndex:i]`, the unary `copy` in `[name copy]` | tinted as data (1,137 wrong tints in the corpus below) | never data candidates |
+| `(NSString *)` in a signature, `@property (nonatomic, copy)` | danger: a pointer cast | not marked ([Danger marks](#danger-marks)) |
+
+27 files of AFNetworking, SDWebImage, FMDB and MetalPetal that clangd 22.1.8
+typed, 635 blocks, against clangd's `variable` and `parameter` tokens
+([swift-measurements.csv](swift-measurements.csv)): wrong tints with no server
+1,656 → 433, danger marks 169 → 73, blocks whose no-server tints differ from
+clangd-served ones 391 → 321.
+
+### Servers
+
+| Server | Serves | Notes |
+|---|---|---|
+| cpptools 1.35.6 | `c`, `cpp`, `cuda-cpp` | no Objective-C: its activation events and document selectors name none, and none of its scripts mentions `objective-c`. It does serve a `.h` as `cpp` and parses an Objective-C header as C++: for the theme's e2e `Store.h` it sends 2 tokens (79 over 12 public headers, the theme README § Swift and its ecosystem), and since that sparse answer is all the layer reads, the inline function's locals take no tint (the theme's `e2e/README.md` § Swift and its ecosystem coverage) |
+| clangd (vscode-clangd) | `objective-c`, `objective-cpp` too | the reference above |
+| sourcekit-lsp (swiftlang.swift-vscode 2.18.0) | `c`, `cpp`, `objective-c`, `objective-cpp` | the extension activates once the workspace holds a `Package.swift`, `compile_commands.json`, `compile_flags.txt`, `buildServer.json` or `.bsp/*.json`, or a Swift file opens; for a folder without a `Package.swift` it starts no server (its log: `found 0 packages`; the theme's e2e harness). The answers below were captured over stdio (`test/gen-swift-semtok.js`) |
+
+sourcekit-lsp 6.4 registers clangd's legend for those four ids (`variable`,
+`variable`, `parameter`, `function`, …) but encodes the data in its own Swift legend
+(`namespace`, `type`, `class`, …). Over `Widget.m`, its 253 tokens match the
+Command Line Tools' clangd 21.0.0 on all 253 types read with its own legend, and on
+25 read with the one it registers; none of 42 Objective-C and Objective-C++ files
+fit the registered legend (type index 26, modifier bit 20). The editor reads every
+token under the wrong type (`NSString` a parameter, a local a class); before, the
+companion read the answer as `empty` and band 2 waited for the cold retries.
+`sourcekitClangLegend` (`src/classify-lsp.ts`) spots the shape (clangd's legend
+with a `parameter` carrying `defaultLibrary`, which clangd never sends and
+sourcekit-lsp's `class` with it is) and decodes with `SOURCEKIT_LEGEND`. On the
+corpus, served as sourcekit-lsp sends it: wrong tints 1,656 → 100, blocks
+differing from clangd-served ones 391 → 25. The editor's paint needs an upstream fix
+in swiftlang/sourcekit-lsp, or a setting: the theme README's (§ Swift and its ecosystem,
+**The Objective-C legend**) turns semantic highlighting off for `objective-c` and
+`objective-cpp` and keeps sourcekit-lsp's diagnostics;
+`swift.sourcekit-lsp.supported-languages: ["swift"]` hands Objective-C to clangd or to
+nothing.
+
+### Metal
+
+`.metal` opens as `metal`, the id and grammar the Okibi and Akari theme registers
+(doublebuffer.metal-shader 1.0.5, the most-installed Metal grammar on 2026-11-17
+with 16,569 installs, declares the same id); without either it opens as `plaintext`.
+Before, the id fell to the default lexer. Key `metal` reads it as
+C++ with Metal's keywords ([Lexer](#lexer)), `this` as the receiver, and C++'s casts
+and danger marks. Over 16 public shaders with clangd 22.1.8 over a C++ shim, 460 of
+596 no-server tints match clangd's, as with the default lexer; the 136 left are
+SwiftUI shader parameters clangd could not type without SwiftUI's Metal header.
+Opening `.metal` as `cpp` instead is the theme's call: either id reads the same.
+The C restores apply: the theme's grammar, the C++ one with Metal's words, paints
+`true`, `false` and `bool` as they restore, and doublebuffer's leaves `NULL` the page
+colour, which the restore paints red (no shader in the 16 uses it).
 
 ## Static content
 

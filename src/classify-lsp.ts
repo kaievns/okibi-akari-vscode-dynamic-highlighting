@@ -42,6 +42,7 @@ import {
 } from './focus';
 import { BlockNames, ScopeColoring, colorScope } from './scopecolor';
 import { LexResult, lexFor } from './lex';
+import { swiftStaticCalls } from './swift';
 import { importUseNames, importUseSpans } from './imports';
 
 /**
@@ -246,6 +247,8 @@ export class Classifier implements vscode.Disposable {
   private stringLiterals = new WeakSet<vscode.TextDocument>();
   /** JS / TS: the namespace-import names whose uses the last answer with tokens typed, sorted and joined. */
   private typedNamespaces = new WeakMap<vscode.TextDocument, string>();
+  /** Swift: the named static calls the last answer with tokens typed as the standard library's operators, for its version. */
+  private staticCalls = new WeakMap<vscode.TextDocument, { version: number; ranges: OffsetRange[]; key: string }>();
   /** The newest version whose answer set `answered`, `pathKeywords` and `stringLiterals`: a slower answer for older text does not. */
   private answeredVersion = new WeakMap<vscode.TextDocument, number>();
   /** C family: the last answer's version and data, to tell a settled answer from one still growing. */
@@ -266,6 +269,11 @@ export class Classifier implements vscode.Disposable {
   /** JS / TS: the `import * as` names the last answer typed at a use; the import restore leaves those to it. */
   typedNamespacesOf(doc: vscode.TextDocument): string {
     return this.typedNamespaces.get(doc) ?? '';
+  }
+
+  /** Swift: the named static calls the last answer typed `method.static.defaultLibrary`, and the version it answered. */
+  swiftStaticCallsOf(doc: vscode.TextDocument): { version: number; ranges: OffsetRange[]; key: string } | undefined {
+    return this.staticCalls.get(doc);
   }
 
   /** Did the last Lua or Zig answer with tokens cover its string literals with `string` tokens? */
@@ -570,6 +578,10 @@ export class Classifier implements vscode.Disposable {
         this.answered.add(doc);
         const lx = lexFor(text, doc.languageId);
         if (lx.syntax.family === 'js') this.typedNamespaces.set(doc, typedNamespaceKey(lx, tokens ?? []));
+        if (lx.syntax.family === 'swift') {
+          const ranges = swiftStaticCalls(text, tokens ?? []);
+          this.staticCalls.set(doc, { version, ranges, key: `${version}:${ranges.map((r) => r.start).join(',')}` });
+        }
         if (strings) {
           this.stringLiterals.add(doc);
         } else {
@@ -578,6 +590,7 @@ export class Classifier implements vscode.Disposable {
       } else if (semantic === 'none' && doc.version === version) {
         this.answered.delete(doc);
         this.typedNamespaces.delete(doc);
+        this.staticCalls.delete(doc);
         this.pathKeywords.delete(doc);
         this.stringLiterals.delete(doc);
       }
@@ -678,18 +691,19 @@ export class Classifier implements vscode.Disposable {
     if (!legend) {
       return { tokens: null, semantic: 'none' };
     }
-    if (!tokens || !tokensFitLegend(tokens.data, legend.tokenTypes.length, legend.tokenModifiers.length)) {
+    const read = tokens && sourcekitClangLegend(legend, tokens.data) ? SOURCEKIT_LEGEND : legend;
+    if (!tokens || !tokensFitLegend(tokens.data, read.tokenTypes.length, read.tokenModifiers.length)) {
       return { tokens: null, semantic: 'empty' };
     }
     const rust = doc.languageId === 'rust';
-    const strings = (doc.languageId === 'lua' || doc.languageId === 'zig') && typesStringLiterals(tokens.data, legend.tokenTypes);
+    const strings = (doc.languageId === 'lua' || doc.languageId === 'zig') && typesStringLiterals(tokens.data, read.tokenTypes);
     const key = lexFor(text, doc.languageId).syntax.family === 'c' ? dataKey(tokens.data) : undefined;
     if (doc.version !== version) {
       // Tokens for old text are never classified; only the answer's state is read.
-      const { any, paths } = answerStateOf(tokens.data, legend.tokenTypes, lineStarts, text, rust);
+      const { any, paths } = answerStateOf(tokens.data, read.tokenTypes, lineStarts, text, rust);
       return { tokens: null, semantic: any ? 'ok' : 'empty', paths, strings };
     }
-    const decoded = decodeSemanticTokens(tokens.data, legend.tokenTypes, legend.tokenModifiers, lineStarts, text);
+    const decoded = decodeSemanticTokens(tokens.data, read.tokenTypes, read.tokenModifiers, lineStarts, text);
     const semantic = decoded.length > 0 ? 'ok' : 'empty';
     return { tokens: decoded, semantic, paths: rust ? rustPathKeywords(decoded) : undefined, strings, key: semantic === 'ok' ? key : undefined };
   }
@@ -732,4 +746,28 @@ export class Classifier implements vscode.Disposable {
   dispose(): void {
     // WeakMaps GC with their documents; nothing to release explicitly.
   }
+}
+
+/**
+ * sourcekit-lsp's own legend (6.4, Command Line Tools). For C-family documents it registers
+ * clangd's legend but encodes the tokens in this one (docs/c-jvm.md#objective-c).
+ */
+export const SOURCEKIT_LEGEND = {
+  tokenTypes: ['namespace', 'type', 'class', 'enum', 'interface', 'struct', 'typeParameter', 'parameter', 'variable', 'property',
+    'enumMember', 'event', 'function', 'method', 'macro', 'keyword', 'modifier', 'comment', 'string', 'number', 'regexp', 'operator',
+    'decorator', 'bracket', 'label', 'concept', 'unknown', 'identifier'],
+  tokenModifiers: ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'async', 'modification',
+    'documentation', 'defaultLibrary', 'deduced', 'virtual', 'dependentName', 'usedAsMutableReference', 'usedAsMutablePointer',
+    'constructorOrDestructor', 'userDefined', 'functionScope', 'classScope', 'fileScope', 'globalScope', 'parameterLabel'],
+};
+const CLANGD_TYPES = 'variable,variable,parameter,function,method,function,property,variable,class,interface,enum,enumMember,type,type,unknown,namespace';
+
+/**
+ * clangd's legend over data in sourcekit-lsp's: a `parameter` with `defaultLibrary`, which
+ * clangd never sends and sourcekit-lsp's `class` index (2) with it is (`NSString`).
+ */
+export function sourcekitClangLegend(legend: { tokenTypes: string[]; tokenModifiers: string[] }, data: ArrayLike<number>): boolean {
+  if (legend.tokenTypes.slice(0, 16).join(',') !== CLANGD_TYPES || legend.tokenModifiers[9] !== 'defaultLibrary') return false;
+  for (let i = 3; i < data.length; i += 5) if (data[i] === 2 && (data[i + 1] & (1 << 9)) !== 0) return true;
+  return false;
 }
