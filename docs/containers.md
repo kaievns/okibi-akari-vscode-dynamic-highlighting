@@ -42,8 +42,8 @@ layer asks none of them anything, so none changes what it paints.
 
 ## Real editor
 
-The theme repo's `e2e/` container cells (its `e2e/README.md` § Docker and Kubernetes
-coverage) run this tree in VS Code 1.145.2 on 2026-11-10: `dockerfile`, `dockerbake`,
+The theme repo's `e2e/` container cells (its `e2e/docs/coverage/docker-kubernetes.md`)
+run this tree in VS Code 1.145.2 on 2026-11-10: `dockerfile`, `dockerbake`,
 `k8s` (manifests, kustomize, skaffold and chart files as `yaml`), `helm`, `compose`,
 `markdown` and `gotmpl`, with their servers answering and without. No file has a focus
 item: in each server mode the cell clicks, types, bursts, undoes, deletes a line, deletes

@@ -170,7 +170,7 @@ the corpora holds an `import * as`; `test/html.test.js` pins that restore too.
 
 ## Real editor
 
-The theme repo's `e2e/` harness (its README § HTML, CSS and XML coverage) drove
+The theme repo's `e2e/` harness (its `e2e/docs/coverage/html-css-xml.md`) drove
 this tree in VS Code 1.145.2 on 2026-11-11: 17 launches, 38 min 26 s with the
 compiles, every check held. With `handlebars` listed it ran again the same day,
 17 launches in 38 min 31 s, with the same counts; no cell opens a `.hbs` page,

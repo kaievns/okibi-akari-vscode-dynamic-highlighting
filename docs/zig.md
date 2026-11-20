@@ -225,8 +225,8 @@ once.
 
 ## Real editor
 
-The theme repo's harness has `zig` and `zon` cells (its `e2e/README.md` § Zig
-coverage: VS Code 1.144.1, `ziglang.vscode-zig` 0.7.0, zls 0.17.0 in `partial`,
+The theme repo's harness has `zig` and `zon` cells (its `e2e/docs/coverage/zig.md`:
+VS Code 1.144.1, `ziglang.vscode-zig` 0.7.0, zls 0.17.0 in `partial`,
 `full` and off). On 2026-11-10 they held every expectation in both themes: the
 band-1 restores in Survey (`self` keyword grey under zls's `parameter` tokens,
 the namespace restore of a `@cImport` binding with no server, the placeholders

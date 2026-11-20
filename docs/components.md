@@ -229,7 +229,7 @@ characters compared, 2 failed. Both are Svelte's `split`: the harness types
 End, space and Backspace at a caret whose line ends in markup, and this tree
 holds Survey there, as [Blocks and focus](#blocks-and-focus) says.
 
-The theme repo's own cells (its `e2e/README.md` § Component frameworks coverage)
+The theme repo's own cells (its `e2e/docs/coverage/component-frameworks.md`)
 fix those in the harness and the specs: the reopen check exempts the caret's
 match in either capture, `bump` lists the escape, `tinted` only names that win a
 hue, and `split`'s target sits in a script. On this tree, 2026-11-12, both

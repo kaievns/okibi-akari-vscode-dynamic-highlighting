@@ -167,8 +167,8 @@ provider, and the heuristic paints at once.
 
 ## Real editor
 
-The theme repo's harness has a `lua` cell (`e2e/fixtures/lua/`, its README
-§ Lua coverage): VS Code 1.144.1 and `sumneko.lua` 3.19.2 from an isolated
+The theme repo's harness has a `lua` cell (`e2e/fixtures/lua/`, its
+`e2e/docs/coverage/lua.md`): VS Code 1.144.1 and `sumneko.lua` 3.19.2 from an isolated
 extensions dir, in two modes, `luals` (the bundled server) and `off` (no server
 binary, no provider). On 2026-11-08, against this tree, its 9 Focus and 8 Edit
 items per mode, a rockspec's chunk item, and its transition scenarios (18 in

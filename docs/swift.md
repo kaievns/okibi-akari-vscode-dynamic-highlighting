@@ -274,8 +274,8 @@ depth-0 `=`, 412 ms a lex at 2,000 rows; the scan now carries its answer from on
   kinds by header text across lexes (C and Java's `headerVerdicts`) and resolving
   only the focused block's names.
 - **Real editor**: the theme's e2e harness holds the Swift, Objective-C and Metal
-  reading in its `swift`, `objc` and `metal` cells (its `e2e/README.md` § Swift and
-  its ecosystem coverage): Focus, Edit and every transition scenario under
+  reading in its `swift`, `objc` and `metal` cells (its `e2e/docs/coverage/swift.md`):
+  Focus, Edit and every transition scenario under
   sourcekit-lsp, clangd and no server.
 - **An empty answer holds band 2**: sourcekit-lsp registers for a `.swiftinterface`
   in the workspace and answers it with no token, so Focus there shows no tint until

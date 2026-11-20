@@ -70,7 +70,7 @@ Homebrew's `Library/Homebrew` `.sh` files (45) and 131 of 157 oh-my-zsh files fr
 `lib/`, `tools/`, `oh-my-zsh.sh` and 128 plugin files (123 zsh and 8 sh; shfmt
 parses the other 26 not at all). The fish reference is fish-lsp 1.1.5's `variable`
 tokens and `fish_indent --dump-parse-tree` from fish 4.9.3, over fish's 275 own
-`share/functions` files, 11,669 lines. The theme README's § Shell, SQL, diffs and
+`share/functions` files, 11,669 lines. The theme's `docs/tooling.md` § Shell, SQL, diffs and
 other tooling formats measures its grammars on other cuts of the same projects (872
 shell files, 816 of them shfmt's; 277 SQL files, SQLite's tests among them) and on
 the same 275 fish files. The runs drive the real `Decorator` under the stub: a
@@ -263,7 +263,8 @@ Outside quotes the editor's bracket-pair colorization paints the braces of a
 over the theme's member steel (the e2e shell cell's dump: `{=bracket`,
 `(=bracket`). The theme registers that grey for the braces, as in a `.env` file,
 a Dockerfile and CMake, and a Makefile's `$(CC)` takes it on its parentheses
-(the theme's README § Shell and § C, C++, Java, Kotlin and their build files). A
+(the theme's `docs/tooling.md` § Shell and the theme's `docs/c-jvm.md`
+§ C, C++, Java, Kotlin and their build files). A
 restore painting them member steel would split shell from those formats, so
 there is none.
 
@@ -303,7 +304,7 @@ layer makes none, on either path.
 Each cell is a document of its own (`vscode-notebook-cell:`), classified as a
 `.py` or `.md` file. Pylance answers per cell and resolves names across cells
 (`df:variable`, `pd:module`): its 1,281 tokens over 5 public notebooks' 195 code
-cells (the theme README's § Jupyter notebooks) equal those of their `.py` twins in
+cells (the theme's `docs/tooling.md` § Jupyter notebooks) equal those of their `.py` twins in
 position and type, and 45 of them add a `declaration` or `library` modifier the
 twin lacks. A cell added, removed or moved, or another cell's text, changes what a
 cell's names resolve to with no edit to that cell: `Decorator.onNotebookChanged`
@@ -318,8 +319,8 @@ cells as one view is not built.
 
 ## In the editor
 
-The theme's e2e cells (its `e2e/README.md` § Shell, SQL, diffs and other tooling
-formats coverage), VS Code 1.145.2, Okibi and Akari, this tree and the theme's:
+The theme's e2e cells (its `e2e/docs/coverage/tooling.md`),
+VS Code 1.145.2, Okibi and Akari, this tree and the theme's:
 
 - **Shell** (`shellscript`, with bash-ide and without): after a click in the
   `while` loop `attempt`, `host`, `ROOT`, `f` and `count` carry tints; a name the

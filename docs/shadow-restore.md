@@ -100,7 +100,7 @@ for that `type`, which Okibi and Akari paint the page colour: with the layer
 switched off, the theme repo's harness launcher reads `#13110e` there in Akari,
 under the current theme and under the one before its Lua keys (2026-11-08). An
 earlier reading of call blue came from a capture taken before the editor had painted
-that viewport's tokens (the theme repo's `e2e/README.md` § Lua coverage). The
+that viewport's tokens (the theme repo's `e2e/docs/coverage/lua.md`). The
 restore stays on with the server: nothing repaints when the server answers, and
 the grammar's call blue never shows before it does. It paints non-call uses that
 resolve to a local, parameter or loop variable, never a local function, a

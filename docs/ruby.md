@@ -280,8 +280,8 @@ an `erb` lexer family whose tags are Ruby holes; not done.
 
 ## Real editor
 
-The theme repo's `e2e/` `ruby` and `erb` cells (its `e2e/README.md` § Ruby
-coverage) run this tree in VS Code 1.144.1 with Shopify.ruby-lsp 0.10.8 and
+The theme repo's `e2e/` `ruby` and `erb` cells (its `e2e/docs/coverage/ruby.md`)
+run this tree in VS Code 1.144.1 with Shopify.ruby-lsp 0.10.8 and
 brew's ruby-lsp 0.26.11, in three modes: `rubylsp` (181 live tokens), `off`
 (`semanticHighlighting: false`, no provider) and `builtin` (no client, as in an
 editor without it). On 2026-11-08 every Focus, Edit and reopen capture matched
