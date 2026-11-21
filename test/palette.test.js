@@ -103,7 +103,7 @@ test('palette maths: reference values', () => {
 
 for (const [name, side] of THEMES) {
   const tints = TOKENS.id.map((p) => p[side]);
-  const ground = TOKENS.n2[side];
+  const ground = TOKENS.ground[side];
 
   test(`${name} palette: five tints, all distinct`, () => {
     assert.equal(tints.length, 5);

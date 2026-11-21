@@ -24,7 +24,7 @@ export const TOKENS = {
   ember: { dark: '#ff7c50', light: '#c63a00' },
 
   // spine steps referenced by the fill computation
-  n2: { dark: '#1b1e20', light: '#f9f6f2' }, // editor ground
+  ground: { dark: '#0f1113', light: '#f9f6f2' }, // editor.background: Okibi n0, Akari n2
   n11: { dark: '#e1e3e5', light: '#13110e' }, // foreground (fill is a % of this)
 
   // band 2 · identity tints, one set for all data identities: globals take the
@@ -89,9 +89,10 @@ export const TOKENS = {
   // library's operators. See docs/swift.md#band-1-restores.
   call: { dark: '#6eaff7', light: '#005eac' },
 
-  // --sel — ember 34%/28% wash. Identity-on-demand for OVERFLOWED (neutral)
-  // bindings: caret on a neutral name lights its occurrences in the block.
-  sel: { dark: '#693e30', light: '#ebc1ae' },
+  // --sel — the themes' editor.selectionBackground, ember 22%/28% over the editor ground.
+  // Identity-on-demand for OVERFLOWED (neutral) bindings: caret on a neutral name lights
+  // its occurrences in the block.
+  sel: { dark: '#442920', light: '#ebc1ae' },
 
   // --warn — yamabuki. Backing colour for the markdown ==highlight== wash. The
   // spec's `.hlt` is `color-mix(in srgb, var(--warn) 16%, transparent)`; the 16%

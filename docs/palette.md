@@ -42,7 +42,7 @@ model of the three.
 |---|---|---|---|
 | each tint's OKLCH C within ±0.003 of the theme mean | mean ≤ 0.12 | mean 0.139 (0.105–0.171) → 0.110 | mean 0.147 (0.120–0.168) → 0.109 |
 | Fairchild-Pirrotta L** spread | ≤ 2.5 | 10.80 → 0.81 | 5.96 → 1.80 |
-| lowest WCAG contrast on the editor ground (`TOKENS.n2`) | ≥ 4.5 | 6.18 → 5.72 (fuji) | **3.84** (kohaku) → 4.72 (yamabuki) |
+| lowest WCAG contrast on the editor ground (`TOKENS.ground`) | ≥ 4.5 | 6.46 (fuji) on `#0f1113`; 6.18 → 5.72 on the earlier `#1b1e20` | **3.84** (kohaku) → 4.72 (yamabuki) |
 | closest pair, ΔE_OK | ≥ 0.06 | 0.103 → 0.061 (fuji / ayame) | 0.073 → 0.064 (kohaku / yamabuki) |
 | escape and async marks, hue gap to `editorError.foreground` | ≥ 30° | escape 36.2°, async 178.9° | escape 35.7°, async 175.6° |
 
@@ -72,10 +72,11 @@ name in every file, so it is a separate decision and is not applied.
   ayame were 0.124 apart, mostly from their lightness gap (L 0.709 and 0.791),
   which even lightness removes. At equal L the distance is 2·C·sin(Δh/2), so
   keeping 0.124 would need C ≥ 0.22.
-- **Caret line.** The lowest contrast on the caret line (`#222527` / `#ebe7e2`)
-  is 5.26:1 (Okibi fuji) and 4.13:1 (Akari yamabuki). It was 5.69:1 and 3.36:1.
-- **Selection.** On the selection (`#693e30` / `#ebc1ae`) contrast is 3.07 to
-  3.52:1 (Okibi) and 3.09 to 3.69:1 (Akari). The selection is transient.
+- **Caret line.** The lowest contrast on the caret line (`#191b1e` / `#ebe7e2`)
+  is 5.89:1 (Okibi fuji) and 4.13:1 (Akari yamabuki). Akari's was 3.36:1 before
+  the even-lightness palette.
+- **Selection.** On the selection (`#442920` / `#ebc1ae`) contrast is 4.53 to
+  5.18:1 (Okibi) and 3.09 to 3.69:1 (Akari). The selection is transient.
 - **Decorator violet.** Fuji sits ΔE_OK 0.056 (Okibi) and 0.040 (Akari) from the
   theme's decorator colour (`#998cb3` / `#705e91`). If that reads ambiguous, the
   fix belongs in the theme's decorator rule, not here.
