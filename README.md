@@ -157,13 +157,13 @@ files for thirteen languages, markdown included, each written to exercise the cl
 ### Install
 
 VS Code runs the installed copy in
-`~/.vscode/extensions/kaievns.okibi-akari-dynamic-highlighting-0.1.0/`, not
+`~/.vscode/extensions/kaievns.okibi-akari-dynamic-highlighting-1.0.0/`, not
 `out/`. A change to `src/` (a palette value included) shows up only after
 repackaging and reinstalling:
 
 ```bash
 npx @vscode/vsce package   # runs vscode:prepublish (npm run compile) first
-code --install-extension okibi-akari-dynamic-highlighting-0.1.0.vsix --force
+code --install-extension okibi-akari-dynamic-highlighting-1.0.0.vsix --force
 ```
 
 Then run **Developer: Reload Window**.
