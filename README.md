@@ -10,6 +10,10 @@ attention model.
 > Cumulative supersets: each phase only *adds* a layer. Transitions are cuts,
 > never fades. Calm at rest is a hard requirement.
 
+![A TypeScript file at rest (Survey), a click into a function (Focus), two typed lines (Edit), the relax back to Focus after 2 s, then the same phases in Akari](media/survey-focus-edit.gif)
+
+*Survey at rest, Focus on a click into `flush()`, Edit while typing, Focus again 2 s after the last key. Okibi, then Akari.*
+
 ## What each phase shows
 
 | Phase | Shown |
