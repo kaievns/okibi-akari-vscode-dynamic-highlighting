@@ -1,7 +1,7 @@
 # Okibi & Akari — Dynamic Highlighting
 
 The dynamic layer for the [Okibi / Akari](https://kaievns.github.io/okibi-akiri-design-system-spec/)
-design system. The colour theme paints **band 1** (the resting register — always
+design system. The [colour theme](https://github.com/kaievns/okibi-akari-vscode-theme) paints **band 1** (the resting register — always
 on). This extension adds the stateful part of the doctrine: the three-phase
 attention model.
 
