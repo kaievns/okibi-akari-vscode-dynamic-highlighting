@@ -2,7 +2,7 @@
   "name": "okibi-akari-dynamic-highlighting",
   "displayName": "Okibi & Akari — Dynamic Highlighting",
   "description": "The dynamic layer for the Okibi/Akari design system: the three-phase attention model (Survey 構 · Focus 流 · Edit 異). Band 1 is the color theme; this is bands 2–3.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "kaievns",
   "license": "SEE LICENSE IN LICENSE",
   "engines": {

@@ -169,7 +169,7 @@ repackaging and reinstalling:
 
 ```bash
 npx @vscode/vsce package   # runs vscode:prepublish (npm run compile) first
-code --install-extension okibi-akari-dynamic-highlighting-1.0.0.vsix --force
+code --install-extension okibi-akari-dynamic-highlighting-1.1.0.vsix --force
 ```
 
 Then run **Developer: Reload Window**.
