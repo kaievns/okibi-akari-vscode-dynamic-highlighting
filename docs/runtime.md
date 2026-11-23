@@ -1005,7 +1005,7 @@ and between two data files 13 times. A run with other `OKIBI_WALKS`,
 the default run's 88 data walks never make a data file active (seed 7 is the
 first), so a rerun of a few seeds would fail one.
 
-In the same way a prose file's editor may show the two markdown marks and
+In the same way a prose file's editor may show the markdown marks and
 nothing else, and only under an id that takes them, `markdown` and the four chat
 customisation ids; a `walk.jmd` editor shows nothing. And no step may have asked
 a server anything about a data or prose document, whichever decorator asked; a

@@ -99,6 +99,15 @@ export const TOKENS = {
   // is applied as an alpha suffix rather than pre-flattened against the ground,
   // so the mark composes over whatever is under the line (selection, find match).
   warn: { dark: '#e6af2b', light: '#956000' },
+
+  // The theme's markdown register, for the prose restores (src/markdown.ts proseMarks): sigils
+  // n7, struck text n8, quotes n9, prose n10, link text sora (Akari's is not `call`); inline
+  // code is `placeholder`'s member steel.
+  n7: { dark: '#585b5f', light: '#b5b0a9' },
+  n8: { dark: '#707376', light: '#8d8982' },
+  n9: { dark: '#8f9296', light: '#6c6863' },
+  n10: { dark: '#bbbec1', light: '#403d38' },
+  mdLink: { dark: '#6eaff7', light: '#015ba6' },
 } as const;
 
 /** The spec's `.u-escape`: dashed, 1.5px, offset 3px, never broken around descenders. */
@@ -170,6 +179,10 @@ export function gutterStripeUri(color: string, opacity: number, widthPct = 100):
  *   importRestore — type slate over imported modules and types (band 1, until a provider answers)
  *   shadowRestore — page colour over non-call uses of a shadowed Python builtin (band 1, same lifetime)
  *   mdHighlight   — markdown ==highlight== wash (band 1, always on; see below)
+ *   mdSigil … mdLinkText — markdown prose restores, one per register step (band 1, always on)
+ *   mdBold        — restored bold: setext heading text, strong emphasis (band 1, always on)
+ *   mdItalic      — restored italic: emphasis across lines (band 1, always on)
+ *   mdLinkStruck  — mdLinkPlain inside struck text, keeping the line (band 1, always on)
  *   mdLinkPlain   — cancels VS Code's link underline (band 1, always on)
  *
  * The band-1 marks are deliberately NOT phase-bound: they exist because a
@@ -207,6 +220,16 @@ export interface DecorationPool {
   importRestore: vscode.TextEditorDecorationType;
   shadowRestore: vscode.TextEditorDecorationType;
   mdHighlight: vscode.TextEditorDecorationType;
+  mdSigil: vscode.TextEditorDecorationType;
+  mdStruck: vscode.TextEditorDecorationType;
+  mdQuote: vscode.TextEditorDecorationType;
+  mdProse: vscode.TextEditorDecorationType;
+  mdEmphasis: vscode.TextEditorDecorationType;
+  mdLinkText: vscode.TextEditorDecorationType;
+  mdCode: vscode.TextEditorDecorationType;
+  mdBold: vscode.TextEditorDecorationType;
+  mdItalic: vscode.TextEditorDecorationType;
+  mdLinkStruck: vscode.TextEditorDecorationType;
   mdLinkPlain: vscode.TextEditorDecorationType;
   /** Every type in the pool, for bulk dispose. */
   all(): vscode.TextEditorDecorationType[];
@@ -215,7 +238,7 @@ export interface DecorationPool {
    *
    * The clear helpers must use this rather than `all()`: bands 2/3 belong to the
    * focused block of the active editor and have to come off everything else, but
-   * the two markdown marks are band 1 and belong to every visible editor showing
+   * the markdown marks are band 1 and belong to every visible editor showing
    * that document. Clearing them alongside the bands made a split's second
    * markdown pane lose its highlight wash.
    */
@@ -294,6 +317,23 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     rangeBehavior: closed,
   });
 
+  // Prose restores: colour only, so the grammar's weight, italic and line stay; before
+  // mdLinkPlain, so the earlier-created type wins an overlap.
+  const tone = (pair: TokenPair): vscode.TextEditorDecorationType => decorationType({ color: pick(pair, isDark), rangeBehavior: closed });
+  const mdSigil = tone(TOKENS.n7);
+  const mdStruck = tone(TOKENS.n8);
+  const mdQuote = tone(TOKENS.n9);
+  const mdProse = tone(TOKENS.n10);
+  const mdEmphasis = tone(TOKENS.n11);
+  const mdLinkText = tone(TOKENS.mdLink);
+  const mdCode = tone(TOKENS.placeholder);
+  const mdBold = decorationType({ fontWeight: 'bold', rangeBehavior: closed });
+  const mdItalic = decorationType({ fontStyle: 'italic', rangeBehavior: closed });
+  const mdLinkStruck = decorationType({
+    textDecoration: 'line-through !important',
+    rangeBehavior: vscode.DecorationRangeBehavior.OpenOpen,
+  });
+
   // Cancels the `.detected-link` underline. `text-decoration: none` alone loses
   // to it on specificity — both land as single-class selectors under
   // `.monaco-editor`, and the link rule is inserted by the workbench stylesheet,
@@ -325,9 +365,19 @@ export function buildDecorationPool(isDark: boolean): DecorationPool {
     importRestore,
     shadowRestore,
     mdHighlight,
+    mdSigil,
+    mdStruck,
+    mdQuote,
+    mdProse,
+    mdEmphasis,
+    mdLinkText,
+    mdCode,
+    mdBold,
+    mdItalic,
+    mdLinkStruck,
     mdLinkPlain,
     all(): vscode.TextEditorDecorationType[] {
-      return [...this.banded(), self, placeholder, commentRestore, stringRestore, constantRestore, operatorRestore, bracketRestore, attributeRestore, callRestore, importRestore, shadowRestore, mdHighlight, mdLinkPlain];
+      return [...this.banded(), self, placeholder, commentRestore, stringRestore, constantRestore, operatorRestore, bracketRestore, attributeRestore, callRestore, importRestore, shadowRestore, mdHighlight, mdSigil, mdStruck, mdQuote, mdProse, mdEmphasis, mdLinkText, mdCode, mdBold, mdItalic, mdLinkStruck, mdLinkPlain];
     },
     // The PHASE bands: withdrawn when the caret leaves the editor, restored when it
     // comes back. `self` is deliberately NOT here — it is a band-1 mark this layer

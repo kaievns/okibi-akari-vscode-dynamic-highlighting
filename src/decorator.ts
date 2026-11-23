@@ -56,7 +56,7 @@ import { ColorPlan, planFromColoring } from './colors';
 import { ScopeColoring } from './scopecolor';
 import { computeTraceRanges } from './traces';
 import { lexicalRisk, escapeRisk } from './risk';
-import { codeSpans, highlightSpans, linkSpans } from './markdown';
+import { codeSpans, highlightSpans, linkSpans, mergeSpans, proseMarks, subtractSpans, Tone } from './markdown';
 import { mdxCodeSpans } from './mdx';
 import {
   Span, jsPlaceholderSpans, luaPlaceholderSpans, pythonPlaceholderSpans, rubyPlaceholderSpans, rustPlaceholderSpans, rustStringBracketSpans,
@@ -193,6 +193,17 @@ interface RiskRanges {
   numbers: vscode.Range[];
 }
 
+/** The pool type each prose restore tone paints with. */
+const TONE_TYPE = {
+  sigil: 'mdSigil',
+  struck: 'mdStruck',
+  quote: 'mdQuote',
+  prose: 'mdProse',
+  emphasis: 'mdEmphasis',
+  link: 'mdLinkText',
+  code: 'mdCode',
+} as const satisfies Record<Tone, keyof DecorationPool>;
+
 export class Decorator implements vscode.Disposable {
   private config: Config;
   private machine: PhaseMachine;
@@ -216,12 +227,12 @@ export class Decorator implements vscode.Disposable {
     vscode.TextDocument,
     { version: number; lex: LexResult; start: number; oldEnd: number; newEnd: number }
   >();
-  // Markdown band-1 mark ranges per document version. Both scanners walk the
+  // Markdown band-1 mark ranges per document version. The scanners walk the
   // whole document, and renderMarkdownMarks runs on every render (every caret
   // move), so without this a large .md file would re-lex on each keystroke.
   private mdCache = new WeakMap<
     vscode.TextDocument,
-    { version: number; highlight: vscode.Range[]; link: vscode.Range[] }
+    { version: number; highlight: vscode.Range[]; link: vscode.Range[]; linkStruck: vscode.Range[]; bold: vscode.Range[]; italic: vscode.Range[]; tones: Record<Tone, vscode.Range[]> }
   >();
   // Rust, Python and Lua format-placeholder ranges per document version. Same reasoning as
   // mdCache: the scan walks the whole document and render runs on every caret move.
@@ -1591,19 +1602,21 @@ export class Decorator implements vscode.Disposable {
   }
 
   /**
-   * The two markdown marks a colour theme cannot express: the ==highlight== wash
-   * and the cancellation of VS Code's link underline. See src/markdown.ts for why
-   * each has to be a decoration.
+   * The markdown marks a colour theme cannot express: the ==highlight== wash, the
+   * prose restores (colour, weight and italic) and the cancellation of VS
+   * Code's link underline. See src/markdown.ts for why each has to be a decoration.
    *
    * Band 1, so no phase or engagement check — but still cached per document
-   * version, because both scanners walk the whole document and this runs on every
+   * version, because the scanners walk the whole document and this runs on every
    * render (i.e. every caret move). Documents outside `isLinkMarkLanguage` clear and
    * return, so a `.ts` file never carries a stale wash from a previously active `.md`.
    */
   private renderMarkdownMarks(editor: vscode.TextEditor, doc: vscode.TextDocument): void {
+    const tones = Object.keys(TONE_TYPE) as Tone[];
     if (!isLinkMarkLanguage(langOf(doc))) {
-      this.applyType(editor, this.pool.mdHighlight, []);
-      this.applyType(editor, this.pool.mdLinkPlain, []);
+      for (const type of [this.pool.mdHighlight, this.pool.mdLinkPlain, this.pool.mdLinkStruck, this.pool.mdBold, this.pool.mdItalic, ...tones.map((t) => this.pool[TONE_TYPE[t]])]) {
+        this.applyType(editor, type, []);
+      }
       return;
     }
 
@@ -1612,15 +1625,30 @@ export class Decorator implements vscode.Disposable {
     if (!marks) {
       const text = this.textFor(doc);
       const code = langOf(doc) === 'mdx' ? mdxCodeSpans(text) : codeSpans(text);
+      const markdown = isMarkdownLanguage(langOf(doc));
+      const links = linkSpans(text, code);
+      const highlight = markdown ? highlightSpans(text, code, links) : [];
+      const prose = markdown ? proseMarks(text, highlight, links) : { tones: [], bold: [], italic: [], linkPlain: [], linkStruck: [] };
+      const range = (s: { start: number; end: number }): vscode.Range => this.toRange(doc, s);
+      const byTone = Object.fromEntries(tones.map((t) => [t, [] as vscode.Range[]])) as Record<Tone, vscode.Range[]>;
+      for (const s of prose.tones) byTone[s.tone].push(range(s));
       marks = {
         version: doc.version,
-        highlight: isMarkdownLanguage(langOf(doc)) ? highlightSpans(text, code).map((s) => this.toRange(doc, s)) : [],
-        link: linkSpans(text, code).map((s) => this.toRange(doc, s)),
+        highlight: highlight.map(range),
+        link: subtractSpans(mergeSpans([...links, ...prose.linkPlain]), prose.linkStruck).map(range),
+        linkStruck: prose.linkStruck.map(range),
+        bold: prose.bold.map(range),
+        italic: prose.italic.map(range),
+        tones: byTone,
       };
       this.mdCache.set(doc, marks);
     }
 
     this.applyType(editor, this.pool.mdHighlight, marks.highlight);
+    for (const t of tones) this.applyType(editor, this.pool[TONE_TYPE[t]], marks.tones[t]);
+    this.applyType(editor, this.pool.mdBold, marks.bold);
+    this.applyType(editor, this.pool.mdItalic, marks.italic);
+    this.applyType(editor, this.pool.mdLinkStruck, marks.linkStruck);
     this.applyType(editor, this.pool.mdLinkPlain, marks.link);
   }
 

@@ -1930,7 +1930,7 @@ export function isProseLanguage(languageId?: string): boolean {
   return languageId !== undefined && PROSE_LANGUAGES.has(languageId);
 }
 
-/** True when a document takes the two markdown marks. */
+/** True when a document takes the markdown marks: the wash and the prose restores. */
 export function isMarkdownLanguage(languageId?: string): boolean {
   return languageId !== undefined && MARKDOWN_LANGUAGES.has(languageId);
 }

@@ -944,19 +944,63 @@ test('band 1 recomputes after an edit: new placeholder holes and self uses paint
   py.decorator.dispose();
 });
 
+const MD_TYPES = ['mdHighlight', 'mdSigil', 'mdStruck', 'mdQuote', 'mdProse', 'mdEmphasis', 'mdLinkText', 'mdCode', 'mdBold', 'mdItalic', 'mdLinkStruck', 'mdLinkPlain'];
+const TONE_OF = { mdSigil: 'sigil', mdStruck: 'struck', mdQuote: 'quote', mdProse: 'prose', mdEmphasis: 'emphasis', mdLinkText: 'link', mdCode: 'code' };
+
+/** Each markdown type's ranges as text, from the pure scanners, the way the Decorator combines them. */
+function mdWant(text, lang) {
+  const md = require('../out/markdown');
+  const { isMarkdownLanguage, isLinkMarkLanguage } = require('../out/focus');
+  const want = Object.fromEntries(MD_TYPES.map((k) => [k, []]));
+  if (!isLinkMarkLanguage(lang)) return want;
+  const code = md.codeSpans(text);
+  const markdown = isMarkdownLanguage(lang);
+  const links = md.linkSpans(text, code);
+  const highlight = markdown ? md.highlightSpans(text, code, links) : [];
+  const p = markdown ? md.proseMarks(text, highlight, links) : { tones: [], bold: [], italic: [], linkPlain: [], linkStruck: [] };
+  want.mdHighlight = highlight;
+  want.mdLinkPlain = md.subtractSpans(md.mergeSpans([...links, ...p.linkPlain]), p.linkStruck);
+  want.mdLinkStruck = p.linkStruck;
+  want.mdBold = p.bold;
+  want.mdItalic = p.italic;
+  for (const [k, tone] of Object.entries(TONE_OF)) want[k] = p.tones.filter((s) => s.tone === tone);
+  for (const k of MD_TYPES) want[k] = want[k].map((s) => text.slice(s.start, s.end));
+  return want;
+}
+
 test('markdown marks paint on a .md editor and come off when a .ts editor takes its place', async () => {
   stub.clearLspResponses();
-  const { highlightSpans, linkSpans } = require('../out/markdown');
-  const md = 'A ==washed== word and a [link](https://example.com).\n';
+  const md = [
+    'A ==washed== word and a [link](https://example.com).',
+    '',
+    'Status *now*',
+    '======',
+    '',
+    'A [WIP] note, ~~a [ref] gone at https://example.com/old~~ and **[optional]** too.',
+    '',
+    '> quoted',
+    'lazy line',
+    '',
+    '[ref]: https://example.com/ref',
+    '',
+  ].join('\n');
   const h = await harness(md, 'markdown');
-  const snap = h.paint(Phase.Survey);
-  const spans = (fn) => fn(md).map((s) => md.slice(s.start, s.end));
-  assert.deepEqual(snap.ranges(h.decorator.pool.mdHighlight).map(sliceOf(h.doc)), spans(highlightSpans));
-  assert.deepEqual(snap.ranges(h.decorator.pool.mdLinkPlain).map(sliceOf(h.doc)), spans(linkSpans));
-  assert.ok(spans(highlightSpans).length > 0 && spans(linkSpans).length > 0, 'positive control');
+  const want = mdWant(md, 'markdown');
+  for (const phase of PHASES) {
+    const snap = h.paint(phase);
+    for (const k of MD_TYPES) assert.deepEqual(snap.ranges(h.decorator.pool[k]).map(sliceOf(h.doc)), want[k], `${phase}: ${k}`);
+  }
+  assert.deepEqual(want.mdHighlight, ['washed']);
+  assert.deepEqual(want.mdProse, ['[WIP]']);
+  assert.deepEqual(want.mdEmphasis, ['Status ', 'now', '[optional]']);
+  assert.deepEqual(want.mdQuote, ['lazy line']);
+  assert.deepEqual(want.mdBold, ['Status ', 'now', '[optional]']);
+  assert.deepEqual(want.mdItalic, ['now']);
+  assert.deepEqual(want.mdLinkStruck, ['ref', 'https://example.com/old']);
+  assert.ok(want.mdLinkPlain.includes('https://example.com') && want.mdLinkPlain.includes('[WIP]') && want.mdLinkPlain.includes('ref'), JSON.stringify(want.mdLinkPlain));
   h.editor.document = new stub.TextDocument('const x = 1;\n', 'typescript', `file:///render-${docSeq++}.ts`);
   const after = h.paint(Phase.Survey);
-  assert.equal(after.count(h.decorator.pool.mdHighlight) + after.count(h.decorator.pool.mdLinkPlain), 0);
+  assert.equal(MD_TYPES.reduce((n, k) => n + after.count(h.decorator.pool[k]), 0), 0);
   h.decorator.dispose();
 });
 
@@ -985,14 +1029,11 @@ function markdownCarets(text) {
 }
 
 test('a markdown-derived file paints at most the markdown marks, in any phase and through typing, and asks no server', async () => {
-  const { highlightSpans, linkSpans } = require('../out/markdown');
-  const { isMarkdownLanguage } = require('../out/focus');
-  const isMark = (d, t) => t === d.pool.mdHighlight || t === d.pool.mdLinkPlain;
+  const isMark = (d, t) => MD_TYPES.some((k) => d.pool[k] === t);
   const unmarked = (d) => [...d.pool.all(), d.gutterDecoration].filter((t) => !isMark(d, t));
-  const spans = (lang, fn, text) => (isMarkdownLanguage(lang) ? fn(text).map((s) => text.slice(s.start, s.end)) : []);
   for (const [lang, text] of Object.entries(MARKDOWN_DERIVED)) {
-    const want = (fn) => spans(lang, fn, text);
-    if (lang !== 'juliamarkdown') assert.ok(want(highlightSpans).length > 0 && want(linkSpans).length > 0, `${lang}: positive control`);
+    const want = mdWant(text, lang);
+    if (lang !== 'juliamarkdown') assert.ok(want.mdHighlight.length > 0 && want.mdLinkPlain.length > 0, `${lang}: positive control`);
     for (const { line, character } of markdownCarets(text)) {
       const where = `${lang} at ${line}:${character}`;
       stub.clearLspResponses();
@@ -1000,8 +1041,7 @@ test('a markdown-derived file paints at most the markdown marks, in any phase an
       for (const phase of PHASES) {
         const snap = h.paint(phase);
         assert.equal(unmarked(h.decorator).reduce((n, t) => n + snap.count(t), 0), 0, `${where} paints nothing but the marks in ${phase}`);
-        assert.deepEqual(snap.ranges(h.decorator.pool.mdHighlight).map(sliceOf(h.doc)), want(highlightSpans), `${where}: the wash in ${phase}`);
-        assert.deepEqual(snap.ranges(h.decorator.pool.mdLinkPlain).map(sliceOf(h.doc)), want(linkSpans), `${where}: the link cancellation in ${phase}`);
+        for (const k of MD_TYPES) assert.deepEqual(snap.ranges(h.decorator.pool[k]).map(sliceOf(h.doc)), want[k], `${where}: ${k} in ${phase}`);
       }
       h.decorator.dispose();
       // Real input: a click there, then typing `self `.
@@ -1023,8 +1063,8 @@ test('a markdown-derived file paints at most the markdown marks, in any phase an
       assert.equal(d.machine.current, Phase.Survey, `${where}: typing ends in Survey`);
       assert.equal(unmarked(d).reduce((n, t) => n + (live.get(t) ?? []).length, 0), 0, `${where}: nothing but the marks after typing`);
       const shown = (t) => (live.get(t) ?? []).map(sliceOf(doc));
-      assert.deepEqual(shown(d.pool.mdHighlight), spans(lang, highlightSpans, doc.getText()), `${where}: the wash after typing`);
-      assert.deepEqual(shown(d.pool.mdLinkPlain), spans(lang, linkSpans, doc.getText()), `${where}: the link cancellation after typing`);
+      const after = mdWant(doc.getText(), lang);
+      for (const k of MD_TYPES) assert.deepEqual(shown(d.pool[k]), after[k], `${where}: ${k} after typing`);
       assert.deepEqual(stub.lspCalls.map(([cmd]) => cmd), [], `${where} asks the language server nothing`);
       d.dispose();
     }

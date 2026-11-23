@@ -154,6 +154,9 @@ function setCaret(ed, offset) {
 
 // ── Decoration state, normalised to what is visible ───────────────────────────
 
+// The markdown band-1 types: the wash, the prose restores and the underline cancels.
+const MD_TYPES = ['mdHighlight', 'mdSigil', 'mdStruck', 'mdQuote', 'mdProse', 'mdEmphasis', 'mdLinkText', 'mdCode', 'mdBold', 'mdItalic', 'mdLinkStruck', 'mdLinkPlain'];
+
 const STYLE_KEYS = ['color', 'fontWeight', 'fontStyle', 'textDecoration', 'backgroundColor'];
 function styleOf(type) {
   const o = type.options ?? {};
@@ -167,7 +170,7 @@ function rolesOf(d) {
   d.pool.id.forEach((t, i) => m.set(t, `id${i}`));
   d.pool.idg.forEach((t, i) => m.set(t, `idg${i}`));
   for (const k of ['self', 'riskAsync', 'riskDanger', 'riskEscape', 'numberEngaged', 'placeholder',
-    'commentRestore', 'stringRestore', 'constantRestore', 'operatorRestore', 'bracketRestore', 'attributeRestore', 'callRestore', 'importRestore', 'shadowRestore', 'mdHighlight', 'mdLinkPlain']) {
+    'commentRestore', 'stringRestore', 'constantRestore', 'operatorRestore', 'bracketRestore', 'attributeRestore', 'callRestore', 'importRestore', 'shadowRestore', ...MD_TYPES]) {
     m.set(d.pool[k], k);
   }
   return m;
@@ -245,7 +248,7 @@ function diffSnapshots(got, want, editors) {
   return null;
 }
 
-const MD_MARKS = new Set(['mdHighlight', 'mdLinkPlain']);
+const MD_MARKS = new Set(MD_TYPES);
 const NO_MARKS = new Set();
 const BAND1_SELF = new Set(['self']);
 const isDataDoc = (doc) => DATA_LANGS.has(doc.languageId) || doc.fileName.endsWith('.zon') || doc.languageId === 'cmake' || /\.gradle(\.kts)?$/.test(doc.fileName);

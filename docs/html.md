@@ -29,7 +29,7 @@ The ids VS Code 1.145.2 and the extensions below register (`contributes.language
 | `handlebars` | `.handlebars .hbs .hjs`, whose grammar embeds `text.html.basic` | `vscode.handlebars` | static content: a logic-less template, whose `{{ }}` tags have no lexer family |
 | `php` | `.php .php4 .php5 .phtml .ctp` | `vscode.php` | code in its PHP regions, the markup outside every scope ([php.md](php.md)) |
 | `razor`, `aspnetcorerazor` | `.cshtml .razor` | `vscode.razor`; `ms-dotnettools.csharp` | static content ([php.md](php.md#razor)) |
-| `markdown` | ```` ```html ````, ```` ```css ````, ```` ```xml ```` and ```` ```svg ```` fences, raw HTML in prose | `vscode.markdown` | prose: the two markdown marks only |
+| `markdown` | ```` ```html ````, ```` ```css ````, ```` ```xml ```` and ```` ```svg ```` fences, raw HTML in prose | `vscode.markdown` | prose: the markdown marks only |
 
 `scss`, `less`, `sass`, `stylus`, `postcss` and `graphql` are static content too
 ([stylesheets.md](stylesheets.md)); `mdx` is prose ([mdx.md](mdx.md)).

@@ -405,17 +405,21 @@ test(`${PROSE_WALKS} random walks over the markdown-derived files leave no lefto
   const active = Object.fromEntries(h.PROSE_KEYS.map((k) => [h.FIXTURES[k].lang, 0]));
   const marked = Object.fromEntries(h.PROSE_KEYS.filter((k) => h.FIXTURES[k].marks).map((k) => [h.FIXTURES[k].lang, 0]));
   let beside = 0;
+  // Steps on which walk.md showed each prose restore type.
+  const restores = Object.fromEntries(['mdProse', 'mdEmphasis', 'mdQuote', 'mdBold'].map((k) => [k, 0]));
   await walks(h.generateProse, PROSE_WALKS, STEPS, SEED0, 1 / 2, (i, ev, r, w) => {
     const lang = w.activeEditor()?.document.languageId;
     if (lang in active) active[lang]++;
     const shown = w.visible().map((ed, j) => [ed.document.languageId, Object.keys(r.got.editors[j].out).map((k) => k.split(' ')[0])]);
     for (const [l, roles] of shown) if (l in marked && roles.some((x) => x.startsWith('md'))) marked[l]++;
+    for (const [l, roles] of shown) if (l === 'markdown') for (const k of Object.keys(restores)) if (roles.includes(k)) restores[k]++;
     if (shown.some(([l]) => l in active) && shown.some(([, roles]) => roles.some((x) => x === 'gutter' || /^id/.test(x)))) beside++;
   });
   const seen = `active: ${Object.entries(active).map(([l, n]) => `${l} ${n}`).join(', ')}; ` +
-    `marked: ${Object.entries(marked).map(([l, n]) => `${l} ${n}`).join(', ')}; beside a painted code editor at ${beside} steps`;
+    `marked: ${Object.entries(marked).map(([l, n]) => `${l} ${n}`).join(', ')}; beside a painted code editor at ${beside} steps; ` +
+    `walk.md restores: ${Object.entries(restores).map(([k, n]) => `${k} ${n}`).join(', ')}`;
   if (DEFAULT_RUN && PROSE_WALKS === 100) {
-    for (const [l, n] of [...Object.entries(active), ...Object.entries(marked)]) assert.ok(n > 0, `${l}: ${seen}`);
+    for (const [l, n] of [...Object.entries(active), ...Object.entries(marked), ...Object.entries(restores)]) assert.ok(n > 0, `${l}: ${seen}`);
     assert.ok(beside > 0, seen);
   }
   t.diagnostic(seen);

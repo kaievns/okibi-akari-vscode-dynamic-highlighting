@@ -17,7 +17,7 @@ component walks in `test/transitions.test.js`, the JSX rows in
 | `vue` | `.vue` | `Vue.volar` 3.3.14 | its code view |
 | `svelte` | `.svelte` | `svelte.svelte-vscode` 110.3.2 | its code view |
 | `astro` | `.astro` | `astro-build.astro-vscode` 2.17.4 | its code view |
-| `markdown` | ```` ```jsx ````, ```` ```tsx ````, ```` ```vue ````, ```` ```svelte ````, ```` ```astro ```` fences | `vscode.markdown` | prose: the two markdown marks only |
+| `markdown` | ```` ```jsx ````, ```` ```tsx ````, ```` ```vue ````, ```` ```svelte ````, ```` ```astro ```` fences | `vscode.markdown` | prose: the markdown marks only |
 
 `vue-html` (Vue's own template id) stays static content.
 

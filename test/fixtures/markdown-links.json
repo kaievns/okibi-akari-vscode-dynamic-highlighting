@@ -1,0 +1,333 @@
+{
+ "about": "VS Code 1.147.0: linkify is markdown-it's linkified text per line (linkify on, fuzzyLink off), detected the link computer's underlined ranges",
+ "lines": [
+  {
+   "line": "Visit https://example.com/a?b=1. and http://x.org, then ftp://f.org/x.",
+   "linkify": [
+    "https://example.com/a?b=1",
+    "http://x.org",
+    "ftp://f.org/x"
+   ],
+   "detected": [
+    "https://example.com/a?b=1",
+    "http://x.org"
+   ]
+  },
+  {
+   "line": "Not www.example.com, not file:///etc/hosts, not http:// alone.",
+   "linkify": [],
+   "detected": [
+    "file:///etc/hosts"
+   ]
+  },
+  {
+   "line": "Mail me@example.com, mailto:me@example.com or user.name+tag@sub.example.co.uk.",
+   "linkify": [
+    "me@example.com",
+    "mailto:me@example.com",
+    "user.name+tag@sub.example.co.uk"
+   ],
+   "detected": []
+  },
+  {
+   "line": "Not x@y, a@b.c, name@localhost or me@x.dev; yes foo@bar.museum and me@x.io.",
+   "linkify": [
+    "foo@bar.museum",
+    "me@x.io"
+   ],
+   "detected": []
+  },
+  {
+   "line": "Proto //example.com/path, upper HTTPS://EXAMPLE.COM and Ftp://x.org ok.",
+   "linkify": [
+    "//example.com/path",
+    "HTTPS://EXAMPLE.COM",
+    "Ftp://x.org"
+   ],
+   "detected": [
+    "HTTPS://EXAMPLE.COM"
+   ]
+  },
+  {
+   "line": "Parens (https://example.com/a_(b)) and https://example.com/a) and \"https://example.com/q\".",
+   "linkify": [
+    "https://example.com/a_(b)",
+    "https://example.com/a",
+    "https://example.com/q"
+   ],
+   "detected": [
+    "https://example.com/a_(b)",
+    "https://example.com/a",
+    "https://example.com/q"
+   ]
+  },
+  {
+   "line": "Trail https://example.com/path/. and https://example.com/path/! and https://example.com/p?q=1&r=2; done",
+   "linkify": [
+    "https://example.com/path/",
+    "https://example.com/path/",
+    "https://example.com/p?q=1&r=2"
+   ],
+   "detected": [
+    "https://example.com/path/",
+    "https://example.com/path/!",
+    "https://example.com/p?q=1&r=2"
+   ]
+  },
+  {
+   "line": "Ports https://localhost:8080/x, https://192.168.1.1/x, https://example.com:99999/x and https://-bad.com.",
+   "linkify": [
+    "https://localhost:8080/x",
+    "https://192.168.1.1/x"
+   ],
+   "detected": [
+    "https://localhost:8080/x",
+    "https://192.168.1.1/x",
+    "https://example.com:99999/x",
+    "https://-bad.com"
+   ]
+  },
+  {
+   "line": "Paths https://example.com/a*b*c, https://example.com/a_b_c_, https://example.com/~user/ and https://example.com/#frag.",
+   "linkify": [
+    "https://example.com/a*b*c",
+    "https://example.com/a_b_c_",
+    "https://example.com/~user/",
+    "https://example.com/#frag"
+   ],
+   "detected": [
+    "https://example.com/a*b*c",
+    "https://example.com/a_b_c_",
+    "https://example.com/~user/",
+    "https://example.com/#frag"
+   ]
+  },
+  {
+   "line": "Bold **https://b.com/x** and *https://b.com/y* and _https://b.com/w_ end.",
+   "linkify": [
+    "https://b.com/x",
+    "https://b.com/y",
+    "https://b.com/w_"
+   ],
+   "detected": [
+    "https://b.com/x",
+    "https://b.com/y",
+    "https://b.com/w_"
+   ]
+  },
+  {
+   "line": "Prefix xhttps://example.com, a.https://x.com, a+https://x.com and $https://x.com.",
+   "linkify": [
+    "https://x.com",
+    "https://x.com"
+   ],
+   "detected": [
+    "https://example.com",
+    "https://x.com",
+    "https://x.com",
+    "https://x.com"
+   ]
+  },
+  {
+   "line": "Auth https://user:pass@example.com:8080/p?q#f and https://example.com/a..b and https://example.com/a,",
+   "linkify": [
+    "https://user:pass@example.com:8080/p?q#f",
+    "https://example.com/a..b",
+    "https://example.com/a"
+   ],
+   "detected": [
+    "https://user:pass@example.com:8080/p?q#f",
+    "https://example.com/a..b",
+    "https://example.com/a"
+   ]
+  },
+  {
+   "line": "Quotes https://example.com/'quoted' and https://example.com/it's and https://example.com/a{b}c and https://example.com/[x]",
+   "linkify": [
+    "https://example.com/'quoted'",
+    "https://example.com/it's",
+    "https://example.com/a{b}c",
+    "https://example.com/[x]"
+   ],
+   "detected": [
+    "https://example.com/",
+    "https://example.com/it",
+    "https://example.com/a{b}c",
+    "https://example.com/[x]"
+   ]
+  },
+  {
+   "line": "Emails (me@example.com) \"me@example.com\" me@example.com, me@example.com.",
+   "linkify": [
+    "me@example.com",
+    "me@example.com",
+    "me@example.com",
+    "me@example.com"
+   ],
+   "detected": []
+  },
+  {
+   "line": "Unicode http://例え.jp/x and https://例え.テスト/x and https://xn--r8jz45g.jp/x.",
+   "linkify": [
+    "http://例え.jp/x",
+    "https://例え.テスト/x",
+    "https://xn--r8jz45g.jp/x"
+   ],
+   "detected": [
+    "http://例え.jp/x",
+    "https://例え.テスト/x",
+    "https://xn--r8jz45g.jp/x"
+   ]
+  },
+  {
+   "line": "Code `https://x.com` and [t](https://y.com) and <https://z.com> stay what they are.",
+   "linkify": [],
+   "detected": [
+    "https://x.com",
+    "https://y.com",
+    "https://z.com"
+   ]
+  },
+  {
+   "line": "Wiki https://en.wikipedia.org/wiki/Foo_(bar) and https://example.com/a_(b_(c)).",
+   "linkify": [
+    "https://en.wikipedia.org/wiki/Foo_(bar)",
+    "https://example.com/a_(b_(c)"
+   ],
+   "detected": [
+    "https://en.wikipedia.org/wiki/Foo_(bar)",
+    "https://example.com/a_(b_(c))"
+   ]
+  },
+  {
+   "line": "Dashes https://example.com/a-b--c and https://example.com/a!b!! and https://a.b/c;d;e;",
+   "linkify": [
+    "https://example.com/a-b--c",
+    "https://example.com/a!b",
+    "https://a.b/c;d;e"
+   ],
+   "detected": [
+    "https://example.com/a-b--c",
+    "https://example.com/a!b!!",
+    "https://a.b/c;d;e"
+   ]
+  },
+  {
+   "line": "Questions https://a.b/c?? and https://a.b/c?d? and https://a.b/c! end",
+   "linkify": [
+    "https://a.b/c",
+    "https://a.b/c?d",
+    "https://a.b/c"
+   ],
+   "detected": [
+    "https://a.b/c??",
+    "https://a.b/c?d?",
+    "https://a.b/c!"
+   ]
+  },
+  {
+   "line": "Separators https://example.com/<x> and https://example.com/a|b and https://example.com/a｜b.",
+   "linkify": [
+    "https://example.com/",
+    "https://example.com/a|b",
+    "https://example.com/a"
+   ],
+   "detected": [
+    "https://example.com/",
+    "https://example.com/a",
+    "https://example.com/a｜b"
+   ]
+  },
+  {
+   "line": "Entities Gruber &lt;julian@juliangruber.com&gt;, x&amp;me@example.com, &lt;https://x.com/a&gt; and &lt;https://x.com&gt;.",
+   "linkify": [
+    "https://x.com/a&gt",
+    "https://x.com"
+   ],
+   "detected": [
+    "https://x.com/a&gt",
+    "https://x.com&gt"
+   ]
+  },
+  {
+   "line": "Emphasis *me@example.com*, **team@example.com** and foo_me@example.com.",
+   "linkify": [
+    "me@example.com",
+    "team@example.com",
+    "foo_me@example.com"
+   ],
+   "detected": []
+  },
+  {
+   "line": "Bare ftp://ftp.example.com/b.txt, //cdn.example.com/x.js and mailto:team@example.com here.",
+   "linkify": [
+    "ftp://ftp.example.com/b.txt",
+    "//cdn.example.com/x.js",
+    "mailto:team@example.com"
+   ],
+   "detected": []
+  },
+  {
+   "line": "Not www.example.com/a or file:///etc/hosts or C:\\path, but https://example.com/(a)b and (https://example.com/c).",
+   "linkify": [
+    "https://example.com/(a)b",
+    "https://example.com/c"
+   ],
+   "detected": [
+    "file:///etc/hosts",
+    "https://example.com/(a)b",
+    "https://example.com/c"
+   ]
+  },
+  {
+   "line": "Trailing https://example.com/a. https://example.com/b, https://example.com/c; https://example.com/d: done",
+   "linkify": [
+    "https://example.com/a",
+    "https://example.com/b",
+    "https://example.com/c",
+    "https://example.com/d:"
+   ],
+   "detected": [
+    "https://example.com/a",
+    "https://example.com/b",
+    "https://example.com/c",
+    "https://example.com/d"
+   ]
+  },
+  {
+   "line": "[https://example.com/text](https://example.com/target) and <https://example.com/auto>.",
+   "linkify": [],
+   "detected": [
+    "https://example.com/text",
+    "https://example.com/target",
+    "https://example.com/auto"
+   ]
+  },
+  {
+   "line": "Quoted \"https://example.com/q\" and 'https://example.com/s' and `https://example.com/code` and *https://example.com/star*",
+   "linkify": [
+    "https://example.com/q",
+    "https://example.com/s",
+    "https://example.com/star"
+   ],
+   "detected": [
+    "https://example.com/q",
+    "https://example.com/s",
+    "https://example.com/code",
+    "https://example.com/star"
+   ]
+  },
+  {
+   "line": "Struck ~~https://example.com/old~~ and ~~see me@example.com~~ and https://example.com/a~~b",
+   "linkify": [
+    "https://example.com/old~~",
+    "me@example.com",
+    "https://example.com/a~~b"
+   ],
+   "detected": [
+    "https://example.com/old~~",
+    "https://example.com/a~~b"
+   ]
+  }
+ ]
+}
